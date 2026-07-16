@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+.jupyter/
+
+# Data (large, downloadable via download_data.py)
+word2vec/data/*
+!word2vec/data/.gitkeep
+
+# Model artifacts / logs
+*.pt
+*.pth
+*.ckpt
+*.log
+runs/
+outputs/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,17 @@
+[project]
+name = "maximum-likelihood-estimation"
+version = "0.1.0"
+description = "极大似然估计 (Maximum Likelihood Estimation) 互动教学 notebook"
+requires-python = ">=3.12"
+dependencies = [
+    "nbformat>=5.10",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "ipywidgets>=8.1",
+    "jupyter>=1.0",
+    "ipykernel>=6.29",
+]
+
+[tool.uv]
+package = false

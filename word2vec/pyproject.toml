@@ -1,0 +1,25 @@
+[project]
+name = "word2vec-tutorial"
+version = "0.1.0"
+description = "从零用 PyTorch 实现 word2vec 的互动教学程序（理论 + Skip-gram/CBOW + 可视化）"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.2",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "scikit-learn>=1.4",
+    "tqdm>=4.66",
+    "jupyter>=1.0",
+    "ipykernel>=6.29",
+]
+
+# 可选依赖：仅在你想拿 gensim 做“工业实现”对照时才需要。
+# 安装方式： uv sync --extra gensim
+[project.optional-dependencies]
+gensim = [
+    "gensim>=4.3",
+]
+
+[tool.uv]
+# 便于本地开发直接使用
+package = false
