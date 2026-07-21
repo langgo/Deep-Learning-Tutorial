@@ -1,0 +1,18 @@
+[project]
+name = "transformer-notebook-tutorial"
+version = "0.1.0"
+description = "Transformer 从零到工程实践的中文互动教学 notebook"
+requires-python = ">=3.12"
+dependencies = [
+    "nbformat>=5.10",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "torch>=2.2",
+    "ipywidgets>=8.1",
+    "jupyter>=1.0",
+    "ipykernel>=6.29",
+    "tqdm>=4.66",
+]
+
+[tool.uv]
+package = false
