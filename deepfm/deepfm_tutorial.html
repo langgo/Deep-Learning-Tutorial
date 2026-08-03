@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="DeepFM 论文（arXiv:1703.04247）中文精读教程：从公式、架构、共享 embedding 到实验结果与超参数研究的完整讲解，含交互式演示与 PyTorch 实现示例。">
+<title>DeepFM 论文精读教程 — A Factorization-Machine based Neural Network for CTR Prediction</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-python.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --ink: #1f2430;
+    --muted: #5b6472;
+    --line: #e3e7f0;
+    --accent: #4f46e5;
+    --accent2: #0e9f6e;
+    --warn-bg: #fff7e6;
+    --warn-line: #f0a020;
+    --info-bg: #eef4ff;
+    --info-line: #4f46e5;
+    --code-bg: #0f1420;
+    --code-ink: #d7e0f0;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.75;
+    font-size: 16px;
+  }
+  header.hero {
+    background: linear-gradient(120deg, #312e81 0%, #4f46e5 55%, #7c3aed 100%);
+    color: #fff;
+    padding: 56px 24px 48px;
+    text-align: center;
+  }
+  header.hero h1 { margin: 0 0 8px; font-size: clamp(24px, 4vw, 40px); letter-spacing: .5px; }
+  header.hero .sub { opacity: .92; font-size: 17px; max-width: 860px; margin: 0 auto; }
+  header.hero .meta { margin-top: 18px; font-size: 14px; opacity: .9; }
+  header.hero .badges { margin-top: 16px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  header.hero .badge {
+    background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.35);
+    border-radius: 999px; padding: 4px 14px; font-size: 13px;
+  }
+  .layout { display: flex; gap: 28px; max-width: 1240px; margin: 0 auto; padding: 28px 20px 80px; align-items: flex-start; }
+  nav.toc {
+    position: sticky; top: 20px; width: 250px; flex: 0 0 250px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 14px; font-size: 14px; max-height: calc(100vh - 40px); overflow: auto;
+  }
+  nav.toc h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  nav.toc a { display: block; color: var(--ink); text-decoration: none; padding: 5px 8px; border-radius: 6px; }
+  nav.toc a:hover { background: var(--info-bg); color: var(--accent); }
+  main { flex: 1; min-width: 0; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 28px 30px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(20,24,40,.05); }
+  h2 { font-size: 23px; margin: 4px 0 16px; padding-bottom: 10px; border-bottom: 2px solid var(--line); }
+  h2 .secno { color: var(--accent); margin-right: 8px; }
+  h3 { font-size: 18px; margin: 26px 0 10px; }
+  h4 { font-size: 16px; margin: 18px 0 8px; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 8px 0; padding-left: 26px; }
+  li { margin: 5px 0; }
+  code { background: #eef1f8; border-radius: 4px; padding: 1px 6px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .9em; }
+  pre { background: var(--code-bg); color: var(--code-ink); border-radius: 10px; padding: 18px 20px; overflow-x: auto; font-size: 13.5px; line-height: 1.6; }
+  pre code { background: none; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14.5px; }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: center; }
+  th { background: #f1f3fa; font-weight: 600; }
+  tbody tr:nth-child(even) { background: #fafbfe; }
+  tr.best td { background: #e7f6ee !important; font-weight: 600; }
+  .note { border-left: 4px solid var(--info-line); background: var(--info-bg); border-radius: 0 10px 10px 0; padding: 12px 16px; margin: 14px 0; }
+  .warn { border-left: 4px solid var(--warn-line); background: var(--warn-bg); border-radius: 0 10px 10px 0; padding: 12px 16px; margin: 14px 0; }
+  .note .tag, .warn .tag { display: inline-block; font-weight: 700; font-size: 13px; margin-right: 8px; }
+  .note .tag { color: var(--info-line); }
+  .warn .tag { color: #c77700; }
+  .fig { text-align: center; margin: 18px 0; }
+  .fig svg { max-width: 100%; height: auto; }
+  .fig .cap { font-size: 13.5px; color: var(--muted); margin-top: 6px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } nav.toc { display: none; } }
+  @media print {
+    header.hero { background: #fff; color: #000; padding: 20px 0; }
+    header.hero .badges, header.hero .meta { color: #000; }
+    header.hero .badge { color: #000; border-color: #000; background: transparent; }
+    nav.toc { display: none; }
+    .layout { display: block; padding: 0; }
+    section { break-inside: avoid; box-shadow: none; border: none; padding: 12px 0; margin-bottom: 8px; }
+    pre { border: 1px solid #ccc; background: #fafafa; color: #000; }
+    .demo { break-inside: avoid; }
+  }
+  .demo { border: 1px dashed var(--line); border-radius: 12px; padding: 18px; margin: 14px 0; background: #fbfcff; }
+  .demo h4 { margin-top: 0; }
+  .demo .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+  .demo input[type=range] { flex: 1; min-width: 140px; }
+  .demo select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; font-size: 14px; }
+  .demo .mono { font-family: "SF Mono", Menlo, monospace; font-size: 13px; }
+  .kv { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+  .kv .k { color: var(--muted); min-width: 120px; font-size: 14px; }
+  .kv .v { font-weight: 600; font-family: "SF Mono", Menlo, monospace; }
+  .pill { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 12.5px; font-weight: 600; }
+  .pill.good { background: #e7f6ee; color: #0e7a4f; }
+  .pill.bad { background: #fdecec; color: #b42318; }
+  .quiz details { border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin: 10px 0; background: #fbfcff; }
+  .quiz summary { cursor: pointer; font-weight: 600; }
+  .quiz .ans { margin-top: 10px; color: #374151; }
+  .chip { display: inline-block; background: #eef1f8; border-radius: 6px; padding: 1px 8px; font-size: 13px; margin: 0 4px 4px 0; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; padding: 10px 20px 40px; }
+  .eqbox { background: #f7f8fd; border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin: 12px 0; text-align: center; overflow-x: auto; }
+  .highlight { background: linear-gradient(transparent 62%, #fde68a 62%); }
+
+  /* Prism.js 语法高亮 — 配色适配深色代码块背景 #0f1420 */
+  pre code[class*="language-"] { background: transparent; color: var(--code-ink); text-shadow: none; }
+  code[class*="language-"] .token.comment,
+  code[class*="language-"] .token.prolog,
+  code[class*="language-"] .token.doctype,
+  code[class*="language-"] .token.cdata            { color: #7a8697; font-style: italic; }
+  code[class*="language-"] .token.punctuation      { color: #b6c1d0; }
+  code[class*="language-"] .token.string,
+  code[class*="language-"] .token.char,
+  code[class*="language-"] .token.attr-value,
+  code[class*="language-"] .token.regex,
+  code[class*="language-"] .token.triple-quoted-string { color: #a5d787; }
+  code[class*="language-"] .token.number,
+  code[class*="language-"] .token.boolean          { color: #f0b878; }
+  code[class*="language-"] .token.keyword,
+  code[class*="language-"] .token.control-flow     { color: #d5a4e0; font-weight: 600; }
+  code[class*="language-"] .token.builtin          { color: #66d1c8; }
+  code[class*="language-"] .token.function         { color: #86bff8; }
+  code[class*="language-"] .token.class-name       { color: #f2c674; }
+  code[class*="language-"] .token.decorator,
+  code[class*="language-"] .token.decorator .token.function { color: #f2c674; }
+  code[class*="language-"] .token.operator         { color: #b6c1d0; }
+  code[class*="language-"] .token.parameter        { color: #dee5f0; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <h1>DeepFM 论文精读教程</h1>
+  <p class="sub">DeepFM: A Factorization-Machine based Neural Network for CTR Prediction —— 从公式、架构到实验的完整讲解</p>
+  <div class="meta">
+    Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, Xiuqiang He<br>
+    哈尔滨工业大学（深圳）+ 华为诺亚方舟实验室 · IJCAI 2017
+  </div>
+  <div class="badges">
+    <span class="badge">arXiv:1703.04247 [cs.IR]</span>
+    <span class="badge">2017-03-13</span>
+    <span class="badge">CTR 预估</span>
+    <span class="badge">推荐系统</span>
+  </div>
+</header>
+
+<div class="layout">
+<nav class="toc">
+  <h3>目录</h3>
+  <a href="#overview">0. 导读：一句话看懂 DeepFM</a>
+  <a href="#background">1. 背景与动机</a>
+  <a href="#existing">2. 现有方法及其局限</a>
+  <a href="#problem">3. 问题定义与符号</a>
+  <a href="#arch">4. DeepFM 架构总览</a>
+  <a href="#fm">5. FM 组件详解</a>
+  <a href="#deep">6. Deep 组件详解</a>
+  <a href="#shared">7. 共享 Embedding 的两个好处</a>
+  <a href="#comparison">8. 与其他模型对比</a>
+  <a href="#worked">9. 完整前向数值示例</a>
+  <a href="#experiments">10. 实验：数据集 / 指标 / 结果</a>
+  <a href="#hyper">11. 超参数研究</a>
+  <a href="#demo">12. 交互式小实验</a>
+  <a href="#impl">13. PyTorch 风格实现</a>
+  <a href="#conclusion">14. 结论、局限与后续影响</a>
+  <a href="#quiz">15. 自测题</a>
+  <a href="#refs">16. 参考资料</a>
+</nav>
+
+<main>
+
+<!-- ============ 0. 导读 ============ -->
+<section id="overview">
+  <h2><span class="secno">0.</span>导读：一句话看懂 DeepFM</h2>
+  <p>DeepFM 是一个用于 <strong>CTR 预估</strong>（点击率预测）的端到端深度学习模型。它的核心思想是：</p>
+  <div class="eqbox">
+    <strong>FM 组件（学低阶交互）+ Deep 组件（学高阶交互）= DeepFM</strong><br>
+    两个组件<strong>共享同一个输入</strong>和<strong>同一份特征 Embedding</strong>，无需任何人工特征工程。
+  </div>
+  <p>论文的核心主张有三个：</p>
+  <ol>
+    <li>同时建模 <strong>低阶</strong>（order-1/2）与<strong>高阶</strong>（order-3+）特征交互，比只建模其中一种效果更好；</li>
+    <li>与 Google 的 Wide &amp; Deep 相比，DeepFM 的 wide 部分用 FM 替代人工交叉特征，<strong>不需要专家特征工程</strong>，真正端到端训练；</li>
+    <li>在公开数据集 Criteo 和商业数据集 Company* 上，DeepFM 的 AUC / Logloss 均优于 LR、FM、FNN、PNN 三个变体、Wide &amp; Deep 等 8 个对比模型，且训练效率接近最快的深度模型。</li>
+  </ol>
+  <div class="note"><span class="tag">学习路径建议</span>先读第 1–2 节理解"为什么要同时学低阶和高阶交互"，再读第 4–6 节吃透架构，第 9 节有一个完整手算数值示例帮你验证理解，最后用第 12 节的交互实验自己玩一玩。</div>
+</section>
+
+<!-- ============ 1. 背景 ============ -->
+<section id="background">
+  <h2><span class="secno">1.</span>背景与动机</h2>
+  <h3>1.1 CTR 预估是什么</h3>
+  <p>在推荐系统里，核心任务之一是估计用户点击某个推荐物品的概率，即 CTR（Click-Through Rate）：</p>
+  <ul>
+    <li>在多数推荐系统中，目标是最大化点击量，因此按预估 CTR 对候选物品排序；</li>
+    <li>在在线广告等场景中，还要考虑收益，排序策略可以调整为 <strong>CTR × bid</strong>（出价），其中 bid 是用户点击后系统获得的收益。</li>
+  </ul>
+  <p>无论哪种情况，<strong>准确估计 CTR 都是关键</strong>。</p>
+
+  <h3>1.2 为什么要学习"特征交互"</h3>
+  <p>用户点击行为背后往往隐藏着复杂的特征交互（feature interaction）。论文给出了两个来自真实应用商店的例子：</p>
+  <table>
+    <tr><th>观察</th><th>交互类型</th><th>涉及特征</th></tr>
+    <tr><td>人们常在饭点下载外卖类 App</td><td><strong>二阶</strong>（order-2）交互</td><td>App 类目 × 时间戳</td></tr>
+    <tr><td>男性青少年喜欢射击类和 RPG 游戏</td><td><strong>三阶</strong>（order-3）交互</td><td>App 类目 × 用户性别 × 年龄</td></tr>
+  </table>
+  <p>一般地，这些交互可能高度复杂，<strong>低阶和高阶交互都扮演重要角色</strong>。Wide &amp; Deep 论文的结论也指出：同时考虑低阶与高阶交互，比只考虑其中一种带来额外提升。</p>
+
+  <h3>1.3 关键挑战：如何自动建模特征交互</h3>
+  <ul>
+    <li>有些交互容易理解，可以由专家手工设计（如上面两个例子）；</li>
+    <li>但大多数交互<strong>隐藏在数据里</strong>，事先难以识别——经典关联规则"尿布与啤酒"就是从数据中挖掘出来的，而非专家发现的；</li>
+    <li>即使交互容易理解，在特征数量很大时，专家也不可能穷尽地建模它们。</li>
+  </ul>
+  <p>这正是 DeepFM 要解决的问题：<strong>能否端到端地自动学习所有阶的特征交互，而不依赖人工特征工程？</strong></p>
+</section>
+
+<!-- ============ 2. 现有方法 ============ -->
+<section id="existing">
+  <h2><span class="secno">2.</span>现有方法及其局限</h2>
+  <p>论文梳理了 CTR 预估的既有方法谱系，每个方法都有明确短板：</p>
+
+  <h3>2.1 广义线性模型（LR / FTRL）</h3>
+  <p>如 FTRL [McMahan et al., 2013]，简单且实践中表现不错。但<strong>线性模型没有能力学习特征交互</strong>，常见做法是在特征向量里<strong>手工加入两两交叉特征</strong>。这种方式难以泛化到高阶交互，也难以处理训练数据中从未出现或很少出现的交互。</p>
+
+  <h3>2.2 因子分解机 FM [Rendle, 2010]</h3>
+  <p>FM 把两两特征交互建模为特征潜在向量（latent vector）的<strong>内积</strong>，在稀疏数据上效果显著。虽然原则上 FM 可以建模高阶交互，但由于复杂度太高，实践中通常只考虑<strong>二阶</strong>交互。</p>
+
+  <h3>2.3 深度神经网络方法</h3>
+  <ul>
+    <li><strong>CNN / RNN 扩展</strong>：CNN 偏向建模<strong>相邻特征</strong>之间的交互，RNN 更适合<strong>有序列依赖</strong>的点击数据，都不适配一般 CTR 场景；</li>
+    <li><strong>FNN</strong>（Factorization-machine supported Neural Network, [Zhang et al., 2016]）：先用 FM 预训练再接入 DNN，<strong>受限于 FM 的表达能力</strong>，且需要预训练；</li>
+    <li><strong>PNN</strong>（Product-based Neural Network, [Qu et al., 2016]）：在 embedding 层与全连接层之间引入 product 层来学特征交互，但和 FNN 一样<strong>几乎不捕获低阶交互</strong>；</li>
+    <li><strong>Wide &amp; Deep</strong>（[Cheng et al., 2016], Google）：混合线性（wide）模型和深度（deep）模型，同时建模低阶与高阶交互——但它的 wide 部分和 deep 部分<strong>需要两个不同的输入</strong>，其中 wide 部分的输入<strong>仍然依赖专家特征工程</strong>（如交叉特征）。</li>
+  </ul>
+
+  <div class="warn"><span class="tag">核心矛盾</span>现有模型要么偏向低阶交互，要么偏向高阶交互，要么依赖人工特征工程。论文的目标：<strong>端到端地学习所有阶的交互，除了原始特征外不做任何特征工程</strong>。</div>
+
+  <h3>2.4 论文的三个主要贡献</h3>
+  <ol>
+    <li>提出新模型 <strong>DeepFM</strong>：像 FM 一样建模低阶交互，像 DNN 一样建模高阶交互；与 Wide &amp; Deep 不同，DeepFM 无需特征工程，可以端到端训练；</li>
+    <li><strong>训练高效</strong>：DeepFM 的 wide 部分和 deep 部分共享同一输入和同一 embedding 向量（Wide &amp; Deep 的 wide 部分输入向量因包含手工交叉特征而可能极大，复杂度高）；</li>
+    <li>在<strong>基准数据 + 商业数据</strong>上都验证了 DeepFM 相对现有模型的稳定提升。</li>
+  </ol>
+</section>
+
+<!-- ============ 3. 问题定义 ============ -->
+<section id="problem">
+  <h2><span class="secno">3.</span>问题定义与符号</h2>
+  <p>训练数据包含 \(n\) 个样本 \((\chi, y)\)：</p>
+  <ul>
+    <li>\(\chi\) 是 <strong>m 个 field</strong> 的数据记录，通常涉及一对"用户-物品"，例如：gender（性别）、location（位置）、age（年龄）、app_category（App 类目）……</li>
+    <li>\(y \in \{0, 1\}\) 是标签：\(y=1\) 表示用户点击了该物品，\(y=0\) 表示未点击。</li>
+  </ul>
+  <p>特征编码方式：</p>
+  <ul>
+    <li><strong>类别型 field</strong>：用 one-hot 向量表示（如 gender 的"男/女"）；</li>
+    <li><strong>连续型 field</strong>：直接用数值本身，或者离散化后转成 one-hot 向量（如 age 分桶）。</li>
+  </ul>
+  <p>于是每个样本转换为 \((x, y)\)，其中</p>
+  <div class="eqbox">
+    \[ x = [x_{field_1}, x_{field_2}, \dots, x_{field_j}, \dots, x_{field_m}] \in \mathbb{R}^d \]
+  </div>
+  <p>\(x_{field_j}\) 是第 \(j\) 个 field 的向量表示。通常 \(x\) <strong>高维且极其稀疏</strong>（比如有十亿用户的应用商店，仅 user ID 一个 field 的 one-hot 向量就有十亿维）。CTR 预估的任务就是构建模型 \(\hat{y} = \text{CTR model}(x)\) 来估计用户点击的概率。</p>
+
+  <div class="note"><span class="tag">重要约定</span>论文中的下标 \(i\) 是对<strong>拼接后的第 \(i\) 个特征维度</strong>编号，\(i \in \{1, \dots, d\}\)，而不是 field 编号。第 \(j\) 个 field 有 \(\text{len}_j\) 个取值，则拼接后 \(d = \sum_j \text{len}_j\)。例如 <span class="chip">field 1: gender（男/女）占 \(x_1, x_2\)</span><span class="chip">field 2: age 分桶占 \(x_3 \dots x_6\)</span>。每个 field 向量中通常只有一个元素非零（稀疏）。</div>
+
+  <div class="note"><span class="tag">连续 field 如何得到 embedding</span>
+    <p>论文说"连续 field 直接用数值本身"，但这一 <strong>1 维标量</strong>怎么变成 \(k\) 维 embedding？答案：**共享一个潜在向量、再用标量值缩放它**——</p>
+    <div class="eqbox" style="margin:8px 0">\[ e_j = x_j \cdot V_j \qquad (V_j \in \mathbb{R}^k) \]</div>
+    <p>把类别与连续两种 field 写成统一公式，一眼看清它们是同一个方程的两个特例：</p>
+    <div class="eqbox" style="margin:8px 0">\[ e_{\text{field}} = \sum_{i \in \text{field}} x_i \cdot V_i \]</div>
+    <table>
+      <tr><th>field 类型</th><th>\(x_i\) 的形态</th><th>embedding \(e_{\text{field}}\)</th><th>直觉</th></tr>
+      <tr><td>类别（one-hot）</td><td>选中项 =1，其它 =0</td><td>选中那一行 \(V\)</td><td><strong>查表 lookup</strong></td></tr>
+      <tr><td>标量连续</td><td>实数（通常先归一化）</td><td>\(x_j \cdot V_j\)</td><td><strong>缩放同一向量</strong></td></tr>
+    </table>
+    <p>一阶项与二阶项也自然沿用同一形式：\(w_j x_j\) 与 \(\langle V_j, V_{\text{other}}\rangle \, x_j x_{\text{other}}\)。因为 FM 公式对 \(x_i\) 本就是实数乘法，从未假定 \(x_i \in \{0,1\}\)——one-hot 只是"实数值恰好是 0 或 1"的特例。这也解释了第 13 节伪代码里 <code>vx = V(ids) * vals.unsqueeze(-1)</code> 为什么能一份代码同时处理两种 field：<code>vals</code> 装 1 时是 one-hot、装实数时是连续标量。</p>
+    <p><strong>局限与工业实践</strong>：标量连续 field 的所有 embedding 沿 \(V_j\) 共线（\(x_j=10\) 与 \(x_j=20\) 得到的向量方向相同、只是模长翻倍），表达力有限、难学"年龄的非线性效应"这类模式。因此实践中<strong>常先分桶再 one-hot</strong>（如 age → 青年/中年/老年 分别对应 \(V\) 的独立行），每个桶各拥有独立潜在向量，可以学非单调关系。论文原文也把"离散化后 one-hot"列为等价选项；Criteo 数据集里的 13 个连续特征在很多公开复现里就按此处理。</p>
+  </div>
+</section>
+
+<!-- ============ 4. 架构总览 ============ -->
+<section id="arch">
+  <h2><span class="secno">4.</span>DeepFM 架构总览</h2>
+  <p>DeepFM 由两个组件构成，共享同一个输入：</p>
+  <ul>
+    <li><strong>FM 组件</strong>：负责低阶（一阶 + 二阶）特征交互；</li>
+    <li><strong>Deep 组件</strong>（前馈神经网络）：负责高阶特征交互。</li>
+  </ul>
+  <p>对特征 \(i\)，用一个标量 \(w_i\) 衡量其一阶重要性，用一个潜在向量 \(V_i\) 衡量它与其它特征的交互影响。\(V_i\) 同时被送入 FM 组件（建模二阶交互）和 Deep 组件（建模高阶交互）。所有参数——包括 \(w_i\)、\(V_i\) 以及网络参数 \(W^{(l)}, b^{(l)}\)——为联合预测模型一起训练：</p>
+  <div class="eqbox">
+    \[ \hat{y} = \text{sigmoid}(y_{FM} + y_{DNN}) \tag{1} \]
+    <p style="margin:6px 0 0">其中 \(\hat{y} \in (0,1)\) 是预测的 CTR，\(y_{FM}\) 是 FM 组件的输出，\(y_{DNN}\) 是 Deep 组件的输出。</p>
+  </div>
+
+  <div class="fig">
+  <svg viewBox="0 0 1000 760" role="img" aria-label="DeepFM 架构图">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6472"/>
+      </marker>
+      <marker id="arrowV" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#0e9f6e"/>
+      </marker>
+    </defs>
+    <!-- 输入 -->
+    <rect x="30" y="240" width="180" height="200" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="120" y="300" text-anchor="middle" font-size="15" font-weight="700" fill="#312e81">输入 x</text>
+    <text x="120" y="322" text-anchor="middle" font-size="12.5" fill="#4f46e5">原始稀疏特征</text>
+    <text x="120" y="342" text-anchor="middle" font-size="12.5" fill="#4f46e5">d 维 · m 个 field 拼接</text>
+    <text x="120" y="366" text-anchor="middle" font-size="12.5" fill="#4f46e5">one-hot / 连续值</text>
+    <text x="120" y="404" text-anchor="middle" font-size="12" fill="#5b6472">(无需特征工程)</text>
+
+    <!-- FM 组件 -->
+    <rect x="280" y="60" width="250" height="52" rx="10" fill="#e7f6ee" stroke="#0e9f6e" stroke-width="1.5"/>
+    <text x="405" y="82" text-anchor="middle" font-size="14" font-weight="700" fill="#0b5c40">Addition 单元（一阶）</text>
+    <text x="405" y="101" text-anchor="middle" font-size="13" fill="#0b5c40">&lt;w, x&gt;</text>
+
+    <rect x="280" y="135" width="250" height="58" rx="10" fill="#e7f6ee" stroke="#0e9f6e" stroke-width="1.5"/>
+    <text x="405" y="158" text-anchor="middle" font-size="14" font-weight="700" fill="#0b5c40">Inner Product 单元（二阶）</text>
+    <text x="405" y="178" text-anchor="middle" font-size="12.5" fill="#0b5c40">&Sigma;&lt;V_i, V_j&gt; x_i x_j</text>
+
+    <!-- 求和节点 -->
+    <circle cx="590" cy="112" r="22" fill="#fff" stroke="#0e9f6e" stroke-width="2"/>
+    <text x="590" y="118" text-anchor="middle" font-size="20" font-weight="700" fill="#0e9f6e">+</text>
+    <text x="645" y="117" font-size="15" font-weight="700" fill="#0b5c40">y_FM</text>
+
+    <!-- Deep 组件 -->
+    <rect x="280" y="470" width="250" height="52" rx="10" fill="#eef4ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="405" y="492" text-anchor="middle" font-size="14" font-weight="700" fill="#312e81">Embedding 层</text>
+    <text x="405" y="511" text-anchor="middle" font-size="12.5" fill="#4f46e5">权重 = 共享 V（潜在向量）</text>
+
+    <rect x="280" y="560" width="250" height="40" rx="10" fill="#eef4ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="405" y="585" text-anchor="middle" font-size="13.5" fill="#312e81">Dense 400 · relu</text>
+    <rect x="280" y="630" width="250" height="40" rx="10" fill="#eef4ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="405" y="655" text-anchor="middle" font-size="13.5" fill="#312e81">Dense 400 · relu</text>
+    <rect x="280" y="700" width="250" height="40" rx="10" fill="#eef4ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="405" y="725" text-anchor="middle" font-size="13.5" fill="#312e81">Dense 400 · relu</text>
+    <text x="620" y="725" font-size="15" font-weight="700" fill="#312e81">y_DNN</text>
+
+    <!-- sigmoid -->
+    <circle cx="700" cy="380" r="30" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+    <text x="700" y="386" text-anchor="middle" font-size="12.5" font-weight="700" fill="#92400e">sigmoid</text>
+    <text x="742" y="386" font-size="15" font-weight="700" fill="#92400e">&#375; = sigmoid(y_FM + y_DNN)</text>
+
+    <!-- 连线 -->
+    <path d="M 210 300 L 245 300" stroke="#5b6472" stroke-width="1.6" fill="none"/>
+    <path d="M 245 96 L 245 496" stroke="#5b6472" stroke-width="1.6" fill="none"/>
+    <path d="M 245 96 L 280 96" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <path d="M 245 168 L 280 168" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <path d="M 245 496 L 280 496" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+    <path d="M 530 86 L 570 103" stroke="#0e9f6e" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <path d="M 530 164 L 573 126" stroke="#0e9f6e" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+    <path d="M 405 522 L 405 558" stroke="#4f46e5" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <path d="M 405 600 L 405 628" stroke="#4f46e5" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <path d="M 405 670 L 405 698" stroke="#4f46e5" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <path d="M 530 720 L 616 720" stroke="#4f46e5" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- 共享 V 虚线 -->
+    <path d="M 405 195 L 405 469" stroke="#0e9f6e" stroke-width="1.8" stroke-dasharray="6 5" fill="none" marker-end="url(#arrowV)"/>
+    <text x="415" y="340" font-size="12" fill="#0e9f6e">共享潜在向量 V</text>
+
+    <!-- 汇入 sigmoid -->
+    <path d="M 645 117 C 690 130 690 340 689 352" stroke="#0e9f6e" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <path d="M 678 715 C 720 660 720 450 709 408" stroke="#4f46e5" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- 组件标签 -->
+    <text x="405" y="45" text-anchor="middle" font-size="15" font-weight="700" fill="#0e9f6e">FM 组件（低阶交互）</text>
+    <text x="405" y="455" text-anchor="middle" font-size="15" font-weight="700" fill="#312e81">Deep 组件（高阶交互）</text>
+  </svg>
+  <div class="cap">图 1：DeepFM 架构（复刻论文 Figure 1 的结构）。FM 组件与 Deep 组件共享同一原始特征输入，同时学习低阶与高阶特征交互。</div>
+  </div>
+
+  <div class="note"><span class="tag">符号说明</span>论文中一个细微但重要的记号：论文第 6 节给出 \(y_{DNN} = \sigma(W^{|H|+1} a^{H} + b^{|H|+1})\)，其中 \(\sigma\) 写作 sigmoid。严格按字面理解会出现"先对 DNN 输出做 sigmoid、再整体做 sigmoid"的双重压缩，这与公式 (1) 和图 1（单一 sigmoid 输出单元、输入为两个 logit 之和）不一致。工程实现中 \(y_{FM}\) 与 \(y_{DNN}\) 均为<strong>未激活的 logit</strong>，最终统一过一个 sigmoid。本教程的数值示例与伪代码都采用该实现口径。</div>
+</section>
+
+<!-- ============ 5. FM 组件 ============ -->
+<section id="fm">
+  <h2><span class="secno">5.</span>FM 组件详解</h2>
+  <p>FM 组件就是因子分解机 [Rendle, 2010]。除了特征间的一阶（线性）交互，FM 把两两（二阶）特征交互建模为各自潜在向量的<strong>内积</strong>。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="FM 组件架构图">
+    <defs>
+      <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6472"/>
+      </marker>
+    </defs>
+    <rect x="20" y="120" width="160" height="60" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="100" y="147" text-anchor="middle" font-size="14" font-weight="700" fill="#312e81">输入 x</text>
+    <text x="100" y="167" text-anchor="middle" font-size="12" fill="#4f46e5">稀疏高维向量</text>
+
+    <rect x="250" y="45" width="220" height="58" rx="10" fill="#e7f6ee" stroke="#0e9f6e" stroke-width="1.5"/>
+    <text x="360" y="68" text-anchor="middle" font-size="14" font-weight="700" fill="#0b5c40">Addition 单元</text>
+    <text x="360" y="89" text-anchor="middle" font-size="13" fill="#0b5c40">&lt;w, x&gt; = &Sigma; w_i x_i</text>
+
+    <rect x="250" y="160" width="220" height="66" rx="10" fill="#e7f6ee" stroke="#0e9f6e" stroke-width="1.5"/>
+    <text x="360" y="184" text-anchor="middle" font-size="14" font-weight="700" fill="#0b5c40">Inner Product 单元</text>
+    <text x="360" y="205" text-anchor="middle" font-size="12" fill="#0b5c40">&Sigma;&lt;V_i, V_j&gt; x_i x_j</text>
+    <text x="360" y="220" text-anchor="middle" font-size="11" fill="#5b6472">（i &lt; j 的所有特征对）</text>
+
+    <circle cx="540" cy="145" r="22" fill="#fff" stroke="#0e9f6e" stroke-width="2"/>
+    <text x="540" y="151" text-anchor="middle" font-size="20" font-weight="700" fill="#0e9f6e">+</text>
+    <text x="595" y="150" font-size="15" font-weight="700" fill="#0b5c40">y_FM</text>
+
+    <path d="M 180 150 C 210 100 220 90 248 82" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#a2)"/>
+    <path d="M 180 150 C 210 200 220 210 248 198" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#a2)"/>
+    <path d="M 470 74 L 525 129" stroke="#0e9f6e" stroke-width="1.6" fill="none" marker-end="url(#a2)"/>
+    <path d="M 470 190 L 522 157" stroke="#0e9f6e" stroke-width="1.6" fill="none" marker-end="url(#a2)"/>
+  </svg>
+  <div class="cap">图 2：FM 组件（复刻论文 Figure 2）。输出 = Addition 单元 + 若干 Inner Product 单元。</div>
+  </div>
+
+  <p>FM 的输出是一阶项与所有二阶交互项之和（论文公式 2）：</p>
+  <div class="eqbox">
+    \[ y_{FM} = \langle w, x \rangle + \sum_{j_1=1}^{d} \sum_{j_2=j_1+1}^{d} \langle V_{j_1}, V_{j_2} \rangle \, x_{j_1} x_{j_2} \tag{2} \]
+    <p style="margin:6px 0 0">其中 \(w \in \mathbb{R}^d\)，\(V_i \in \mathbb{R}^k\)（\(k\) 为给定维度；论文省略了常数偏置项）。Addition 单元 \(\langle w, x \rangle\) 反映一阶特征的重要性；Inner Product 单元代表二阶特征交互的影响。</p>
+  </div>
+
+  <h3>5.1 为什么 FM 在稀疏数据上比朴素方法有效？</h3>
+  <p>在传统方法中，特征 \(i\) 与 \(j\) 的交互参数只有在特征 \(i\)、\(j\) 同时出现在同一条数据记录中时才能被训练。而在 FM 中，交互通过潜在向量的内积 \(\langle V_i, V_j \rangle\) 度量：</p>
+  <ul>
+    <li>只要特征 \(i\) 出现在某条记录里，\(V_i\) 就能被训练；</li>
+    <li>因此<strong>在训练数据中从未出现或很少出现的特征交互</strong>，也能被 FM 学到（因为两个潜在向量分别被其它记录训练过，内积依然有意义）。</li>
+  </ul>
+  <div class="note"><span class="tag">本质</span>这是<strong>参数共享</strong>带来的泛化能力：交互参数不是独立的 \(d^2\) 个标量，而是由 \(d \times k\) 个潜在向量参数内积生成，参数从 \(O(d^2)\) 降到 \(O(dk)\)。</div>
+
+  <h3>5.2 计算复杂度：\(O(d^2 k) \to O(dk)\)</h3>
+  <p>朴素计算式 (2) 的二阶项需要遍历 \(O(d^2)\) 个特征对，每个对内积 \(O(k)\)。利用平方差恒等式可以重写为线性复杂度（<span class="highlight">教程补充</span>，论文未展开，但所有实现都这么算）：</p>
+  <div class="eqbox">
+    \[ \sum_{i &lt; j} \langle V_i, V_j \rangle x_i x_j
+       = \frac{1}{2} \sum_{f=1}^{k} \left[ \left( \sum_{i=1}^{d} v_{i,f} x_i \right)^2 - \sum_{i=1}^{d} \left( v_{i,f} x_i \right)^2 \right] \tag{2$^\prime$} \]
+  </div>
+  <p>其中 \(v_{i,f}\) 是 \(V_i\) 的第 \(f\) 个分量。核心观察：\(\left(\sum_i v_{i,f} x_i\right)^2\) 展开后包含所有交叉项 \(2 v_{i,f} v_{j,f} x_i x_j\)，减去平方项 \(\sum_i (v_{i,f} x_i)^2\) 后恰好剩下 \(\sum_{i \neq j} v_{i,f} v_{j,f} x_i x_j\)，再除以 2 得到 \(\sum_{i &lt; j}\) 的配对项。整体复杂度为 \(O(dk)\)。又因输入稀疏（每个 field 只有一个非零元素），实际计算量只与<strong>非零特征数</strong>成正比。</p>
+</section>
+
+<!-- ============ 6. Deep 组件 ============ -->
+<section id="deep">
+  <h2><span class="secno">6.</span>Deep 组件详解</h2>
+  <p>Deep 组件是用于学习高阶特征交互的<strong>前馈神经网络</strong>。CTR 输入与图像、音频等稠密连续输入不同：</p>
+  <ul>
+    <li>高度<strong>稀疏</strong>（每个 field 向量只有一个非零元素）；</li>
+    <li><strong>超高维</strong>（十亿用户的应用商店，仅 user ID 一个 field 就十亿维）；</li>
+    <li>类别 / 连续混合；</li>
+    <li>按 field 分组（gender、location、age……）。</li>
+  </ul>
+  <p>这要求在进入第一个隐藏层之前，先用一个 <strong>Embedding 层</strong>把输入压缩成低维稠密实值向量，否则网络会难以训练。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 860 470" role="img" aria-label="Deep 组件与 embedding 层结构图">
+    <defs>
+      <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6472"/>
+      </marker>
+    </defs>
+    <!-- 输入 field -->
+    <rect x="15" y="55" width="150" height="45" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="90" y="76" text-anchor="middle" font-size="13" fill="#312e81">field 1（2 值）</text>
+    <text x="90" y="92" text-anchor="middle" font-size="11" fill="#5b6472">one-hot: [1, 0]</text>
+    <rect x="15" y="130" width="150" height="58" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="90" y="152" text-anchor="middle" font-size="13" fill="#312e81">field 2（3 值）</text>
+    <text x="90" y="168" text-anchor="middle" font-size="11" fill="#5b6472">one-hot: [0, 1, 0]</text>
+    <rect x="15" y="218" width="150" height="70" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="90" y="240" text-anchor="middle" font-size="13" fill="#312e81">field 3（4 值）</text>
+    <text x="90" y="256" text-anchor="middle" font-size="11" fill="#5b6472">one-hot: [0,0,1,0]</text>
+    <text x="90" y="276" text-anchor="middle" font-size="11" fill="#5b6472">…</text>
+
+    <!-- embedding -->
+    <rect x="230" y="55" width="110" height="45" rx="8" fill="#e7f6ee" stroke="#0e9f6e" stroke-width="1.5"/>
+    <text x="285" y="76" text-anchor="middle" font-size="13" fill="#0b5c40">e1 (k=2)</text>
+    <text x="285" y="92" text-anchor="middle" font-size="11" fill="#0b5c40">V 的第 1 行</text>
+    <rect x="230" y="130" width="110" height="45" rx="8" fill="#e7f6ee" stroke="#0e9f6e" stroke-width="1.5"/>
+    <text x="285" y="151" text-anchor="middle" font-size="13" fill="#0b5c40">e2 (k=2)</text>
+    <text x="285" y="167" text-anchor="middle" font-size="11" fill="#0b5c40">V 的第 4 行</text>
+    <rect x="230" y="218" width="110" height="45" rx="8" fill="#e7f6ee" stroke="#0e9f6e" stroke-width="1.5"/>
+    <text x="285" y="239" text-anchor="middle" font-size="13" fill="#0b5c40">e3 (k=2)</text>
+    <text x="285" y="255" text-anchor="middle" font-size="11" fill="#0b5c40">V 的第 8 行</text>
+
+    <!-- 拼接 -->
+    <rect x="410" y="105" width="170" height="110" rx="10" fill="#fff7e6" stroke="#d97706" stroke-width="1.5"/>
+    <text x="495" y="150" text-anchor="middle" font-size="14" font-weight="700" fill="#92400e">拼接</text>
+    <text x="495" y="172" text-anchor="middle" font-size="12" fill="#92400e">a(0) = [e1, e2, …, em]</text>
+    <text x="495" y="192" text-anchor="middle" font-size="11" fill="#92400e">稠密 m·k 维</text>
+
+    <!-- DNN -->
+    <rect x="650" y="80" width="130" height="42" rx="8" fill="#eef4ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="715" y="97" text-anchor="middle" font-size="12.5" fill="#312e81">Dense 400 relu</text>
+    <text x="715" y="112" text-anchor="middle" font-size="11" fill="#5b6472">a(1) = relu(W(1)a(0)+b(1))</text>
+    <rect x="650" y="140" width="130" height="42" rx="8" fill="#eef4ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="715" y="163" text-anchor="middle" font-size="12.5" fill="#312e81">Dense 400 relu</text>
+    <rect x="650" y="200" width="130" height="42" rx="8" fill="#eef4ff" stroke="#4f46e5" stroke-width="1.5"/>
+    <text x="715" y="223" text-anchor="middle" font-size="12.5" fill="#312e81">Dense 400 relu</text>
+    <rect x="650" y="300" width="130" height="42" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+    <text x="715" y="324" text-anchor="middle" font-size="13" font-weight="700" fill="#92400e">输出 logit</text>
+
+    <path d="M 165 77 L 228 77" stroke="#5b6472" stroke-width="1.5" fill="none" marker-end="url(#a3)"/>
+    <path d="M 165 159 L 228 152" stroke="#5b6472" stroke-width="1.5" fill="none" marker-end="url(#a3)"/>
+    <path d="M 165 253 L 228 240" stroke="#5b6472" stroke-width="1.5" fill="none" marker-end="url(#a3)"/>
+    <path d="M 340 77 L 408 140" stroke="#5b6472" stroke-width="1.5" fill="none" marker-end="url(#a3)"/>
+    <path d="M 340 152 L 408 152" stroke="#5b6472" stroke-width="1.5" fill="none" marker-end="url(#a3)"/>
+    <path d="M 340 240 L 408 165" stroke="#5b6472" stroke-width="1.5" fill="none" marker-end="url(#a3)"/>
+    <path d="M 580 160 L 648 101" stroke="#4f46e5" stroke-width="1.5" fill="none" marker-end="url(#a3)"/>
+    <path d="M 715 122 L 715 138" stroke="#4f46e5" stroke-width="1.5" fill="none" marker-end="url(#a3)"/>
+    <path d="M 715 182 L 715 198" stroke="#4f46e5" stroke-width="1.5" fill="none" marker-end="url(#a3)"/>
+    <path d="M 715 242 C 715 270 715 280 715 298" stroke="#4f46e5" stroke-width="1.5" fill="none" marker-end="url(#a3)"/>
+
+    <text x="285" y="40" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0e9f6e">Embedding 层（权重 = V）</text>
+    <text x="495" y="44" text-anchor="middle" font-size="12" fill="#5b6472">field 长度不同，embedding 长度相同（k）</text>
+  </svg>
+  <div class="cap">图 3：从输入层到 Embedding 层的子网络结构（复刻论文 Figure 3/4）。不同 field 的 one-hot 长度可以不同，但 embedding 长度统一为 k；FM 中的潜在向量 V 在这里充当网络权重，把输入 field 向量压缩成 embedding 向量。</div>
+  </div>
+
+  <p>记 Embedding 层的输出为：</p>
+  <div class="eqbox">
+    \[ a^{(0)} = [e_1, e_2, \dots, e_m] \tag{3} \]
+    <p style="margin:6px 0 0">其中 \(e_i\) 是第 \(i\) 个 field 的 embedding，\(m\) 是 field 数。</p>
+  </div>
+  <p>\(a^{(0)}\) 送入深度神经网络，前向过程为：</p>
+  <div class="eqbox">
+    \[ a^{(l+1)} = \sigma\left( W^{(l)} a^{(l)} + b^{(l)} \right) \tag{4} \]
+    <p style="margin:6px 0 0">其中 \(l\) 是层深度，\(\sigma\) 是激活函数，\(a^{(l)}, W^{(l)}, b^{(l)}\) 分别是第 \(l\) 层的输出、权重和偏置。</p>
+  </div>
+  <p>经过若干隐藏层后生成稠密实值特征向量，最终送入 sigmoid 得到预测：</p>
+  <div class="eqbox">
+    \[ y_{DNN} = \sigma\left( W^{(|H|+1)} a^{(H)} + b^{(|H|+1)} \right) \tag{5} \]
+    <p style="margin:6px 0 0">其中 \(|H|\) 是隐藏层数量（此处 \(\sigma\) 指输出层的最终激活，见第 4 节末的记号说明）。</p>
+  </div>
+
+  <h3>与 FNN 的关键区别：不需要预训练</h3>
+  <p>在 FNN [Zhang et al., 2016] 中，\(V\) 由 FM 预训练得到、作为网络初始化。而 DeepFM <strong>把 FM 模型本身作为整体学习架构的一部分</strong>（而不是用 FM 的潜在向量去初始化网络），从而：</p>
+  <ul>
+    <li>消除了 FM 预训练的必要性；</li>
+    <li>整个网络<strong>端到端联合训练</strong>。</li>
+  </ul>
+</section>
+
+<!-- ============ 7. 共享 embedding ============ -->
+<section id="shared">
+  <h2><span class="secno">7.</span>共享 Embedding 的两个好处</h2>
+  <p>论文明确指出：FM 组件和 Deep 组件<strong>共享同一个特征 embedding</strong>，这带来两个重要好处：</p>
+  <ol>
+    <li><strong>从原始特征同时学习低阶和高阶特征交互</strong>。共享意味着 FM 部分和 DNN 部分用同一组潜在向量 \(V\)，反向传播时两个组件的梯度都会作用于这份表示，使特征表示同时被低阶和高阶交互"塑造"得更精确；</li>
+    <li><strong>输入无需专家特征工程</strong>。这是相对 Wide &amp; Deep 的关键优势——Wide &amp; Deep 的 wide 部分需要人工构造交叉特征（例如用户安装 App 与曝光 App 的叉乘），而 DeepFM 直接学习原始特征。</li>
+  </ol>
+  <div class="warn"><span class="tag">对比</span>把 Wide &amp; Deep 的 LR 换成 FM（即 "FM &amp; DNN"）看起来和 DeepFM 相似，但论文强调：DeepFM 是 <strong>FM 与 Deep 组件共享特征 embedding</strong>；而 FM &amp; DNN 中 FM 与 DNN 各自有独立的 embedding。实验表明共享策略带来稳定提升（见第 10 节，DeepFM 优于 FM &amp; DNN 与 LR &amp; DNN）。</div>
+</section>
+
+<!-- ============ 8. 对比 ============ -->
+<section id="comparison">
+  <h2><span class="secno">8.</span>与其他深度模型对比</h2>
+
+  <h3>8.1 FNN</h3>
+  <p>FNN 是 FM 初始化的前馈神经网络。FM 预训练策略带来两个局限：</p>
+  <ol>
+    <li>embedding 参数可能<strong>过度受 FM 影响</strong>；</li>
+    <li>预训练阶段带来额外开销，<strong>降低效率</strong>。</li>
+  </ol>
+  <p>此外 FNN <strong>只捕获高阶特征交互</strong>。DeepFM 无需预训练，且同时学习高阶与低阶交互。</p>
+
+  <h3>8.2 PNN</h3>
+  <p>PNN 在 embedding 层和第一个隐藏层之间加入 product 层以捕获高阶交互，有三个变体：<strong>IPNN</strong>（内积）、<strong>OPNN</strong>（外积）、<strong>PNN*</strong>（内外积都有）。论文对它的批评：</p>
+  <ul>
+    <li>作者提出内积、外积的<strong>近似计算</strong>来提效，但<strong>外积近似不可靠</strong>——压缩 \(m\) 个 \(k\) 维向量为一个 \(k\) 维向量会丢失大量信息，结果不稳定；</li>
+    <li>内积相对可靠，但计算复杂度仍高——product 层的输出连接到第一个隐藏层的<strong>所有神经元</strong>；</li>
+    <li>与 DeepFM 不同，DeepFM 的 product（FM 二阶）输出<strong>只连接到最终输出层的一个神经元</strong>；</li>
+    <li>与 FNN 一样，所有 PNN 变体都<strong>忽略低阶特征交互</strong>。</li>
+  </ul>
+
+  <h3>8.3 Wide &amp; Deep</h3>
+  <p>Google 提出，同时建模低阶与高阶交互。但 wide 部分的输入<strong>需要专家特征工程</strong>（如应用推荐中"用户安装的 App × 曝光的 App"交叉）。DeepFM 无需此类专家知识，直接从原始特征学习。</p>
+  <p>一个自然的扩展是把 wide 部分的 LR 换成 FM（论文在实验中评估了这个扩展，命名为 LR &amp; DNN 和 FM &amp; DNN）。该扩展与 DeepFM 相似，但 DeepFM 在 FM 与 Deep 组件之间<strong>共享特征 embedding</strong>，共享策略通过反向传播使特征表示同时受低阶与高阶交互影响，建模更精确。</p>
+
+  <h3>8.4 总结表（论文 Table 1）</h3>
+  <table>
+    <tr>
+      <th>模型</th>
+      <th>无需预训练</th>
+      <th>高阶特征交互</th>
+      <th>低阶特征交互</th>
+      <th>无需特征工程</th>
+    </tr>
+    <tr><td>FNN</td><td><span class="pill bad">否</span></td><td><span class="pill good">是</span></td><td><span class="pill bad">否</span></td><td><span class="pill good">是</span></td></tr>
+    <tr><td>PNN</td><td><span class="pill good">是</span></td><td><span class="pill good">是</span></td><td><span class="pill bad">否</span></td><td><span class="pill good">是</span></td></tr>
+    <tr><td>Wide &amp; Deep</td><td><span class="pill good">是</span></td><td><span class="pill good">是</span></td><td><span class="pill good">是</span></td><td><span class="pill bad">否</span></td></tr>
+    <tr class="best"><td>DeepFM</td><td><span class="pill good">是</span></td><td><span class="pill good">是</span></td><td><span class="pill good">是</span></td><td><span class="pill good">是</span></td></tr>
+  </table>
+  <p class="fig cap" style="text-align:left">DeepFM 是唯一同时满足"无需预训练、无需特征工程、同时捕获低阶与高阶交互"的模型。</p>
+</section>
+
+<!-- ============ 9. 数值示例 ============ -->
+<section id="worked">
+  <h2><span class="secno">9.</span>完整前向数值示例（手算可验证）</h2>
+  <p>用一个极小的例子走一遍 DeepFM 前向传播，帮助你验证对公式的理解。设 2 个 field，每个 field 2 个取值，\(k=2\)，拼接后 \(d=4\)：</p>
+  <table>
+    <tr><th>field</th><th>取值</th><th>维度</th></tr>
+    <tr><td>性别</td><td>男 / 女</td><td>\(x_1, x_2\)</td></tr>
+    <tr><td>时段</td><td>早餐 / 晚餐</td><td>\(x_3, x_4\)</td></tr>
+  </table>
+  <p>样本：男性用户、晚餐时段 → \(x = [1, 0, 0, 1]\)。</p>
+  <p>参数（随机给出）：</p>
+  <ul>
+    <li>一阶权重：\(w = [0.2, 0.1, 0.3, 0.4]\)</li>
+    <li>潜在向量（同时充当 embedding）：\(V_1=[0.5, 0.8],\; V_2=[0.3, 0.2],\; V_3=[0.4, 0.6],\; V_4=[0.7, 0.1]\)</li>
+  </ul>
+
+  <h3>Step 1：FM 组件</h3>
+  <p>一阶项：\(\langle w, x \rangle = 0.2\times1 + 0.4\times1 = 0.6\)</p>
+  <p>二阶项：只有 \(x_1=1, x_4=1\) 同时非零，因此只有一个有效配对：</p>
+  <div class="eqbox">
+    \[ \langle V_1, V_4 \rangle \cdot x_1 x_4 = (0.5\times0.7 + 0.8\times0.1) \times 1 \times 1 = 0.43 \]
+  </div>
+  <p>所以 \(y_{FM} = 0.6 + 0.43 = 1.03\)</p>
+
+  <h3>Step 2：Deep 组件</h3>
+  <p>Embedding 查找：field 1 取"男"→ \(e_1 = V_1 = [0.5, 0.8]\)；field 2 取"晚餐"→ \(e_2 = V_4 = [0.7, 0.1]\)。拼接：</p>
+  <div class="eqbox">
+    \[ a^{(0)} = [0.5, 0.8, 0.7, 0.1] \]
+  </div>
+  <p>设 1 个隐藏层、2 个神经元，权重（第 1 层 \(W^{(1)} \in \mathbb{R}^{2\times4}\)，偏置 \(b^{(1)}\)）：</p>
+  <table>
+    <tr><th>神经元</th><th>加权和（relu 前）</th><th>relu 后</th></tr>
+    <tr>
+      <td>h1</td>
+      <td class="mono">0.5·0.5 + 0.8·0.3 + 0.7·(−0.2) + 0.1·0.4 + 0.1 = 0.49</td>
+      <td class="mono">0.49</td>
+    </tr>
+    <tr>
+      <td>h2</td>
+      <td class="mono">0.5·(−0.4) + 0.8·0.5 + 0.7·0.3 + 0.1·(−0.6) + 0.05 = 0.40</td>
+      <td class="mono">0.40</td>
+    </tr>
+  </table>
+  <p>输出层（\(W^{(2)} = [0.6, -0.5],\; b^{(2)} = 0.02\)）：</p>
+  <div class="eqbox">
+    \[ y_{DNN} = 0.6\times0.49 + (-0.5)\times0.40 + 0.02 = 0.114 \]
+  </div>
+
+  <h3>Step 3：融合输出</h3>
+  <div class="eqbox">
+    \[ \hat{y} = \text{sigmoid}(y_{FM} + y_{DNN}) = \text{sigmoid}(1.03 + 0.114) = \text{sigmoid}(1.144) \approx \frac{1}{1 + e^{-1.144}} \approx 0.758 \]
+  </div>
+  <p>即该男性用户在晚餐时段点击该物品的预估概率约为 <strong>75.8%</strong>。</p>
+  <div class="note"><span class="tag">要点</span>注意 \(e_1, e_2\) 就是 \(V_1, V_4\)——FM 二阶项与 DNN embedding 用的是<strong>同一份参数</strong>（共享 embedding），这正是第 7 节论述的设计。</div>
+</section>
+
+<!-- ============ 10. 实验 ============ -->
+<section id="experiments">
+  <h2><span class="secno">10.</span>实验：数据集 / 指标 / 结果</h2>
+
+  <h3>10.1 数据集</h3>
+  <table>
+    <tr><th></th><th>Criteo 数据集</th><th>Company* 数据集</th></tr>
+    <tr><td>规模</td><td>4500 万用户点击记录</td><td>约 10 亿条记录</td></tr>
+    <tr><td>特征</td><td>13 个连续特征 + 26 个类别特征</td><td>App 特征（ID、类目…）、用户特征（下载过的 App…）、上下文特征（操作时间…）</td></tr>
+    <tr><td>划分</td><td>随机 90% 训练 / 10% 测试</td><td>连续 7 天训练，接下来 1 天测试（来自 Company* 应用商店游戏中心）</td></tr>
+  </table>
+
+  <h3>10.2 评估指标</h3>
+  <ul>
+    <li><strong>AUC</strong>（Area Under ROC）：衡量排序质量，越大越好；</li>
+    <li><strong>Logloss</strong>（交叉熵）：衡量概率校准质量，越小越好。</li>
+  </ul>
+
+  <h3>10.3 对比模型与参数设置</h3>
+  <p>共比较 9 个模型：LR、FM、FNN、PNN（三种变体）、Wide &amp; Deep 的两种适配（LR &amp; DNN、FM &amp; DNN）、DeepFM。Wide &amp; Deep 的两种命名是为了区分 wide 部分用 LR 还是 FM（论文没有使用 Google 官方 Wide &amp; Deep API，因为其实现效率很低，作者自行实现并简化：wide 与 deep 共享优化器）。</p>
+  <p>Criteo 上沿用 [Qu et al., 2016] 的设置：dropout 0.5；网络结构 400-400-400；优化器 Adam；激活函数 IPNN 用 tanh、其它深度模型用 relu。DeepFM 使用相同设置以保证公平。LR 用 FTRL 优化、FM 用 Adam，FM 潜在维度 10。Company* 上各模型经过仔细的参数调优（见第 11 节）。</p>
+
+  <h3>10.4 效率对比</h3>
+  <p>用公式 \(\frac{\text{深度 CTR 模型训练时间}}{\text{LR 训练时间}}\) 在 Criteo 上比较（CPU 与 GPU 各测一轮），观察：</p>
+  <ol>
+    <li>FNN 的<strong>预训练</strong>使其效率更低；</li>
+    <li>IPNN 和 PNN* 在 GPU 上加速比虽高，但<strong>内积运算本身昂贵</strong>，整体仍计算开销大；</li>
+    <li><strong>DeepFM 在 CPU 和 GPU 测试中都接近最高效率</strong>。</li>
+  </ol>
+
+  <h3>10.5 效果对比（论文 Table 2）</h3>
+  <div style="overflow-x:auto">
+  <table>
+    <tr>
+      <th rowspan="2">模型</th>
+      <th colspan="2">Company*</th>
+      <th colspan="2">Criteo</th>
+    </tr>
+    <tr><th>AUC</th><th>Logloss</th><th>AUC</th><th>Logloss</th></tr>
+    <tr><td>LR</td><td>0.8640</td><td>0.02648</td><td>0.7686</td><td>0.47762</td></tr>
+    <tr><td>FM</td><td>0.8678</td><td>0.02633</td><td>0.7892</td><td>0.46077</td></tr>
+    <tr><td>FNN</td><td>0.8683</td><td>0.02629</td><td>0.7963</td><td>0.45738</td></tr>
+    <tr><td>IPNN</td><td>0.8664</td><td>0.02637</td><td>0.7972</td><td>0.45323</td></tr>
+    <tr><td>OPNN</td><td>0.8658</td><td>0.02641</td><td>0.7982</td><td>0.45256</td></tr>
+    <tr><td>PNN*</td><td>0.8672</td><td>0.02636</td><td>0.7987</td><td>0.45214</td></tr>
+    <tr><td>LR &amp; DNN</td><td>0.8673</td><td>0.02634</td><td>0.7981</td><td>0.46772</td></tr>
+    <tr><td>FM &amp; DNN</td><td>0.8661</td><td>0.02640</td><td>0.7850</td><td>0.45382</td></tr>
+    <tr class="best"><td>DeepFM</td><td>0.8715</td><td>0.02618</td><td>0.8007</td><td>0.45083</td></tr>
+  </table>
+  </div>
+  <p>论文据此提炼出三条结论：</p>
+  <ol>
+    <li><strong>学习特征交互能提升 CTR 预估</strong>：LR（唯一不建模交互的模型）表现最差。DeepFM 相对 LR 在 AUC 上提升 <strong>0.86%</strong>（Company*）与 <strong>4.18%</strong>（Criteo），Logloss 提升 <strong>1.15%</strong> 与 <strong>5.60%</strong>；</li>
+    <li><strong>同时且恰当地学习高低阶交互更好</strong>：DeepFM 优于只学低阶的 FM 和只学高阶的 FNN / IPNN / OPNN / PNN*。相对次优模型，AUC 提升超过 <strong>0.37%</strong>（Company*）与 <strong>0.25%</strong>（Criteo），Logloss 提升超过 <strong>0.42%</strong> 与 <strong>0.29%</strong>；</li>
+    <li><strong>共享特征 embedding 更好</strong>：DeepFM 优于用独立 embedding 学高低阶交互的 LR &amp; DNN 与 FM &amp; DNN。相对这两个模型，AUC 提升超过 <strong>0.48%</strong> 与 <strong>0.33%</strong>，Logloss 提升超过 <strong>0.61%</strong> 与 <strong>0.66%</strong>。</li>
+  </ol>
+  <div class="warn"><span class="tag">业务价值</span>离线 AUC 的小幅提升很可能带来线上 CTR 的显著增长。论文引用 Wide &amp; Deep 的报告：相对 LR，离线 AUC 提升 0.275% 对应线上 CTR 提升 3.9%。Company* 应用商店日流水达数百万美元，CTR 几个百分点的提升每年能带来数百万美元的额外收入。</div>
+</section>
+
+<!-- ============ 11. 超参数 ============ -->
+<section id="hyper">
+  <h2><span class="secno">11.</span>超参数研究</h2>
+  <p>论文在 Company* 数据集上依次研究 5 个超参数（固定其它因素）。</p>
+
+  <h3>11.1 激活函数：relu &gt; tanh（IPNN 除外）</h3>
+  <p>据 [Qu et al., 2016]，relu 和 tanh 比 sigmoid 更适合深度模型。对比 relu 与 tanh，除 IPNN 外，<strong>relu 对所有深度模型都更合适</strong>，可能原因是 relu 带来稀疏性。</p>
+
+  <h3>11.2 Dropout：0.6–0.9 最佳</h3>
+  <p>Dropout [Srivastava et al., 2014] 表示神经元被保留的概率，是平衡精度与复杂度的正则化技术。论文测试 1.0、0.9、0.8、0.7、0.6、0.5：所有模型在 dropout 取 <strong>0.6–0.9</strong> 时达到各自最佳表现。结论：给模型加入合理随机性可以增强鲁棒性。</p>
+
+  <h3>11.3 每层神经元数：200 或 400 为宜</h3>
+  <p>增加神经元数引入复杂度，但<strong>并非总是有益</strong>：DeepFM 从 400 增加到 800 表现平稳；OPNN 从 400 增到 800 反而更差——过复杂的模型容易过拟合。论文数据集中 200 或 400 是好的选择。</p>
+
+  <h3>11.4 隐藏层数：先升后降</h3>
+  <p>增加隐藏层数一开始提升性能，但<strong>继续增加则性能下降</strong>，同样是过拟合现象。</p>
+
+  <h3>11.5 网络形状：constant 最佳</h3>
+  <p>固定隐藏层数与神经元总数，比较四种形状（以 3 层、600 神经元为例）：</p>
+  <table>
+    <tr><th>形状</th><th>结构（3 层共 600 神经元）</th><th>结论</th></tr>
+    <tr><td>constant（恒定）</td><td>200-200-200</td><td><span class="pill good">最佳</span></td></tr>
+    <tr><td>increasing（递增）</td><td>100-200-300</td><td>—</td></tr>
+    <tr><td>decreasing（递减）</td><td>300-200-100</td><td>—</td></tr>
+    <tr><td>diamond（菱形）</td><td>150-300-150</td><td>—</td></tr>
+  </table>
+  <p>"constant" 形状经验上优于其它三种，与先前研究 [Larochelle et al., 2009] 一致。</p>
+</section>
+
+<!-- ============ 12. 交互 ============ -->
+<section id="demo">
+  <h2><span class="secno">12.</span>交互式小实验</h2>
+
+  <div class="demo">
+    <h4>实验一：FM 计算器</h4>
+    <p>拖动滑块改变 4 个特征值 \(x_1 \dots x_4\)（稀疏场景下建议置 0 表示"未出现"），观察一阶项、所有二阶交互项与最终 \(y_{FM}\)、\(\hat{y} = \sigma(y_{FM})\) 的实时变化。</p>
+    <p>固定参数：\(w = [0.5, -0.3, 0.8, 0.2]\)，\(V_1=[0.6,0.9], V_2=[0.3,-0.5], V_3=[0.8,0.4], V_4=[-0.2,0.7]\)（\(k=2\)）。</p>
+    <div class="row"><span class="kv"><label class="k" for="x1">\(x_1\)</label><input type="range" id="x1" min="0" max="1" step="0.05" value="1"><span class="v" id="v1">1</span></span></div>
+    <div class="row"><span class="kv"><label class="k" for="x2">\(x_2\)</label><input type="range" id="x2" min="0" max="1" step="0.05" value="0"><span class="v" id="v2">0</span></span></div>
+    <div class="row"><span class="kv"><label class="k" for="x3">\(x_3\)</label><input type="range" id="x3" min="0" max="1" step="0.05" value="1"><span class="v" id="v3">1</span></span></div>
+    <div class="row"><span class="kv"><label class="k" for="x4">\(x_4\)</label><input type="range" id="x4" min="0" max="1" step="0.05" value="0.5"><span class="v" id="v4">0.5</span></span></div>
+    <table id="fmtable">
+      <tr><th>项</th><th>值</th><th>累加</th></tr>
+    </table>
+    <div class="kv"><span class="k">y_FM</span><span class="v" id="yfm">—</span></div>
+    <div class="kv"><span class="k">&#375; = sigmoid(y_FM)</span><span class="v" id="yhat">—</span></div>
+  </div>
+
+  <div class="demo">
+    <h4>实验二：稀疏输入 → 稠密 Embedding</h4>
+    <p>三个 field：性别（2 值）、时段（3 值）、App 类目（3 值），拼接后为 8 维 one-hot 向量。每个 field 通过共享潜在向量 \(V\)（这里是 k=2）查表得到等长 embedding，再拼接为稠密向量 \(a^{(0)}\)。试试切换各 field 的取值：</p>
+    <div class="row"><label class="k" for="f1">性别</label><select id="f1"><option value="0">男</option><option value="1">女</option></select></div>
+    <div class="row"><label class="k" for="f2">时段</label><select id="f2"><option value="0">早</option><option value="1">午</option><option value="2" selected>晚</option></select></div>
+    <div class="row"><label class="k" for="f3">App 类目</label><select id="f3"><option value="0">游戏</option><option value="1" selected>外卖</option><option value="2">社交</option></select></div>
+    <p><strong>one-hot 输入 x（8 维）：</strong> <span class="mono" id="onehot">[1,0,0,0,1,0,1,0]</span></p>
+    <p><strong>共享潜在向量 V（行 = 每个取值）：</strong></p>
+    <table>
+      <tr><th>取值</th><th>V（k=2）</th></tr>
+      <tr><td>男</td><td class="mono">[0.5, 0.8]</td></tr>
+      <tr><td>女</td><td class="mono">[-0.3, 0.2]</td></tr>
+      <tr><td>早</td><td class="mono">[0.4, 0.6]</td></tr>
+      <tr><td>午</td><td class="mono">[0.1, -0.7]</td></tr>
+      <tr><td>晚</td><td class="mono">[0.7, 0.1]</td></tr>
+      <tr><td>游戏</td><td class="mono">[0.9, 0.3]</td></tr>
+      <tr><td>外卖</td><td class="mono">[0.2, -0.4]</td></tr>
+      <tr><td>社交</td><td class="mono">[-0.5, 0.6]</td></tr>
+    </table>
+    <p><strong>拼接后的稠密向量 a(0)：</strong> <span class="mono" id="concat">[0.5, 0.8, 0.7, 0.1, 0.2, -0.4]</span></p>
+    <div class="note"><span class="tag">观察</span>8 维稀疏向量被压缩为 6 维稠密向量；每个 field 无论 one-hot 长度多少，embedding 长度恒为 k=2。这一份 \(V\) 同时就是 FM 二阶项用的潜在向量。</div>
+  </div>
+</section>
+
+<!-- ============ 13. 实现 ============ -->
+<section id="impl">
+  <h2><span class="secno">13.</span>PyTorch 风格实现（完整可读教学代码）</h2>
+  <p>这一节把论文里所有关键点在代码里逐条落到位，并加入现代 CTR 工程实践中的必要环节。三段代码：</p>
+  <ol>
+    <li><strong>A. 数据编码</strong>：类别 field 与连续 field 用<strong>同一份</strong> <code>(ids, vals)</code> 表示（呼应第 3 节的"连续 field 如何得到 embedding"）。</li>
+    <li><strong>B. 模型定义</strong>：FM 一阶/二阶 + Deep 三层 MLP + 共享 \(V\) + 权重初始化。</li>
+    <li><strong>C. 训练与推理</strong>：Adam + 数值稳定的 <code>BCEWithLogitsLoss</code> + AUC/Logloss 评估 + <code>predict_proba</code>。</li>
+  </ol>
+
+  <h3>A. 数据编码：把类别与连续 field 统一成 <code>(ids, vals)</code></h3>
+  <p>论文 §2 说"类别 field 用 one-hot、连续 field 直接用数值或离散化后 one-hot"。工程上更高效的做法：<strong>不显式构造 one-hot 向量</strong>，而是对每个 field 记两件事——</p>
+  <ul>
+    <li><code>ids[j]</code>：这条样本第 \(j\) 个 field 激活的"全局特征索引"（0 到 <code>n_features-1</code>）；</li>
+    <li><code>vals[j]</code>：类别 field 恒为 <code>1.0</code>；连续 field 为归一化后的实数值。</li>
+  </ul>
+  <p>这样 <code>V(ids) * vals</code> 一行同时处理两种情况：类别 → 取一行 \(V_i\)；连续 → \(x_j \cdot V_j\)（缩放共享向量）。</p>
+  <pre><code class="language-python"># =============================================================================
+# A. 特征编码：把 m 个 field 的原始取值统一转成 (ids, vals) 对
+#    ─ 目的：无论类别 / 连续标量 / 连续分桶，都走同一条 embedding 查表路径
+#    ─ 好处：模型代码不需要 if-else 分支处理不同 field 类型
+# =============================================================================
+import numpy as np              # 只用来做小规模数据构造、演示；真实训练用 pandas / polars
+import torch                    # 张量库；DeepFM 全部在此实现
+
+
+class FeatureIndexer:
+    """给每个 field 分配一段连续的全局 index 区间。
+
+    数据流：原始 dict → encode_row → (ids, vals) → nn.Embedding 查表 → embedding
+
+    ─── 区间分配规则 ────────────────────────────────────────────
+    field 类型         区间长度            vals 里放什么          embedding 语义
+    ─────────────    ─────────────      ────────────────     ────────────────
+    "cat"            该 field 词表大小    1.0（激活标记）        选中那一行 V
+    "num"            1（整段只 1 行）     实数值（如 age=0.25）  x·V  → 缩放同一向量
+    "num_bucket"     分桶数              1.0（激活桶）          选中桶对应的 V
+
+    这样最终 n_features = 各 field 区间长度之和，即 nn.Embedding 表的行数。
+    ────────────────────────────────────────────────────────────
+    """
+
+    def __init__(self, field_specs):
+        """
+        参数
+        ----
+        field_specs : List[Tuple[name, kind, cardinality_or_None]]
+            name          : field 名（仅用于可读性 & 从 dict 里取值）
+            kind          : "cat" | "num" | "num_bucket"
+            cardinality   : 词表 / 桶数；对 "num" 传 None 即可，内部按 1 处理
+        """
+        self.field_specs = field_specs
+        self.offsets = []                    # 每个 field 在全局 index 空间中的起点
+        offset = 0                           # 累积偏移量，按 field 顺序自动增长
+
+        for _, kind, card in field_specs:
+            self.offsets.append(offset)      # 记下当前 field 的起点
+            # 连续标量只占 1 行（整个 field 共享同一个 V_j），其它按词表/桶数分配
+            offset += card if kind != "num" else 1
+
+        self.n_features = offset             # 全局特征总数 → nn.Embedding 行数
+        self.n_fields   = len(field_specs)   # field 数 m → embedding 拼接后维度 = m*k
+
+    def encode_row(self, row):
+        """把一条原始样本 (dict 形式) 编码成两个长度 m 的列表。
+
+        返回
+        ----
+        ids  : List[int]   长度 m；每个元素是激活的全局特征 index
+        vals : List[float] 长度 m；类别/分桶恒 1；连续标量为实数值
+        """
+        ids, vals = [], []
+
+        # 按 field 定义顺序遍历；zip 保证 offset 与 spec 对齐
+        for (name, kind, _), off in zip(self.field_specs, self.offsets):
+            v = row[name]                    # 从原始 dict 里取该 field 的原始值
+
+            if kind == "cat":
+                # 类别：v 已是 0..card-1 的整数编号；加 offset 得到全局 index
+                ids.append(off + int(v))
+                vals.append(1.0)             # one-hot 语义 → 激活位置的值恒 1
+
+            elif kind == "num":
+                # 连续标量：整个 field 只有一行 V_j，全局 index 就是起点本身
+                ids.append(off)
+                # 关键！vals 装实数值，实现 e_j = x_j * V_j（第 3 节 note 的"缩放"）
+                # 前提：v 已在数据预处理阶段归一化到合适尺度（如 min-max 或 z-score）
+                vals.append(float(v))
+
+            elif kind == "num_bucket":
+                # 连续 → 分桶后走"类别"路径；每个桶有独立 V，可学非线性关系
+                # 分桶策略（等宽、等频、模型 gini 分裂）在此之前完成
+                ids.append(off + int(v))
+                vals.append(1.0)
+
+            else:
+                raise ValueError(f"未知 field kind: {kind}")
+
+        return ids, vals
+
+
+def make_batch(indexer, rows, labels, device="cpu"):
+    """把若干原始样本打包成模型可直接吃的 batch tensor。
+
+    形状约定
+    --------
+    ids  : LongTensor  [B, m]   索引类型必须是 long（nn.Embedding 的要求）
+    vals : FloatTensor [B, m]   实数值 / 激活标记，float32 即可
+    y    : FloatTensor [B]      标签，BCEWithLogitsLoss 要求 float
+    """
+    ids_batch, vals_batch = [], []
+    for row in rows:
+        ids, vals = indexer.encode_row(row)  # 每条样本单独编码
+        ids_batch.append(ids)
+        vals_batch.append(vals)
+
+    # 一次性构造张量比逐条 stack 快得多；device 参数支持 GPU 训练
+    ids_t  = torch.tensor(ids_batch,  dtype=torch.long,  device=device)   # [B, m]
+    vals_t = torch.tensor(vals_batch, dtype=torch.float, device=device)   # [B, m]
+    y_t    = torch.tensor(labels,     dtype=torch.float, device=device)   # [B]
+    return ids_t, vals_t, y_t
+
+
+# ─── 使用示例：混合 3 种 field（类别 + 连续标量 + 连续分桶） ──────────────
+FIELDS = [
+    # (field 名, 类型,        词表/桶数)
+    ("gender",  "cat",        2),     # 男(0)/女(1)，词表大小 2 → 占 index 0..1
+    ("age",     "num",        None),  # 连续标量，需预先归一化到 ~[0,1] → 占 index 2
+    ("hour",    "num_bucket", 24),    # 小时分 24 桶 → 占 index 3..26；能学"饭点效应"
+]
+indexer = FeatureIndexer(FIELDS)
+print(indexer.n_features)          # → 2 + 1 + 24 = 27（Embedding 表共 27 行）
+print(indexer.offsets)             # → [0, 2, 3]（每个 field 的起始 index）
+
+# 构造 2 条样本演示编码结果
+rows   = [{"gender": 0, "age": 0.25, "hour": 12},   # 男 / age 归一化后 0.25 / 中午 12 点
+          {"gender": 1, "age": 0.60, "hour": 19}]   # 女 / age 归一化后 0.60 / 晚 7 点
+labels = [0, 1]                                       # 是否点击
+ids, vals, y = make_batch(indexer, rows, labels)
+
+# 编码结果解读：
+#   ids[0]  = [0(男),  2(age 那一行),  3+12=15(小时桶 12)]
+#   vals[0] = [1.0,    0.25(实数值!),  1.0]
+#   ids[1]  = [1(女),  2,              3+19=22]
+#   vals[1] = [1.0,    0.60,           1.0]
+</code></pre>
+
+  <div class="note"><span class="tag">要点</span>类别、连续标量、连续分桶三种 field 走的是<strong>同一条 embedding 查表路径</strong>，差别只在 <code>vals</code>：类别与分桶恒为 1（"lookup"），连续标量装实数值（"scale"）。这正是第 3 节 note 里 \(e_j = \sum_{i \in \text{field}} x_i V_i\) 的工程化落地。</div>
+
+  <h3>B. 模型定义：FM + Deep + 共享 V</h3>
+  <pre><code class="language-python"># =============================================================================
+# B. DeepFM 模型
+#    ─ 三个组成：FM 一阶（w）+ FM 二阶（V 的内积）+ Deep MLP（V 拼接后过 MLP）
+#    ─ 关键设计：FM 二阶与 Deep 输入共享同一张 V 表（论文 §2.1 核心贡献）
+#    ─ 前向输出未过 sigmoid 的 logit，配合 BCEWithLogitsLoss 数值稳定
+# =============================================================================
+import torch
+import torch.nn as nn
+
+
+class DeepFM(nn.Module):
+    """论文《DeepFM: A Factorization-Machine based Neural Network for CTR Prediction》
+    (Guo et al., IJCAI 2017) 的教学实现。
+
+    参数说明
+    --------
+    n_features : int
+        全局特征总数（= FeatureIndexer.n_features）。
+        对应 embedding 表 w 和 V 的行数。
+    n_fields : int
+        field 数 m。Deep 分支拼接后 embedding 长度 = m * k。
+    k : int
+        潜在向量维度。论文 §3 实验取 k=10；大 k 表达力强但参数量线性增长。
+    hidden : Sequence[int]
+        MLP 隐藏层宽度。论文 §11.5 结论：constant 形状 (400,400,400) 最佳；
+        避免菱形/递增/递减形状。
+    dropout : float
+        隐藏层 dropout 概率（丢弃率，PyTorch 语义与论文相反：
+        论文的 "keep prob" = 1 - PyTorch dropout p）。
+        论文 §11.2 结论：keep_prob 0.6–0.9 最佳 ⇒ 这里传 0.1–0.4。
+    """
+
+    def __init__(self, n_features, n_fields, k=10,
+                 hidden=(400, 400, 400), dropout=0.3):
+        super().__init__()
+
+        # 保存构造参数，便于外部读取模型规格
+        self.n_features = n_features
+        self.n_fields   = n_fields
+        self.k          = k
+
+        # ─── FM 一阶权重表 w ∈ R^{n_features × 1} ─────────────────────
+        # 每个全局特征 index 对应一个标量权重 w_i。
+        # 用 nn.Embedding 是查表最快的方式（避免显式 one-hot × 权重矩阵乘法）。
+        self.w = nn.Embedding(n_features, 1)
+
+        # ─── 潜在向量表 V ∈ R^{n_features × k}  ★ 关键：全模型共享 ★ ────
+        # 这一张表同时承担两个角色：
+        #   (1) FM 二阶交互项中的 ⟨V_i, V_j⟩ 内积计算
+        #   (2) Deep 组件的输入 embedding（拼接后送入 MLP）
+        # 论文 §2.1: "the latent feature vectors (V) in FM now serve as network
+        # weights which are learned and used to compress the input field vectors
+        # to the embedding vectors."
+        self.V = nn.Embedding(n_features, k)
+
+        # 全局偏置 b_0（论文式 (2) "we omit a constant offset for simplicity"，
+        # 实现里保留有助于校准输出概率的先验）
+        self.bias = nn.Parameter(torch.zeros(1))
+
+        # ─── Deep 组件：MLP 结构定义 ─────────────────────────────────
+        # 输入维度 = m × k（m 个 field 各自 k 维 embedding 拼接后的长度）
+        # 输出维度 = 1（一个 logit 标量）
+        # 例：m=3, k=10, hidden=(400,400,400) → 30 → 400 → 400 → 400 → 1
+        dims = [n_fields * k] + list(hidden) + [1]
+        self.mlp_layers = nn.ModuleList(
+            [nn.Linear(dims[i], dims[i + 1]) for i in range(len(dims) - 1)]
+        )
+        self.dropout = nn.Dropout(p=dropout)   # 训练时才生效，eval() 自动关闭
+        self.act     = nn.ReLU()               # 论文 §11.1: relu 优于 tanh（IPNN 除外）
+
+        # 权重初始化（默认的 Linear kaiming_uniform 对深层网络够用，
+        # 但对 embedding 表使用默认容易让早期 logit 过大 → 训练不稳定）
+        self._init_weights()
+
+    def _init_weights(self):
+        """自定义初始化。经验值：
+        - 一阶 w 用极小方差（1e-4）→ 初始 logit ≈ bias，训练早期非常稳定
+        - 潜在向量 V 用小方差（1e-2）→ 二阶项 ⟨V_i, V_j⟩ 初始几近 0
+        - MLP 用 Xavier uniform → 前向/反向方差匹配，标准做法
+        """
+        nn.init.normal_(self.w.weight, mean=0.0, std=1e-4)
+        nn.init.normal_(self.V.weight, mean=0.0, std=1e-2)
+        for lin in self.mlp_layers:
+            nn.init.xavier_uniform_(lin.weight)
+            nn.init.zeros_(lin.bias)
+
+    # ─────────────────────────────────────────────────────────────────
+    # FM 组件：一阶项 + 二阶项
+    #   二阶项使用平方差恒等式，把 O(m²·k) 降到 O(m·k)
+    #     Σ_{i&lt;j} ⟨V_i, V_j⟩ x_i x_j
+    #       = ½ Σ_f [ (Σ_i v_{if} x_i)²  -  Σ_i (v_{if} x_i)² ]
+    #   直觉：(Σ v x)² 展开后包含所有交叉项 2·v_i v_j x_i x_j，
+    #         减去平方项 Σ (v x)² 恰好剩 Σ_{i≠j} v_i v_j x_i x_j，
+    #         再除 2 得配对项。详见教程第 5.2 节。
+    # ─────────────────────────────────────────────────────────────────
+    def fm_forward(self, ids, vals):
+        """
+        输入
+        ----
+        ids  : LongTensor  [B, m]   每个 field 激活的全局特征 index
+        vals : FloatTensor [B, m]   类别/分桶 = 1.0；连续标量 = 实数值
+
+        输出
+        ----
+        logit : FloatTensor [B]     y_FM（未过 sigmoid）
+        """
+        # ─ 一阶项：Σ w_i · x_i + b_0 ─
+        # self.w(ids) 形状 [B, m, 1]，squeeze(-1) 后与 vals 形状对齐 [B, m]
+        # 沿 field 维度求和后加上全局偏置 → [B]
+        first_order = (self.w(ids).squeeze(-1) * vals).sum(dim=1) + self.bias  # [B]
+
+        # ─ 二阶项：向量化平方差恒等式 ─
+        # 第 1 步：查表 + 缩放。V(ids) → [B, m, k]，乘上 vals 广播 → [B, m, k]
+        #   类别 field：vals=1，等价于纯查表
+        #   连续 field：vals=x，等价于 x·V（教程第 3 节 note 的核心）
+        vx = self.V(ids) * vals.unsqueeze(-1)      # [B, m, k]
+
+        # 第 2 步：对 field 维度求和后逐元素平方 → (Σ_i v_{if} x_i)²
+        sum_square = vx.sum(dim=1).pow(2)          # [B, k]
+
+        # 第 3 步：逐元素平方后再对 field 维度求和 → Σ_i (v_{if} x_i)²
+        square_sum = vx.pow(2).sum(dim=1)          # [B, k]
+
+        # 第 4 步：相减 → 得到每个 latent 分量 f 上的二阶交互贡献
+        #         再对 k 求和 → 得到样本级二阶交互标量
+        #         系数 0.5 来自恒等式推导（详见教程第 5.2 节）
+        second_order = 0.5 * (sum_square - square_sum).sum(dim=1)   # [B]
+
+        return first_order + second_order          # [B]，即论文式 (2) 的 y_FM
+
+    # ─────────────────────────────────────────────────────────────────
+    # Deep 组件：共享 V 拼接后 → MLP → 1 维 logit
+    # ─────────────────────────────────────────────────────────────────
+    def deep_forward(self, ids, vals):
+        """
+        输出
+        ----
+        logit : FloatTensor [B]   y_DNN（未过 sigmoid）
+        """
+        # ★ 关键：这里用的是同一张 self.V，与 fm_forward 共享参数 ★
+        # 这也是 DeepFM 相对 FNN / Wide&Deep 的核心区别：反向传播时
+        # 二阶交互和高阶交互的梯度会同时作用在 V 上，共同塑造特征表示。
+        e = self.V(ids) * vals.unsqueeze(-1)       # [B, m, k]
+
+        # 拼接 embedding：论文式 (3) 的 a^(0) = [e_1, e_2, ..., e_m]
+        # reshape 把 [B, m, k] → [B, m·k]（m 个向量首尾相连）
+        h = e.reshape(e.size(0), -1)               # [B, m·k]
+
+        # 逐层前向：Linear → ReLU → Dropout（最后一层不加激活/dropout）
+        # 论文式 (4): a^{(l+1)} = σ(W^{(l)} a^{(l)} + b^{(l)})
+        for lin in self.mlp_layers[:-1]:
+            h = self.dropout(self.act(lin(h)))     # 训练时 dropout 生效，eval 时自动关
+
+        # 输出层：只做线性变换，返回 logit（不过激活）
+        # 因为下游要用 BCEWithLogitsLoss，它内部会做 sigmoid + log 的稳定版本
+        return self.mlp_layers[-1](h).squeeze(-1)  # [B]
+
+    # ─────────────────────────────────────────────────────────────────
+    # 整体前向：y_FM + y_DNN，返回 logit
+    #   注意与论文式 (1) 的差异：论文写 sigmoid(y_FM + y_DNN)，
+    #   但工程实现里 forward 只返回 logit，最终 sigmoid 由
+    #   BCEWithLogitsLoss 内部融合处理（数值稳定，详见 note）。
+    # ─────────────────────────────────────────────────────────────────
+    def forward(self, ids, vals):
+        return self.fm_forward(ids, vals) + self.deep_forward(ids, vals)
+
+    @torch.no_grad()
+    def predict_proba(self, ids, vals):
+        """推理接口：logit → sigmoid 概率，供线上 CTR 打分使用。
+
+        @torch.no_grad() 装饰器 → 关闭梯度追踪，推理更快、显存更省。
+        self.eval() → 关闭 dropout 与 batchnorm 的训练态（本模型无 BN，但仍是好习惯）。
+        """
+        self.eval()
+        return torch.sigmoid(self.forward(ids, vals))
+</code></pre>
+
+  <div class="note"><span class="tag">数值稳定</span><code>forward</code> 返回 <strong>logit（未过 sigmoid）</strong>，训练时配合 <code>BCEWithLogitsLoss</code>——它内部用 log-sum-exp 技巧，比 <code>sigmoid + BCELoss</code> 精度更高、梯度更稳，是 CTR 训练的默认选择。</div>
+
+  <h3>C. 训练与推理：Adam + BCEWithLogits + AUC/Logloss</h3>
+  <pre><code class="language-python"># =============================================================================
+# C. 训练循环 + 评估 + 推理
+#    ─ 损失：BCEWithLogitsLoss（数值稳定，融合 sigmoid + BCE）
+#    ─ 优化器：Adam（论文 §3.1 对所有深度模型的默认选择）
+#    ─ 评估指标：AUC + Logloss（论文 §3.1 完全一致）
+#    ─ 早停：按验证 AUC 保留最优权重，避免过拟合（论文 §11 多次讨论）
+# =============================================================================
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.metrics import roc_auc_score, log_loss
+
+
+def train_epoch(model, loader, optimizer, loss_fn, device):
+    """跑完一个训练 epoch，返回该 epoch 的平均训练损失。"""
+    model.train()                                   # 切换到训练模式（dropout 生效）
+    total_loss, n = 0.0, 0                          # 累积器：loss 加权和 + 样本数
+
+    for ids, vals, y in loader:
+        # 数据搬到目标设备（CPU/GPU）。non_blocking=True 可与 pin_memory 联用提速
+        ids, vals, y = ids.to(device), vals.to(device), y.to(device)
+
+        # 前向：得到 logit，未过 sigmoid
+        logit = model(ids, vals)                    # [B]
+
+        # 损失：BCEWithLogitsLoss 内部用 log-sum-exp 稳定计算
+        #      log_sigmoid(z) 与 log(1-sigmoid(z))，避免溢出
+        loss  = loss_fn(logit, y)
+
+        # 反向 + 更新（三步走的经典 PyTorch 模式）
+        optimizer.zero_grad()                       # 清空上一步累积的梯度
+        loss.backward()                             # 反向传播，计算所有参数的梯度
+        optimizer.step()                            # 按 Adam 规则更新参数
+
+        # 记录本 batch 的加权 loss（× batch 大小，最后除以总样本数得均值）
+        total_loss += loss.item() * y.size(0)
+        n          += y.size(0)
+
+    return total_loss / n                           # 平均样本损失
+
+
+@torch.no_grad()                                    # 整个函数关闭梯度，评估更快
+def evaluate(model, loader, device):
+    """在验证/测试集上计算 AUC 和 Logloss，与论文 §3.1 评估指标完全一致。
+
+    实现细节
+    --------
+    - 用 sklearn 的 metric 而不是自己实现：AUC 涉及排序，边界值处理容易出错
+    - 先收集所有预测再一次性算指标：避免 mini-batch 内计算 AUC 造成的偏差
+    """
+    model.eval()                                    # dropout 关闭；BN 用 running stats
+    ys, ps = [], []                                 # 收集所有真实标签 & 预测概率
+
+    for ids, vals, y in loader:
+        ids, vals = ids.to(device), vals.to(device)
+        # 推理：logit → sigmoid 得到概率；.cpu().numpy() 转到 numpy 供 sklearn 使用
+        p = torch.sigmoid(model(ids, vals)).cpu().numpy()
+        ys.append(y.numpy())
+        ps.append(p)
+
+    y_true = np.concatenate(ys)                     # [N]
+    y_prob = np.concatenate(ps)                     # [N]
+
+    # AUC：越大越好，衡量排序质量（对阈值不敏感）
+    # Logloss：越小越好，衡量概率校准（对阈值敏感）
+    return roc_auc_score(y_true, y_prob), log_loss(y_true, y_prob)
+
+
+def fit(model, train_loader, val_loader, epochs=10, lr=1e-3,
+        weight_decay=1e-5, device="cpu"):
+    """完整训练入口：多 epoch 训练 + 每轮验证 + 早停保留最优模型。
+
+    参数说明
+    --------
+    epochs        : 训练轮数上限。真实数据集通常 3~5 轮即收敛
+    lr            : Adam 学习率。1e-3 是经验默认值，稀疏 embedding 可以放大到 5e-3
+    weight_decay  : L2 正则强度。防止 embedding 过拟合，论文 §11 反复讨论此问题
+    device        : "cpu" / "cuda" / "mps"。真实训练强烈建议 GPU
+    """
+    model.to(device)                                # 把参数搬到目标设备
+
+    # 优化器：Adam 对稀疏 embedding 训练特别友好（自适应学习率 + 动量）
+    # weight_decay 施加 L2 正则，等价于在 loss 里加 (λ/2)·||θ||²
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    # BCEWithLogitsLoss = Sigmoid + BCELoss 的数值稳定融合版
+    # 千万不要写 model.forward 后再 sigmoid 再 BCELoss，那样会有溢出风险
+    loss_fn = nn.BCEWithLogitsLoss()
+
+    # 早停用的状态跟踪：保留验证 AUC 最好那一轮的权重
+    best_auc, best_state = 0.0, None
+
+    for ep in range(1, epochs + 1):
+        # ── 训练一轮 ──
+        tr_loss = train_epoch(model, train_loader, optimizer, loss_fn, device)
+
+        # ── 验证 & 打印 ──
+        val_auc, val_ll = evaluate(model, val_loader, device)
+        print(f"[epoch {ep:>2}] train_loss={tr_loss:.4f}  "
+              f"val_AUC={val_auc:.4f}  val_Logloss={val_ll:.4f}")
+
+        # ── 早停：只要 AUC 有提升就快照当前权重 ──
+        # 用 detach().clone() 是为了断开计算图 + 深拷贝，避免后续训练污染这份快照
+        if val_auc > best_auc:
+            best_auc   = val_auc
+            best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+
+    # 训练结束后恢复到最好那一轮的权重，防止最后几轮过拟合
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    return model
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 端到端最小可跑示例（合成数据）
+#   目的：跑通全链路，不追求真实效果；把注意力放在代码结构而非数据本身
+#   真实项目里：把下面 gen(...) 换成读 Criteo TSV / 自有日志 → DataLoader 即可
+# ═══════════════════════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    # 1) 复用 A 段定义的 FIELDS 和 indexer
+    indexer = FeatureIndexer(FIELDS)
+
+    # 2) 合成一批数据。故意注入两类"信号"，模拟论文里讨论的特征交互：
+    #    - 二阶交互：小时（field） × 是否饭点 → 提升点击率
+    #    - 三阶交互：性别 × 年龄 × 应用类目 → 提升点击率
+    #    这样训练后模型学到的 embedding 应该能反映这些结构
+    rng = np.random.default_rng(42)                 # 固定随机种子便于复现
+
+    def gen(n):
+        """生成 n 条 (row, label) 样本，label 是伯努利采样。"""
+        rows, ys = [], []
+        for _ in range(n):
+            g   = int(rng.integers(0, 2))           # gender: 0=男, 1=女
+            age = float(rng.random())               # age: 已归一化到 [0,1]
+            h   = int(rng.integers(0, 24))          # hour: 0-23
+
+            # 合成点击概率：基线 10%
+            #   + 饭点加 40 个百分点（二阶：小时 × 是否饭点）
+            #   + 男性青少年再加 20 个百分点（三阶：gender × age × ...）
+            p = 0.1
+            p += 0.4 * (h in (11, 12, 19, 20))
+            p += 0.2 * (g == 0 and age &lt; 0.3)
+
+            ys.append(1 if rng.random() &lt; p else 0)  # 按概率 p 采样标签
+            rows.append({"gender": g, "age": age, "hour": h})
+        return rows, ys
+
+    # 训练集 8k，验证集 2k（真实项目通常上亿量级）
+    tr_rows, tr_y   = gen(8000)
+    val_rows, val_y = gen(2000)
+
+    # 3) 数据 → 张量 → DataLoader
+    # DataLoader 负责 shuffle / batch / 多进程加载；训练集务必 shuffle
+    tr_ids,  tr_vals,  tr_y_t  = make_batch(indexer, tr_rows,  tr_y)
+    val_ids, val_vals, val_y_t = make_batch(indexer, val_rows, val_y)
+
+    tr_loader  = DataLoader(TensorDataset(tr_ids,  tr_vals,  tr_y_t),
+                            batch_size=256, shuffle=True)
+    val_loader = DataLoader(TensorDataset(val_ids, val_vals, val_y_t),
+                            batch_size=512, shuffle=False)   # 验证集不需 shuffle
+
+    # 4) 实例化 & 训练
+    model = DeepFM(
+        n_features=indexer.n_features,   # 27
+        n_fields  =indexer.n_fields,     # 3
+        k=10,                            # 论文默认
+        hidden=(400, 400, 400),          # constant 形状（论文 §11.5 最佳）
+        dropout=0.3,                     # keep_prob 0.7，落在论文推荐区间
+    )
+    fit(model, tr_loader, val_loader,
+        epochs=10, lr=1e-3, weight_decay=1e-5, device="cpu")
+
+    # 5) 线上推理：一条样本 → CTR 概率
+    #    真实系统里通常一次打分几十/几百条候选，batch 会更大
+    test_rows = [{"gender": 0, "age": 0.2, "hour": 12}]   # 男 / 青少年 / 中午 12 点
+    ids, vals, _ = make_batch(indexer, test_rows, [0])
+    ctr = model.predict_proba(ids, vals).item()
+    print(f"predicted CTR: {ctr:.4f}")     # 该样本命中"饭点"信号，应该显著 &gt; 0.1 基线
+</code></pre>
+
+  <div class="note"><span class="tag">与论文实验的对应</span>
+    <ul style="margin:6px 0">
+      <li>优化器 Adam / 网络 400-400-400 / relu / dropout / \(k=10\) —— 论文 §3.1 参数设置</li>
+      <li>评估指标 AUC + Logloss —— 论文 §3.1</li>
+      <li>共享 <code>self.V</code> 同时喂 FM 二阶和 Deep 拼接 —— 论文 §2.1 关键设计</li>
+      <li>连续 field 走 <code>vals</code> 实数缩放路径 —— 论文 §2 数据表示 + 教程第 3 节 note</li>
+      <li>连续 field 分桶选项 —— 论文 §2 "or a vector of one-hot encoding after discretization"</li>
+    </ul>
+  </div>
+
+  <div class="warn"><span class="tag">生产环境拓展</span>本示例聚焦"能跑通、可读"。真实系统里通常还有：
+    <strong>特征哈希</strong>（超大词表压缩）、<strong>负采样</strong>（正负比例失衡）、<strong>频次过滤</strong>（低频特征归到 UNK）、<strong>分布式训练</strong>（Horovod / DDP）、<strong>ONNX / TorchScript 导出</strong>（线上推理）、以及**在线学习**（FTRL 风格增量更新）。这些不影响模型结构本身，故不在教程范围内。</div>
+</section>
+
+<!-- ============ 14. 结论 ============ -->
+<section id="conclusion">
+  <h2><span class="secno">14.</span>结论、局限与后续影响</h2>
+  <h3>14.1 论文结论</h3>
+  <p>DeepFM 联合训练一个 Deep 组件与一个 FM 组件，性能提升来自三个优势：</p>
+  <ol>
+    <li><strong>无需任何预训练</strong>；</li>
+    <li><strong>同时学习高阶与低阶特征交互</strong>；</li>
+    <li><strong>特征 embedding 共享策略</strong>避免了特征工程。</li>
+  </ol>
+  <p>在两个真实数据集（Criteo 与商业应用商店数据）上：1) DeepFM 在 AUC 与 Logloss 上优于所有 SOTA 模型；2) DeepFM 的效率与最有效率的深度模型相当。</p>
+
+  <h3>14.2 未来工作（论文原文）</h3>
+  <ul>
+    <li>探索引入<strong>池化层（pooling layers）</strong>等策略，增强学习最有用的高阶交互的能力；</li>
+    <li>在 <strong>GPU 集群</strong>上训练 DeepFM，解决大规模问题。</li>
+  </ul>
+
+  <h3>14.3 局限与后续发展（教程作者注）</h3>
+  <ul>
+    <li>DeepFM 的二阶交互仍是 <strong>FM 式内积</strong>（bit-wise 交互发生在潜在向量内积层面）；后续 xDeepFM 等提出 vector-wise 的显式高阶交互（CIN 网络）；</li>
+    <li>DeepFM 未建模<strong>注意力</strong>机制；DIN / AFM / FiBiNET 等后续工作分别从行为序列注意力、交互加权等方向扩展；</li>
+    <li>共享 embedding 的"宽深共享"思想被大量后续模型继承（如 DCN、Deep &amp; Cross Network 系列）。</li>
+  </ul>
+  <p>尽管如此，DeepFM 作为"低阶 + 高阶 + 共享表示 + 免特征工程"这一范式的奠基性工作，至今仍是 CTR 建模的经典基线。</p>
+</section>
+
+<!-- ============ 15. 自测题 ============ -->
+<section id="quiz">
+  <h2><span class="secno">15.</span>自测题</h2>
+  <div class="quiz">
+    <details><summary>Q1. DeepFM 的两个组件分别负责什么阶的特征交互？</summary>
+    <div class="ans">FM 组件负责<strong>低阶</strong>（一阶线性 + 二阶内积）交互；Deep 组件（前馈神经网络）负责<strong>高阶</strong>交互。最终 \(\hat{y} = \text{sigmoid}(y_{FM} + y_{DNN})\)。</div></details>
+    <details><summary>Q2. 相比 Wide &amp; Deep，DeepFM 的核心区别是什么？</summary>
+    <div class="ans">Wide &amp; Deep 的 wide 部分输入依赖<strong>专家特征工程</strong>（人工交叉特征），且 wide/deep 输入分离；DeepFM 用 FM 替代 wide 部分，<strong>两个组件共享同一原始输入与同一份特征 embedding</strong>，无需任何特征工程，端到端训练。</div></details>
+    <details><summary>Q3. 为什么 FM 能学习训练数据中从未/很少出现的特征交互？</summary>
+    <div class="ans">因为<strong>参数共享</strong>：交互参数不是独立的标量 \(w_{ij}\)，而是潜在向量的内积 \(\langle V_i, V_j \rangle\)。只要特征 \(i\) 在任意记录中出现，\(V_i\) 就能被更新；因此从未共现的特征对仍能得到有意义的交互估计，参数从 \(O(d^2)\) 降到 \(O(dk)\)。</div></details>
+    <details><summary>Q4. FNN 的两个局限是什么？</summary>
+    <div class="ans">1) 需要 FM <strong>预训练</strong>，embedding 参数可能过度受 FM 影响，且预训练降低效率；2) FNN <strong>只捕获高阶交互</strong>，忽略对 CTR 同样重要的低阶交互。</div></details>
+    <details><summary>Q5. 超参数研究的五条结论？</summary>
+    <div class="ans">1) 激活函数：<strong>relu 优于 tanh</strong>（IPNN 除外，relu 带来稀疏性）；2) dropout 0.6–0.9 最佳；3) 每层 200 或 400 神经元为宜（过多易过拟合）；4) 隐藏层数先升后降（过拟合）；5) <strong>constant 形状</strong>（如 200-200-200）最佳。</div></details>
+    <details><summary>Q6. 二阶项为什么能算成 O(dk)？</summary>
+    <div class="ans">利用平方差恒等式：\(\sum_{i&lt;j}\langle V_i,V_j\rangle x_i x_j = \frac12 \sum_f [(\sum_i v_{if}x_i)^2 - \sum_i (v_{if}x_i)^2]\)，避免显式枚举 \(O(d^2)\) 个特征对；又因输入稀疏，实际开销只与非零特征数成正比。</div></details>
+  </div>
+</section>
+
+<!-- ============ 16. 参考 ============ -->
+<section id="refs">
+  <h2><span class="secno">16.</span>参考资料</h2>
+  <ul>
+    <li>Guo, Tang, Ye, Li, He. <em>DeepFM: A Factorization-Machine based Neural Network for CTR Prediction</em>. IJCAI 2017. arXiv:1703.04247.</li>
+    <li>Rendle. <em>Factorization Machines</em>. ICDM 2010.（FM 原始论文）</li>
+    <li>Cheng et al. <em>Wide &amp; Deep Learning for Recommender Systems</em>. DLRS 2016.（Wide &amp; Deep 原始论文）</li>
+    <li>Zhang et al. <em>Product-based Neural Networks for User Response Prediction</em>. ICDM 2016.（PNN）</li>
+    <li>Zhang et al. <em>Deep Learning over Multi-field Categorical Data: A Case Study on User Response Prediction</em>. ECIR 2016.（FNN）</li>
+    <li>本地文件：<code>papers/1703.04247.pdf</code>（论文 PDF 原件）</li>
+  </ul>
+</section>
+
+</main>
+</div>
+
+<footer>
+  本教程基于论文 arXiv:1703.04247 编写 · 公式与表格数据均来自论文原文 · 交互实验与伪代码为教程补充内容
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // KaTeX 渲染（离线时公式以原始 LaTeX 文本展示，不影响阅读）
+  if (window.renderMathInElement) {
+    renderMathInElement(document.body, {
+      delimiters: [
+        { left: '\\[', right: '\\]', display: true },
+        { left: '\\(', right: '\\)', display: false }
+      ],
+      throwOnError: false
+    });
+  }
+  initFM();
+  initEmbedding();
+});
+
+/* ---------- 实验一：FM 计算器 ---------- */
+function initFM() {
+  var w = [0.5, -0.3, 0.8, 0.2];
+  var V = [[0.6, 0.9], [0.3, -0.5], [0.8, 0.4], [-0.2, 0.7]];
+  var ids = ['x1', 'x2', 'x3', 'x4'];
+  var vids = ['v1', 'v2', 'v3', 'v4'];
+  function inner(a, b) { return a[0] * b[0] + a[1] * b[1]; }
+  function update() {
+    var x = ids.map(function (id) { return parseFloat(document.getElementById(id).value); });
+    ids.forEach(function (id, i) { document.getElementById(vids[i]).textContent = x[i].toFixed(2); });
+    var tbody = document.getElementById('fmtable');
+    tbody.innerHTML = '<tr><th>项</th><th>值</th><th>累加</th></tr>';
+    var total = 0;
+    // 一阶项
+    for (var i = 0; i < 4; i++) {
+      var t1 = w[i] * x[i];
+      total += t1;
+      var r1 = tbody.insertRow();
+      r1.insertCell().textContent = 'w_' + (i + 1) + '·x_' + (i + 1);
+      r1.insertCell().textContent = t1.toFixed(4);
+      r1.insertCell().textContent = total.toFixed(4);
+    }
+    // 二阶项
+    for (var i2 = 0; i2 < 4; i2++) {
+      for (var j = i2 + 1; j < 4; j++) {
+        var ip = inner(V[i2], V[j]);
+        var t2 = ip * x[i2] * x[j];
+        total += t2;
+        var r2 = tbody.insertRow();
+        r2.insertCell().textContent = '<V_' + (i2 + 1) + ', V_' + (j + 1) + '>·x_' + (i2 + 1) + '·x_' + (j + 1) + '  (' + ip.toFixed(2) + ')';
+        r2.insertCell().textContent = t2.toFixed(4);
+        r2.insertCell().textContent = total.toFixed(4);
+      }
+    }
+    document.getElementById('yfm').textContent = total.toFixed(4);
+    document.getElementById('yhat').textContent = (1 / (1 + Math.exp(-total))).toFixed(4);
+  }
+  ids.forEach(function (id) { document.getElementById(id).addEventListener('input', update); });
+  update();
+}
+
+/* ---------- 实验二：稀疏 -> embedding ---------- */
+function initEmbedding() {
+  var emb = {
+    '0,0': [0.5, 0.8], '0,1': [-0.3, 0.2],
+    '1,0': [0.4, 0.6], '1,1': [0.1, -0.7], '1,2': [0.7, 0.1],
+    '2,0': [0.9, 0.3], '2,1': [0.2, -0.4], '2,2': [-0.5, 0.6]
+  };
+  var fields = [
+    { key: 'f1', len: 2 },
+    { key: 'f2', len: 3 },
+    { key: 'f3', len: 3 }
+  ];
+  function update() {
+    var onehot = [];
+    var concat = [];
+    fields.forEach(function (f, fi) {
+      var v = parseInt(document.getElementById(f.key).value, 10);
+      for (var i = 0; i < f.len; i++) onehot.push(i === v ? 1 : 0);
+      concat = concat.concat(emb[fi + ',' + v]);
+    });
+    document.getElementById('onehot').textContent = '[' + onehot.join(', ') + ']';
+    document.getElementById('concat').textContent = '[' + concat.join(', ') + ']';
+  }
+  fields.forEach(function (f) { document.getElementById(f.key).addEventListener('change', update); });
+  update();
+}
+</script>
+</body>
+</html>
