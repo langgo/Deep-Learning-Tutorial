@@ -1,0 +1,18 @@
+[project]
+name = "pytorch-tutorial"
+version = "0.1.0"
+description = "从零讲透 PyTorch 框架的互动教学程序（Tensor / autograd / nn.Module / 训练循环 + FashionMNIST 端到端实战）"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "jupyter>=1.0",
+    "ipykernel>=6.29",
+    "pandas>=3.0.5",
+]
+
+[tool.uv]
+# 便于本地开发直接使用
+package = false
