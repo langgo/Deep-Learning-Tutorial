@@ -14,6 +14,8 @@ dependencies = [
     "torchinfo>=1.8.0",
     "tensorboard>=2.21.0",
     "captum>=0.9.0",
+    "requests>=2.34.2",
+    "tensordict>=0.14.0",
 ]
 
 [tool.uv]
