@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANN 近似最近邻检索算法总览</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-light: #dbeafe;
+    --tag-tree: #10b981;
+    --tag-lsh: #f59e0b;
+    --tag-quant: #ef4444;
+    --tag-graph: #8b5cf6;
+    --tag-hybrid: #06b6d4;
+    --code-bg: #f3f4f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+      sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+    color: white;
+    padding: 60px 40px 40px;
+    text-align: center;
+  }
+  header h1 {
+    margin: 0 0 12px;
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  header p {
+    margin: 0 auto;
+    max-width: 720px;
+    font-size: 1.05rem;
+    opacity: 0.92;
+  }
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  .intro {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin-bottom: 36px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+  .intro h2 {
+    margin-top: 0;
+    color: var(--accent);
+    font-size: 1.4rem;
+  }
+  .intro p {
+    margin: 10px 0;
+    color: #374151;
+  }
+  .cta-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+  }
+  .btn {
+    display: inline-block;
+    background: var(--accent);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: background 0.2s;
+  }
+  .btn:hover { background: #1d4ed8; }
+  .btn.secondary {
+    background: white;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+  }
+  .btn.secondary:hover {
+    background: var(--accent-light);
+  }
+  .category {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 24px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+  .cat-header {
+    padding: 22px 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cat-tag {
+    padding: 4px 12px;
+    border-radius: 20px;
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .cat-tag.tree { background: var(--tag-tree); }
+  .cat-tag.lsh { background: var(--tag-lsh); }
+  .cat-tag.quant { background: var(--tag-quant); }
+  .cat-tag.graph { background: var(--tag-graph); }
+  .cat-tag.hybrid { background: var(--tag-hybrid); }
+  .cat-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin: 0;
+    flex: 1;
+  }
+  .cat-en {
+    color: var(--muted);
+    font-size: 0.95rem;
+    font-weight: 400;
+  }
+  .cat-desc {
+    padding: 16px 28px 8px;
+    color: #4b5563;
+    font-size: 0.98rem;
+  }
+  .algo-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
+    padding: 16px 28px 28px;
+  }
+  .algo-card {
+    display: block;
+    padding: 18px 20px;
+    background: #fbfcfe;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text);
+    transition: all 0.2s;
+  }
+  .algo-card:hover {
+    border-color: var(--accent);
+    background: var(--accent-light);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+  }
+  .algo-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .algo-en {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+  }
+  .algo-note {
+    color: #374151;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+  .stars {
+    display: inline-block;
+    margin-left: 6px;
+    color: #f59e0b;
+    font-size: 0.85rem;
+  }
+  .footer-note {
+    margin-top: 40px;
+    padding: 20px;
+    background: #fffbeb;
+    border-left: 4px solid #f59e0b;
+    border-radius: 4px;
+    font-size: 0.92rem;
+    color: #78350f;
+  }
+  code {
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 0.9em;
+  }
+  .learning-path {
+    background: linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%);
+    border: 1px solid #a7f3d0;
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+  }
+  .learning-path h2 {
+    margin: 0 0 14px;
+    color: #047857;
+    font-size: 1.25rem;
+  }
+  .path-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 12px;
+    font-size: 0.9rem;
+  }
+  .path-node {
+    background: white;
+    border: 1px solid #d1d5db;
+    padding: 6px 12px;
+    border-radius: 20px;
+    text-decoration: none;
+    color: var(--text);
+    transition: all 0.15s;
+  }
+  .path-node:hover {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .path-arrow { color: #9ca3af; font-weight: 600; }
+  .path-note { color: #6b7280; font-size: 0.85rem; margin: 8px 0 0 0; }
+  details.mini-glossary {
+    background: #f9fafb;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 20px;
+    margin-bottom: 24px;
+  }
+  details.mini-glossary summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #374151;
+    font-size: 1rem;
+  }
+  details.mini-glossary dl {
+    margin: 12px 0 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 8px 20px;
+  }
+  details.mini-glossary dt {
+    font-weight: 600;
+    color: #1f2937;
+    font-size: 0.92rem;
+    margin-top: 6px;
+  }
+  details.mini-glossary dd {
+    margin: 2px 0 0 0;
+    color: #4b5563;
+    font-size: 0.88rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ANN 近似最近邻检索算法总览</h1>
+  <p>Approximate Nearest Neighbor Search — 工程实践中主流算法从原理到实现的可视化教程</p>
+</header>
+
+<div class="container">
+
+  <div class="intro">
+    <h2>为什么需要 ANN？</h2>
+    <p>
+      在推荐系统、向量搜索、图像检索、语义搜索、RAG（检索增强生成）等场景中，我们经常需要在
+      <b>百万甚至十亿级向量</b> 中查找与查询向量最相似的 top-K。<b>精确</b>最近邻（Exact k-NN）在高维数据上
+      时间复杂度接近 O(N)，无法满足生产级的延迟和吞吐要求。
+    </p>
+    <p>
+      <b>ANN</b>（Approximate Nearest Neighbor）通过牺牲少量精度（通常召回率 90-99%）换取几个数量级的性能提升，
+      是现代向量搜索的基石技术。本教程覆盖 <b>5 大类 16 种</b> 工程常用算法，
+      从直观理解、算法原理、交互式演示到工程选型对比。
+    </p>
+    <div class="cta-row">
+      <a class="btn" href="./comparison.html">场景选型对比 →</a>
+      <a class="btn secondary" href="#tree">直接开始学习</a>
+    </div>
+  </div>
+
+  <!-- 学习路径推荐 -->
+  <div class="learning-path">
+    <h2>推荐学习路径</h2>
+    <p style="margin: 0 0 6px; color: #374151;">
+      工程实践角度的最佳学习顺序（由易到难，每一步都为下一步铺垫）：
+    </p>
+    <div class="path-flow">
+      <a class="path-node" href="./1-tree-based/kd-tree.html">KD-Tree</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./1-tree-based/ball-tree.html">Ball Tree</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./1-tree-based/annoy.html">Annoy</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./2-lsh/classic-lsh.html">Classic LSH</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./2-lsh/minhash.html">MinHash</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./2-lsh/simhash.html">SimHash</a>
+    </div>
+    <div class="path-flow">
+      <a class="path-node" href="./3-quantization/sq.html">SQ</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./3-quantization/pq.html">PQ</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./3-quantization/ivf-pq.html">IVF-PQ</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./3-quantization/opq.html">OPQ</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./4-graph-based/hnsw.html"><b>HNSW ★</b></a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./4-graph-based/nsg.html">NSG</a>
+    </div>
+    <div class="path-flow">
+      <a class="path-node" href="./4-graph-based/diskann.html">DiskANN</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./4-graph-based/spann.html">SPANN</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./5-hybrid/ivf-hnsw.html">IVF-HNSW</a>
+      <span class="path-arrow">→</span>
+      <a class="path-node" href="./5-hybrid/scann.html">ScaNN</a>
+    </div>
+    <p class="path-note">
+      量化章节把 <b>IVF-PQ 提前到 OPQ 之前</b> 是有意为之：读者应该先理解 "工程系统怎么落地"（IVF-PQ 是 Faiss 主力方案），
+      再学 OPQ 的 "锦上添花"（正交旋转优化）。图算法从 HNSW 起步（生态主流），依次深入 NSG（省内存）→ DiskANN（磁盘）→ SPANN（更极致）。
+    </p>
+  </div>
+
+  <!-- 通用术语速查 -->
+  <details class="mini-glossary">
+    <summary>关键术语速查（初学者建议先展开浏览一遍）</summary>
+    <dl>
+      <dt>向量 / embedding</dt>
+      <dd>用一组数字表示的对象（图像、文本、用户），维度 D 通常是 64-1024。</dd>
+      <dt>最近邻 K-NN</dt>
+      <dd>在 N 个向量里找距离查询向量最近的 K 个。</dd>
+      <dt>近似 ANN</dt>
+      <dd>不保证找到真正最近的 K 个，但用极小误差换千倍速度。</dd>
+      <dt>召回率 Recall@K</dt>
+      <dd>返回的 K 个里有多少个是真近邻，越接近 100% 越好。</dd>
+      <dt>QPS</dt>
+      <dd>每秒查询数（Queries Per Second）。</dd>
+      <dt>K-Means 聚类</dt>
+      <dd>把 N 个点分成 k 组，每组用组中心代表，反复迭代到收敛。</dd>
+      <dt>Voronoi 单元</dt>
+      <dd>每个中心的"势力范围"——空间中所有离它最近的点组成的区域。</dd>
+      <dt>余弦 / 内积 / L2</dt>
+      <dd>三种常见的距离度量。归一化后余弦与内积等价，也可转 L2。</dd>
+      <dt>维度诅咒</dt>
+      <dd>维度越高，任意两点的距离越趋近相等 → 剪枝失效 → 树结构退化为暴力扫。</dd>
+      <dt>倒排索引 IVF</dt>
+      <dd>先粗聚类分桶，查询时只扫少数几个桶（nprobe 个），跳过大量数据。</dd>
+      <dt>码本 codebook</dt>
+      <dd>量化用的 k 个中心的集合。每个数据点在码本里存"码字 codeword"（索引）。</dd>
+      <dt>LUT 查找表</dt>
+      <dd>预计算 M 段 × k 个的距离表，查询时用 M 次查表+加法算近似距离。</dd>
+      <dt>邻近图 proximity graph</dt>
+      <dd>每个向量做节点，与近邻建边，查询时贪心/beam search 跳转。</dd>
+      <dt>MIPS</dt>
+      <dd>Maximum Inner Product Search，最大内积搜索，推荐系统主流场景。</dd>
+    </dl>
+  </details>
+
+  <!-- 1. Tree-based -->
+  <div class="category" id="tree">
+    <div class="cat-header">
+      <span class="cat-tag tree">1</span>
+      <h3 class="cat-title">基于树的方法 <span class="cat-en">Tree-based</span></h3>
+    </div>
+    <div class="cat-desc">
+      通过递归划分空间构建树结构，查询时沿树下降 + 回溯剪枝。经典而直观，低维（&lt;20）效果好，
+      高维退化明显。工业界常见于静态/只读服务。
+    </div>
+    <div class="algo-list">
+      <a class="algo-card" href="./1-tree-based/kd-tree.html">
+        <div class="algo-name">KD-Tree</div>
+        <div class="algo-en">K-Dimensional Tree</div>
+        <div class="algo-note">最经典的空间划分树，轴对齐分割。低维近似最优，高维维度诅咒。</div>
+      </a>
+      <a class="algo-card" href="./1-tree-based/ball-tree.html">
+        <div class="algo-name">Ball Tree / VP-Tree</div>
+        <div class="algo-en">Ball Tree / Vantage Point Tree</div>
+        <div class="algo-note">以质心 + 半径划分嵌套球，支持任意度量，中等维度优于 KD-Tree。</div>
+      </a>
+      <a class="algo-card" href="./1-tree-based/annoy.html">
+        <div class="algo-name">Annoy <span class="stars">★ Spotify</span></div>
+        <div class="algo-en">Approximate Nearest Neighbors Oh Yeah</div>
+        <div class="algo-note">随机投影树森林，支持 mmap，构建后只读，静态服务经典选择。</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- 2. LSH -->
+  <div class="category" id="lsh">
+    <div class="cat-header">
+      <span class="cat-tag lsh">2</span>
+      <h3 class="cat-title">基于哈希的方法 <span class="cat-en">Locality Sensitive Hashing</span></h3>
+    </div>
+    <div class="cat-desc">
+      设计"局部敏感"的哈希族——相似向量以高概率碰撞、不相似的以低概率碰撞。内存占用小，
+      理论保证明确，适合超大规模和流式数据。
+    </div>
+    <div class="algo-list">
+      <a class="algo-card" href="./2-lsh/classic-lsh.html">
+        <div class="algo-name">经典 LSH</div>
+        <div class="algo-en">Random Projection / p-stable LSH</div>
+        <div class="algo-note">欧氏/余弦距离的随机超平面投影哈希，AND-OR 组合放大间隙。</div>
+      </a>
+      <a class="algo-card" href="./2-lsh/minhash.html">
+        <div class="algo-name">MinHash</div>
+        <div class="algo-en">Min-wise Hashing</div>
+        <div class="algo-note">Jaccard 相似度估计的黄金方法，用于文本/集合去重、聚类。</div>
+      </a>
+      <a class="algo-card" href="./2-lsh/simhash.html">
+        <div class="algo-name">SimHash <span class="stars">★ Google</span></div>
+        <div class="algo-en">Similarity Hashing</div>
+        <div class="algo-note">Google 网页去重，加权符号哈希 → 汉明距离比较。</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- 3. Quantization -->
+  <div class="category" id="quantization">
+    <div class="cat-header">
+      <span class="cat-tag quant">3</span>
+      <h3 class="cat-title">基于量化的方法 <span class="cat-en">Quantization</span></h3>
+    </div>
+    <div class="cat-desc">
+      把高维浮点向量压缩为紧凑的编码（几字节），用查找表快速估算距离。内存压缩极高（16-64x），
+      是十亿级向量索引的必选武器。Faiss 的核心方案。
+    </div>
+    <div class="algo-list">
+      <a class="algo-card" href="./3-quantization/pq.html">
+        <div class="algo-name">PQ <span class="stars">★★</span></div>
+        <div class="algo-en">Product Quantization</div>
+        <div class="algo-note">向量切段独立聚类，LUT 查表加速。Jégou 2011 经典论文。</div>
+      </a>
+      <a class="algo-card" href="./3-quantization/opq.html">
+        <div class="algo-name">OPQ</div>
+        <div class="algo-en">Optimized PQ</div>
+        <div class="algo-note">PQ 前学习一个旋转矩阵，降低量化误差，通常提升 5-15% 召回。</div>
+      </a>
+      <a class="algo-card" href="./3-quantization/ivf-pq.html">
+        <div class="algo-name">IVF-PQ / IVFADC <span class="stars">★★★</span></div>
+        <div class="algo-en">Inverted File + Product Quantization</div>
+        <div class="algo-note">Faiss 的主力方案：IVF 粗聚类倒排 + PQ 精排。十亿级向量首选。</div>
+      </a>
+      <a class="algo-card" href="./3-quantization/sq.html">
+        <div class="algo-name">SQ</div>
+        <div class="algo-en">Scalar Quantization</div>
+        <div class="algo-note">最简单的量化：float32 → int8/int4，4-8x 压缩几乎无损。</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- 4. Graph-based -->
+  <div class="category" id="graph">
+    <div class="cat-header">
+      <span class="cat-tag graph">4</span>
+      <h3 class="cat-title">基于图的方法 <span class="cat-en">Graph-based</span></h3>
+    </div>
+    <div class="cat-desc">
+      每个向量作为节点，与近邻节点建边形成邻近图；查询时从入口点开始贪心/beam 搜索。
+      <b>当前召回-延迟最好的方案之一</b>，Milvus、Qdrant、Weaviate、pgvector、Elasticsearch(Lucene)、Vespa 等主流向量数据库均以 HNSW 为主力索引。
+    </div>
+    <div class="algo-list">
+      <a class="algo-card" href="./4-graph-based/hnsw.html">
+        <div class="algo-name">HNSW <span class="stars">★★★★</span></div>
+        <div class="algo-en">Hierarchical Navigable Small World</div>
+        <div class="algo-note">多层跳表式邻近图，Malkov 2016 (arXiv) / TPAMI 2018，向量数据库事实标准。</div>
+      </a>
+      <a class="algo-card" href="./4-graph-based/nsg.html">
+        <div class="algo-name">NSG / NSSG</div>
+        <div class="algo-en">Navigating Spreading-out Graph</div>
+        <div class="algo-note">单层图，MRNG 选边规则去除冗余边，Fu et al. VLDB 2019，内存比 HNSW 更省。</div>
+      </a>
+      <a class="algo-card" href="./4-graph-based/diskann.html">
+        <div class="algo-name">DiskANN / Vamana <span class="stars">★ 微软</span></div>
+        <div class="algo-en">Disk-Resident ANN</div>
+        <div class="algo-note">图存 SSD，alpha 剪枝生成"长跳边"，单机十亿级低成本部署。</div>
+      </a>
+      <a class="algo-card" href="./4-graph-based/spann.html">
+        <div class="algo-name">SPANN <span class="stars">★ 微软</span></div>
+        <div class="algo-en">Space Partition tree + Neighborhood Graph</div>
+        <div class="algo-note">内存粗聚类 head + 磁盘 posting list，NeurIPS 2021。</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- 5. Hybrid -->
+  <div class="category" id="hybrid">
+    <div class="cat-header">
+      <span class="cat-tag hybrid">5</span>
+      <h3 class="cat-title">混合方案 <span class="cat-en">Hybrid</span></h3>
+    </div>
+    <div class="cat-desc">
+      组合以上多种范式，扬长避短。例如用 HNSW 加速 IVF 中心查找、用 PQ 压缩图节点向量存储。
+      工业界大规模生产系统的最终形态。
+    </div>
+    <div class="algo-list">
+      <a class="algo-card" href="./5-hybrid/ivf-hnsw.html">
+        <div class="algo-name">IVF-HNSW / HNSW-PQ</div>
+        <div class="algo-en">IVF + HNSW + PQ Composite</div>
+        <div class="algo-note">HNSW 加速 IVF 中心查找 + PQ 压缩存储，兼顾内存与速度。</div>
+      </a>
+      <a class="algo-card" href="./5-hybrid/scann.html">
+        <div class="algo-name">ScaNN <span class="stars">★ Google</span></div>
+        <div class="algo-en">Scalable Nearest Neighbors</div>
+        <div class="algo-note">各向异性量化 + 树/图剪枝，ICML 2020，GloVe/SIFT benchmark 领先。</div>
+      </a>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    <b>提示</b>：本教程所有页面均为<b>纯前端可交互</b>实现，无需后端。所有代码在本页面 JavaScript 中真实运行，
+    可以调整参数观察召回率、延迟、内存的动态变化。建议按上方<b>推荐学习路径</b>顺序阅读，每个页面顶部都有
+    "前置阅读"、"术语速查"、"新手引导"、"常见误区"、"下一步学什么"五个卡片保证学习连贯。
+    工程选型可直接跳转 <a href="./comparison.html">场景对比页</a>。
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>IVF-HNSW / HNSW-PQ 混合方案 - 交互式可视化</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #f6f8fb;
+  color: #1f2937;
+  line-height: 1.7;
+  padding: 24px;
+}
+.wrap { max-width: 1200px; margin: 0 auto; }
+.nav { margin-bottom: 20px; }
+.nav a {
+  color: #2563eb;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 6px 12px;
+  background: #dbeafe;
+  border-radius: 6px;
+  border: 1px solid #93c5fd;
+}
+.nav a:hover { background: #bfdbfe; }
+h1 {
+  font-size: 30px;
+  margin-bottom: 8px;
+  color: #0f172a;
+  letter-spacing: 0.3px;
+}
+.subtitle { color: #64748b; margin-bottom: 24px; font-size: 15px; }
+.card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 22px 26px;
+  margin-bottom: 22px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+.card h2 {
+  font-size: 20px;
+  color: #0f172a;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e2e8f0;
+}
+.card h3 {
+  font-size: 16px;
+  color: #1e40af;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+.card p { margin-bottom: 12px; color: #334155; font-size: 15px; }
+.card ul, .card ol { margin-left: 24px; margin-bottom: 12px; }
+.card li { margin-bottom: 6px; color: #334155; }
+.hlbox {
+  background: #f0f9ff;
+  border-left: 4px solid #0ea5e9;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin: 12px 0;
+  font-size: 14px;
+  color: #0c4a6e;
+}
+.tipbox {
+  background: #fefce8;
+  border-left: 4px solid #eab308;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin: 12px 0;
+  font-size: 14px;
+  color: #713f12;
+}
+pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 16px 20px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: "SF Mono", Consolas, Monaco, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 12px 0;
+}
+code.inline {
+  background: #f1f5f9;
+  color: #be185d;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SF Mono", monospace;
+  font-size: 13px;
+}
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 20px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.ctrl { display: flex; flex-direction: column; }
+.ctrl label {
+  font-size: 13px;
+  color: #334155;
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+}
+.ctrl label .val { color: #2563eb; font-weight: 600; }
+.ctrl input[type=range] { width: 100%; }
+.buttons { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 500;
+}
+button:hover { background: #1d4ed8; }
+button.ghost {
+  background: white;
+  color: #2563eb;
+  border: 1px solid #93c5fd;
+}
+button.ghost:hover { background: #eff6ff; }
+button.warn { background: #dc2626; }
+button.warn:hover { background: #b91c1c; }
+canvas {
+  display: block;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.canvas-wrap {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.canvas-wrap > div { flex: 1; min-width: 400px; }
+.legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #475569;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  display: inline-block;
+}
+.stat {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.stat > div {
+  background: #f1f5f9;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border-left: 3px solid #6366f1;
+}
+.stat .k { font-size: 12px; color: #64748b; }
+.stat .v { font-size: 18px; font-weight: 700; color: #0f172a; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 14px;
+}
+table th, table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+table th { background: #f1f5f9; color: #0f172a; font-weight: 600; }
+table tr:hover { background: #f8fafc; }
+.flow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 14px;
+  background: #f8fafc;
+  border-radius: 8px;
+  margin: 12px 0;
+}
+.flow .step {
+  background: white;
+  border: 2px solid #93c5fd;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #1e40af;
+  font-weight: 500;
+}
+.flow .arrow { color: #93c5fd; font-size: 20px; }
+.log-panel {
+  background: #0f172a;
+  color: #7dd3fc;
+  padding: 12px;
+  border-radius: 6px;
+  height: 160px;
+  overflow-y: auto;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.log-panel .l1 { color: #a5f3fc; }
+.log-panel .l2 { color: #fbbf24; }
+.log-panel .l3 { color: #86efac; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+.pill {
+  display: inline-block;
+  background: #ede9fe;
+  color: #6d28d9;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  margin-right: 6px;
+}
+.prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+.prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+.glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+.glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+.glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+.glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+.new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.pitfall h4 { color: #92400e; margin-top: 0; }
+.next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.next-steps a { color: #047857; font-weight: 600; }
+.intuition-box { background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.intuition-box h4 { color: #6d28d9; margin-top: 0; }
+.symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+.symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+.symbol-table th { background: #f9fafb; color: #374151; }
+.critical-warning { background: #fef2f2; border: 2px solid #dc2626; padding: 14px 18px; margin: 20px 0; border-radius: 6px; }
+.critical-warning h4 { color: #991b1b; margin-top: 0; font-size: 1rem; }
+.four-step-intro { background: #fafaf9; border-left: 4px solid #64748b; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.four-step-intro h4 { color: #334155; margin-top: 0; margin-bottom: 8px; }
+.four-step-intro dt { font-weight: 600; color: #1f2937; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="nav"><a href="../index.html">← 返回上级目录</a></div>
+  <h1>IVF-HNSW / HNSW-PQ 混合方案</h1>
+  <p class="subtitle">用 HNSW 加速 IVF 粗量化中心查找，再用 PQ 压缩候选点的距离计算 —— 大规模 ANN 的工业界主流方案</p>
+
+  <div class="prereq-bar">
+    <b>前置（必读）：</b>
+    <a class="pill" href="../3-quantization/ivf-pq.html">IVF-PQ</a>
+    <a class="pill" href="../4-graph-based/hnsw.html">HNSW</a>
+    <a class="pill" href="../3-quantization/pq.html">PQ</a>
+    <span class="pill" style="border-style:dashed;">residual 残差概念</span>
+  </div>
+
+  <details class="glossary">
+    <summary>关键术语速查（点击展开）</summary>
+    <dl>
+      <dt>IVF（Inverted File Index，倒排索引）</dt>
+      <dd>先把向量空间用 KMeans 聚成 nlist 个桶（Voronoi 单元），查询时只扫描离查询最近的几个桶。等于"先分区再检索"。</dd>
+      <dt>HNSW（Hierarchical Navigable Small World）</dt>
+      <dd>多层邻近图，高层稀疏、低层稠密，从顶层往下贪心搜索，可以把 O(N) 的最近邻查找降到 O(log N)。</dd>
+      <dt>PQ（Product Quantization，乘积量化）</dt>
+      <dd>把 d 维向量切成 M 段子向量，每段独立用小码本（大小 k=256）编码，一个向量只需 M 字节（对比原始 4d 字节），压缩 ~30 倍。</dd>
+      <dt>residual 残差</dt>
+      <dd>数据点减去所在桶的质心：r = x - c。分布集中在 0 附近，方差更小，PQ 量化误差因此显著降低。</dd>
+      <dt>LUT（Look-Up Table，查找表）</dt>
+      <dd>查询到来时先算好 M×k 的距离表；每个候选点只需 M 次表查询 + M 次加法即可得到近似距离，对 SIMD 极其友好。</dd>
+      <dt>posting list（倒排链表）</dt>
+      <dd>属于同一桶的所有向量 id + PQ code 的集合。查询时只遍历命中的 posting。</dd>
+      <dt>Voronoi 单元</dt>
+      <dd>把空间按"离哪个质心最近"划分成的多边形区域，每个区域对应一个 posting。</dd>
+      <dt>nlist / nprobe</dt>
+      <dd>nlist = 桶数量（如 1 万 ~ 100 万）；nprobe = 每次查询要扫描的桶数（如 8 ~ 64）。nlist 越大桶越小、检索越快但训练/内存成本更高；nprobe 越大召回越高但延迟增加。</dd>
+      <dt><b>HNSW-M vs PQ-M（⚠️ 两个 M 含义完全不同！）</b></dt>
+      <dd>HNSW 的 M = 图中每个节点的度数上限（如 16、32），控制图连通度；PQ 的 M = 子向量段数（如 8、16、32），控制码字长度。调参别搞混。</dd>
+    </dl>
+  </details>
+
+  <div class="new-user-tip">
+    <b>新手引导 · 演示阅读顺序</b>：本页有 3 个交互演示，建议按 <b>A → B → C</b> 顺序玩：
+    <ul style="margin-top:6px;">
+      <li><b>演示 A（HNSW 找桶）</b>：观察多层图如何比线性扫描更快找到 nprobe 个中心（第 3 节）。</li>
+      <li><b>演示 B（PQ 桶内估距）</b>：观察 LUT 表如何用 M 次查表 + 加法一次算出候选点的近似距离（第 4 节）。</li>
+      <li><b>演示 C（端到端）</b>：把前两步合并，观察一次完整查询的两阶段流水线（第 5 节）。</li>
+    </ul>
+  </div>
+
+  <div class="four-step-intro">
+    <h4>本方案解决了什么问题</h4>
+    <dl>
+      <dt>痛点</dt>
+      <dd>纯 IVF 的粗量化要线性扫描 nlist 个中心（10 万级别时成瓶颈）；纯 HNSW 在 10 亿级数据上内存爆炸（每点 4d 字节原始向量 + 邻接表）。</dd>
+      <dt>别人的方案</dt>
+      <dd>IVF：中心暴力扫描；HNSW：所有原始向量常驻内存。两者各偏一端，都难以同时满足"大规模 + 高召回 + 低延迟"。</dd>
+      <dt>本方案关键 idea</dt>
+      <dd>用 <b>HNSW 加速 IVF 的中心查找</b>（把粗量化从 O(nlist) 降到 O(log nlist)），再用 <b>PQ 压缩桶内的原始向量</b>（占用降到 ~1/32），两者互补。</dd>
+      <dt>代价</dt>
+      <dd>需要多训练一个 HNSW（只在质心上，规模小）；需要多存 PQ 码本；参数变多（nlist / nprobe / HNSW-M / efSearch / PQ-M / PQ-k）都要一起调。</dd>
+    </dl>
+  </div>
+
+  <div class="critical-warning">
+    <h4>⚠️ 命名警告 —— 本页有两个 M，含义完全无关</h4>
+    <ul style="margin: 4px 0 0 20px;">
+      <li><b>HNSW 的 M</b> = 图中每个节点的度数上限（常见 16、32），控制图密度与检索路径宽度。</li>
+      <li><b>PQ 的 M</b> = 子向量段数（常见 8、16、32），控制码字长度与压缩比。</li>
+    </ul>
+    <p style="margin-top:8px; color:#7f1d1d;">下方两个演示的参数面板里都有 M 滑块，调参时请<b>看清标签</b>（"HNSW M" vs "PQ M"）。</p>
+  </div>
+
+  <table class="symbol-table">
+    <thead><tr><th>符号</th><th>含义</th><th>典型取值 / 说明</th></tr></thead>
+    <tbody>
+      <tr><td>nlist</td><td>IVF 桶数量 = 质心数</td><td>1 万 ~ 100 万，经验值 ≈ 4·√N ~ 16·√N</td></tr>
+      <tr><td>nprobe</td><td>每次查询扫描的桶数</td><td>nlist 的 1% ~ 5%</td></tr>
+      <tr><td>HNSW 的 M</td><td>图中节点度数上限</td><td>16 ~ 32（质心图上）</td></tr>
+      <tr><td>efSearch</td><td>HNSW 查询时的候选集大小</td><td>32 ~ 128</td></tr>
+      <tr><td>PQ 的 M</td><td>子向量段数</td><td>8、16、32；一般取 d/2 ~ d</td></tr>
+      <tr><td>PQ 的 k</td><td>每段码本大小</td><td>常为 256（1 byte/段）</td></tr>
+      <tr><td>residual r</td><td>数据点减桶质心：r = x - c</td><td>PQ 训练与编码的实际输入</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ========== 直观理解 ========== -->
+  <div class="card">
+    <h2>1. 直观理解 —— 分层导航 + 精细量化</h2>
+    <p>想象你要在一个大城市（1 亿个向量）里找一家餐厅（最近邻）。</p>
+    <ul>
+      <li><b>纯 IVF 方案</b>：把城市划分为 <code class="inline">nlist=10000</code> 个片区（聚类中心 = 片区中心），查询时把这 10000 个片区的中心全部对比一遍找最近的几个，再去这些片区里精查。片区多了以后，"选片区"这一步本身就成了瓶颈。</li>
+      <li><b>纯 HNSW 方案</b>：直接在原始向量上建一张多层图，一次搜索。但索引占内存太大（每个点存 32 维原始向量 + 邻接表），10 亿点难以装下。</li>
+      <li><b>IVF-HNSW 混合</b>：用 HNSW 来管理"片区中心"（数量少、内存友好），加速"选片区"；片区内的原始点则用 PQ 压缩到 1/32 大小，用查找表快速算近似距离。</li>
+    </ul>
+    <div class="hlbox">
+      <b>比喻</b>：先坐飞机（HNSW 图导航）到目标城市，再打车（PQ 快速估距）在城市里找到餐厅。飞机路径不需要覆盖每一条街道，只需要连通城市之间的骨架。
+    </div>
+    <p>这个组合让 <b>Faiss-IVF-HNSW</b> 成为 SIFT1B、DEEP1B 等十亿级 benchmark 上的经典基线。</p>
+  </div>
+
+  <!-- ========== 算法原理 ========== -->
+  <div class="card">
+    <h2>2. 算法原理</h2>
+
+    <h3>2.1 IVF 回顾</h3>
+    <p>Inverted File Index 把向量空间聚为 <code class="inline">nlist</code> 个 Voronoi 单元。构建时对全部向量做 KMeans，得到 <code class="inline">nlist</code> 个质心 <code class="inline">c_1..c_nlist</code>；每个点 <code class="inline">x</code> 被分配到最近的质心 <code class="inline">c_i</code>，形成 posting list。查询时：</p>
+    <ol>
+      <li>对查询 <code class="inline">q</code>，找出最近的 <code class="inline">nprobe</code> 个质心（粗量化）</li>
+      <li>把这些 posting list 中的点收集起来，做精排</li>
+    </ol>
+
+    <h3>2.2 瓶颈：粗量化 O(nlist × d)</h3>
+    <p>当 <code class="inline">nlist</code> 从 1 万增长到 100 万时，"扫描全部质心找 top-nprobe"这一步成为不可忽略的开销。<b>IVF-HNSW 的核心思想</b>就是：把这一步替换为在质心集合上的 HNSW 图搜索，把复杂度从 O(nlist) 降到 O(log nlist)。</p>
+
+    <h3>2.3 存储压缩：PQ (Product Quantization)</h3>
+    <p>为了让 posting list 里的向量能塞进内存，通常把每个 <code class="inline">d</code> 维向量切成 <code class="inline">M</code> 段，每段用一个 <code class="inline">k</code>-KMeans 码本编码为 <code class="inline">log2(k)</code> bit。查询时预计算 <code class="inline">M × k</code> 的距离查找表 (ADC, asymmetric distance computation)，每个候选点的距离只需 <code class="inline">M</code> 次加法。</p>
+
+    <div class="intuition-box">
+      <h4>直觉 · 为什么用残差 r = x - c 而不是原始 x？</h4>
+      <p>每个桶内的点减去桶质心 c 后，都变成了"相对于桶中心的偏移"，分布集中在 0 附近，方差变小。<b>PQ 训练一个共享码本对所有桶的残差都适用</b>（不再是每个桶各自一个大码本），并且量化误差显著更小 —— 因为在小范围内的相同码字数覆盖更密。</p>
+      <p style="margin-top:6px;">直白类比：把 "北京朝阳区某点的经纬度"（原始 x）换成"距离朝阳区中心 XX 米"（残差 r），后者数值范围小得多，同样精度的量化更容易做。</p>
+    </div>
+
+    <div class="intuition-box">
+      <h4>直觉 · ADC（Asymmetric Distance Computation）为何这么快</h4>
+      <p>"非对称"指查询侧和数据侧用不同精度：</p>
+      <ul style="margin-top:6px;">
+        <li><b>查询侧</b>：q 保持浮点精确，先算好 <code class="inline">M × k</code> 的 LUT（LUT[m][j] = q 第 m 段到码字 j 的距离平方）。</li>
+        <li><b>数据侧</b>：每个候选点只存 M 个字节的码字 code[m]；估距离时做 <code class="inline">Σ<sub>m</sub> LUT[m][code[m]]</code>，即 M 次内存查表 + M 次加法。</li>
+      </ul>
+      <p style="margin-top:6px;">这个模式对 <b>SIMD 极度友好</b>：LUT 可以塞进 L1 cache，M 次查表用 AVX2/AVX512 的 <code class="inline">vpshufb</code> 指令一次批处理多个候选，是工业界万亿 QPS 检索的基础。</p>
+    </div>
+
+
+    <h3>2.4 完整流程伪代码</h3>
+    <pre>
+Build:
+  1. 抽样 X_train，KMeans 得到 nlist 个质心 C = {c_1, ..., c_nlist}
+  2. 在 C 上构建 HNSW 图 H_c（层数、M_max 等参数独立设置）
+  3. 对每个 x ∈ X：
+       i* = argmin_i ||x - c_i||   （可用 H_c 加速）
+       r  = x - c_{i*}             （residual，残差）
+       code = PQ.encode(r)         （M 字节）
+       inverted_list[i*].append((id, code))
+  4. 训练 PQ 码本时使用残差（对每个 posting 内分布更集中）
+
+Query(q, k):
+  1. 用 H_c 在 C 上做 HNSW 搜索，得到最近的 nprobe 个质心
+     ids_c = HNSW_search(H_c, q, ef=efSearch, top=nprobe)
+  2. cand = []
+  3. for each c_i in ids_c:
+       q_r = q - c_i                  # 残差查询
+       LUT = precompute_LUT(q_r)      # M × k 距离表
+       for (id, code) in inverted_list[c_i]:
+           d_hat = sum_{m=1..M} LUT[m][code[m]]
+           cand.append((id, d_hat))
+  4. 返回 cand 中 d_hat 最小的 k 个（可选：再用原始向量做精排 reranking）
+    </pre>
+
+    <div class="tipbox">
+      <b>关键点</b>：HNSW 用于"选桶"，PQ 用于"桶内快速估距"，两者互补。HNSW 的图规模只有 nlist（几万到百万），PQ 压缩后的 posting 内存开销 = N × M 字节。相比原始向量 N × 4d 节省 ~30 倍。
+    </div>
+  </div>
+
+  <!-- ========== 交互演示 1: HNSW 粗量化 ========== -->
+  <div class="card">
+    <h2>3. 交互演示 A —— HNSW 在质心集合上的搜索</h2>
+    <p><em style="color:#64748b;">目的：亲眼看 HNSW 多层图如何比线性扫描更快找到候选 posting。</em></p>
+    <p>先看第一阶段：查询 <code class="inline">q</code>（红色三角）来到时，如何用 HNSW 快速在 <code class="inline">nlist</code> 个质心中找到最近的 <code class="inline">nprobe</code> 个。左图展示 HNSW 图结构（多层）与搜索路径；右图展示对应的 Voronoi 划分。</p>
+
+    <div class="controls">
+      <div class="ctrl">
+        <label>nlist（质心数）<span class="val" id="v-nlist">40</span></label>
+        <input type="range" id="s-nlist" min="10" max="80" value="40" step="2">
+      </div>
+      <div class="ctrl">
+        <label>HNSW M（图度数）<span class="val" id="v-M">6</span></label>
+        <input type="range" id="s-M" min="2" max="16" value="6" step="1">
+      </div>
+      <div class="ctrl">
+        <label>efSearch<span class="val" id="v-ef">8</span></label>
+        <input type="range" id="s-ef" min="1" max="30" value="8" step="1">
+      </div>
+      <div class="ctrl">
+        <label>nprobe<span class="val" id="v-nprobe">3</span></label>
+        <input type="range" id="s-nprobe" min="1" max="10" value="3" step="1">
+      </div>
+      <div class="ctrl">
+        <label>动画速度<span class="val" id="v-speed">180ms</span></label>
+        <input type="range" id="s-speed" min="30" max="600" value="180" step="10">
+      </div>
+    </div>
+    <div class="buttons">
+      <button id="btn-regen">重新生成质心</button>
+      <button class="ghost" id="btn-hnsw-query">发起 HNSW 查询（点画布也可）</button>
+      <button class="warn" id="btn-hnsw-reset">清除路径</button>
+    </div>
+
+    <div class="canvas-wrap" style="margin-top:16px;">
+      <div>
+        <b style="color:#334155;">HNSW 图 + 搜索路径</b>
+        <canvas id="cv-hnsw" width="540" height="440"></canvas>
+        <div class="legend">
+          <span><span class="dot" style="background:#94a3b8;"></span>Layer 0 边</span>
+          <span><span class="dot" style="background:#0284c7;"></span>Layer ≥1 边</span>
+          <span><span class="dot" style="background:#ef4444;"></span>查询 q</span>
+          <span><span class="dot" style="background:#22c55e;"></span>访问过</span>
+          <span><span class="dot" style="background:#f59e0b;"></span>候选 (top-nprobe)</span>
+        </div>
+      </div>
+      <div>
+        <b style="color:#334155;">Voronoi 划分（同一份质心）</b>
+        <canvas id="cv-voronoi" width="540" height="440"></canvas>
+        <div class="legend">
+          <span><span class="dot" style="background:#e2e8f0;"></span>Voronoi 单元</span>
+          <span><span class="dot" style="background:#a78bfa;"></span>数据点</span>
+          <span><span class="dot" style="background:#f59e0b;"></span>选中 posting</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stat">
+      <div><div class="k">HNSW 访问节点数</div><div class="v" id="stat-visited">-</div></div>
+      <div><div class="k">线性扫描对比</div><div class="v" id="stat-linear">-</div></div>
+      <div><div class="k">加速比</div><div class="v" id="stat-speedup">-</div></div>
+      <div><div class="k">召回中真近邻</div><div class="v" id="stat-recall">-</div></div>
+    </div>
+    <div class="log-panel" id="log-hnsw"></div>
+  </div>
+
+  <!-- ========== 交互演示 2: PQ 精排 ========== -->
+  <div class="card">
+    <h2>4. 交互演示 B —— PQ 在候选 posting 内的近似距离计算</h2>
+    <p><em style="color:#64748b;">目的：理解 LUT 表如何用 M 次查表 + 加法算近似距离。</em></p>
+    <p>第一阶段筛出 <code class="inline">nprobe</code> 个 posting 后，需要对里面的数据点计算距离。PQ 用<b>查找表法</b>：把 d 维向量切成 M 段，每段用码本编码为一个字节，查询时预算 M×k 的距离表，每个点只需 M 次表查询。下方演示切分示意与 ADC 计算。</p>
+
+    <div class="controls">
+      <div class="ctrl">
+        <label>d（向量维度，这里为演示取 2）<span class="val" id="v-dim">2</span></label>
+        <input type="range" id="s-dim" min="2" max="2" value="2" disabled>
+      </div>
+      <div class="ctrl">
+        <label>PQ M（子向量段数）<span class="val" id="v-pqM">2</span></label>
+        <input type="range" id="s-pqM" min="1" max="2" value="2" step="1">
+      </div>
+      <div class="ctrl">
+        <label>PQ k（每段码本大小）<span class="val" id="v-pqk">8</span></label>
+        <input type="range" id="s-pqk" min="4" max="16" value="8" step="1">
+      </div>
+      <div class="ctrl">
+        <label>选中 posting 索引<span class="val" id="v-selpost">0</span></label>
+        <input type="range" id="s-selpost" min="0" max="10" value="0" step="1">
+      </div>
+    </div>
+    <div class="buttons">
+      <button id="btn-pq-train">重新训练 PQ 码本</button>
+      <button class="ghost" id="btn-pq-query">重新计算 ADC</button>
+    </div>
+
+    <div class="canvas-wrap" style="margin-top:16px;">
+      <div>
+        <b style="color:#334155;">PQ 码本 & 编码示意（每维一段）</b>
+        <canvas id="cv-pq" width="540" height="440"></canvas>
+        <div class="legend">
+          <span><span class="dot" style="background:#a78bfa;"></span>残差向量</span>
+          <span><span class="dot" style="background:#0ea5e9;"></span>码本中心</span>
+          <span><span class="dot" style="background:#ef4444;"></span>查询残差</span>
+        </div>
+      </div>
+      <div>
+        <b style="color:#334155;">ADC 距离表 & 排序</b>
+        <canvas id="cv-adc" width="540" height="440"></canvas>
+        <div class="legend">
+          <span><span class="dot" style="background:#fecaca;"></span>大距离</span>
+          <span><span class="dot" style="background:#a7f3d0;"></span>小距离</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stat">
+      <div><div class="k">posting 内点数</div><div class="v" id="stat-postsize">-</div></div>
+      <div><div class="k">原始距离计算次数</div><div class="v" id="stat-flops-orig">-</div></div>
+      <div><div class="k">ADC 加法次数</div><div class="v" id="stat-flops-adc">-</div></div>
+      <div><div class="k">近似最近点 ID</div><div class="v" id="stat-topid">-</div></div>
+    </div>
+  </div>
+
+  <!-- ========== 完整两阶段流程 ========== -->
+  <div class="card">
+    <h2>5. 完整两阶段流程可视化</h2>
+    <p><em style="color:#64748b;">目的：把两步串起来，看端到端召回率。</em></p>
+    <p>把 A、B 两个演示合并成一次完整查询：从 q 出发 → HNSW 找 nprobe 个 posting → 每个 posting 内做 PQ ADC → 全局 top-k。</p>
+    <div class="flow">
+      <div class="step">1. 输入查询 q</div>
+      <div class="arrow">→</div>
+      <div class="step">2. HNSW 搜索质心 (O(log nlist))</div>
+      <div class="arrow">→</div>
+      <div class="step">3. 取 top-nprobe posting</div>
+      <div class="arrow">→</div>
+      <div class="step">4. 对每 posting 计算残差 & 预算 LUT</div>
+      <div class="arrow">→</div>
+      <div class="step">5. ADC 遍历候选点</div>
+      <div class="arrow">→</div>
+      <div class="step">6. 全局 top-k (+ 可选 reranking)</div>
+    </div>
+    <div class="buttons">
+      <button id="btn-e2e-run">一键跑完整流程</button>
+      <button class="ghost" id="btn-e2e-step">单步执行</button>
+    </div>
+    <div style="margin-top:14px;">
+      <canvas id="cv-e2e" width="1100" height="480"></canvas>
+    </div>
+    <div class="stat">
+      <div><div class="k">阶段 1 耗时占比</div><div class="v" id="e2e-t1">-</div></div>
+      <div><div class="k">阶段 2 耗时占比</div><div class="v" id="e2e-t2">-</div></div>
+      <div><div class="k">最终 top-1 ID</div><div class="v" id="e2e-top1">-</div></div>
+      <div><div class="k">真实最近邻 ID</div><div class="v" id="e2e-gt">-</div></div>
+    </div>
+  </div>
+
+  <!-- ========== 性能对比 ========== -->
+  <div class="card">
+    <h2>6. 性能对比示意 (SIFT1M, 内积)</h2>
+    <p>下图展示不同方案在 SIFT1M 上的 recall@10 vs QPS 曲线（<b>示意值，非直测；实际请参考 ann-benchmarks</b>），仅用于说明相对关系。</p>
+    <canvas id="cv-perf" width="1000" height="400"></canvas>
+    <div class="legend">
+      <span><span class="dot" style="background:#ef4444;"></span>Flat（全量精确）</span>
+      <span><span class="dot" style="background:#f59e0b;"></span>IVF-Flat</span>
+      <span><span class="dot" style="background:#22c55e;"></span>HNSW</span>
+      <span><span class="dot" style="background:#2563eb;"></span>IVF-HNSW+PQ</span>
+      <span><span class="dot" style="background:#a855f7;"></span>ScaNN</span>
+    </div>
+    <table style="margin-top:16px;">
+      <thead><tr><th>方案</th><th>Recall@10</th><th>QPS (单线程)</th><th>内存</th><th>特点</th></tr></thead>
+      <tbody>
+        <tr><td>Flat</td><td>1.0</td><td>~200（示意值，非直测；实际请参考 ann-benchmarks）</td><td>1× (原始)</td><td>精确但慢</td></tr>
+        <tr><td>IVF-Flat</td><td>0.95</td><td>~2k（示意值，非直测；实际请参考 ann-benchmarks）</td><td>1×</td><td>粗量化线性开销明显</td></tr>
+        <tr><td>HNSW</td><td>0.98</td><td>~10k（示意值，非直测；实际请参考 ann-benchmarks）</td><td>1.3×（图开销）</td><td>快但内存大</td></tr>
+        <tr><td>IVF-HNSW+PQ</td><td>0.95</td><td>~15k（示意值，非直测；实际请参考 ann-benchmarks）</td><td>~1/16</td><td><b>大规模最佳平衡</b></td></tr>
+        <tr><td>ScaNN</td><td>0.96</td><td>~20k（示意值，非直测；实际请参考 ann-benchmarks）</td><td>~1/8</td><td>各向异性量化 + tree</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== 优缺点 ========== -->
+  <div class="card">
+    <h2>7. 优缺点 & 适用场景</h2>
+    <div class="grid2">
+      <div>
+        <h3>优势</h3>
+        <ul>
+          <li><b>内存友好</b>：PQ 让 10 亿向量能塞进单机内存</li>
+          <li><b>粗量化加速</b>：HNSW 把 O(nlist) 降到 O(log nlist)，nlist 可以做大（如 100 万）从而减小 posting 平均长度</li>
+          <li><b>训练成本低</b>：HNSW 只在质心上建，规模远小于 N</li>
+          <li><b>成熟</b>：Faiss 的 <code class="inline">IndexIVFPQ</code> + <code class="inline">HNSWCoarseQuantizer</code> 组合稳定可用</li>
+        </ul>
+      </div>
+      <div>
+        <h3>劣势</h3>
+        <ul>
+          <li><b>PQ 有损</b>：残差量化误差随 M 增大而减小，但内存也随之增加</li>
+          <li><b>参数多</b>：nlist、nprobe、M、k、efSearch、M_HNSW 需要一起调</li>
+          <li><b>更新代价高</b>：新增点需要重新分配 posting，聚类中心不能频繁重训</li>
+          <li><b>reranking 依赖</b>：高召回场景往往还要保留少量原始向量做二次精排</li>
+        </ul>
+      </div>
+    </div>
+    <h3 style="margin-top:14px;">适用场景</h3>
+    <ul>
+      <li><b>大规模</b>（1 亿 - 100 亿）静态或半静态数据集，如图像特征检索、embedding 召回</li>
+      <li><b>硬件预算有限</b>：需要单机装下几亿向量的场景（如推荐系统的召回索引）</li>
+      <li><b>召回率要求 0.9+ 而非 0.99+</b>：能容忍 PQ 引入的少量误差</li>
+    </ul>
+    <div class="tipbox">
+      <b>调参建议（经验值）</b>：<br>
+      • nlist ≈ 4·√N ~ 16·√N（例如 1 亿点取 40k~160k）<br>
+      • nprobe = nlist × 1% ~ 5%<br>
+      • PQ M = d/2 ~ d，k = 256<br>
+      • HNSW 用于粗量化时 M=32、efSearch=64 通常足够（因为质心数远小于总数据量）
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>8. 常见误区 & 下一步学什么</h2>
+
+    <div class="pitfall">
+      <h4>常见误区</h4>
+      <ol style="margin-top:6px;">
+        <li><b>HNSW-M 和 PQ-M 不是同一个 M</b>：一个控制图度数，一个控制子向量段数，语义完全不同。调参前先确认在改的是哪一个。</li>
+        <li><b>nprobe 大不一定 recall 更高</b>：更多桶意味着更多 PQ 估距，估距误差会引入更多假邻居；到一定阈值后曲线反而平坦甚至下滑。</li>
+        <li><b>HNSW 部分构建慢</b>：nlist 达到几十万或百万级时，训练要几十分钟到几小时，不要以为它一定"轻量"。</li>
+        <li><b>残差 PQ 的码本策略</b>：per-bucket 训练精度高但内存大；共享码本便宜但对分布不均的数据集有损。选错影响召回。</li>
+      </ol>
+    </div>
+
+    <div class="next-steps">
+      <h4 style="color:#065f46; margin-top:0;">下一步学什么</h4>
+      <ul style="margin-top:6px;">
+        <li>想进一步压榨内积召回：看 <a href="./scann.html">ScaNN（各向异性量化）</a> —— 用加权 Lloyd 让码本主动对齐 MIPS 目标。</li>
+        <li>想部署到磁盘 / SSD、单机上亿到十亿：看 <a href="../4-graph-based/diskann.html">DiskANN</a> —— 图 + 磁盘友好布局。</li>
+        <li>想理解本页的两个底层组件：<a href="../4-graph-based/hnsw.html">HNSW 单页详解</a> · <a href="../3-quantization/pq.html">PQ 单页详解</a> · <a href="../3-quantization/ivf-pq.html">IVF-PQ 单页详解</a>。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>9. 相关阅读</h2>
+    <ul>
+      <li>Douze et al., <i>The Faiss library</i>, 2024</li>
+      <li>Baranchuk et al., <i>Revisiting the Inverted Indices for Billion-Scale ANN</i>, ECCV 2018 —— 提出 IVF-HNSW 组合</li>
+      <li>Jegou et al., <i>Product Quantization for Nearest Neighbor Search</i>, TPAMI 2011</li>
+      <li>Malkov & Yashunin, <i>Efficient and robust ANN using HNSW graphs</i>, TPAMI 2018</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+// ========== 全局工具 ==========
+const rand = (a, b) => a + Math.random() * (b - a);
+const dist2 = (a, b) => { const dx=a[0]-b[0], dy=a[1]-b[1]; return dx*dx+dy*dy; };
+const dist = (a, b) => Math.sqrt(dist2(a, b));
+function seed(s) {  // Mulberry32
+  return function() {
+    s |= 0; s = s + 0x6D2B79F5 | 0;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function log(id, msg, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ========== KMeans（用于生成聚类中心） ==========
+function kmeans(points, k, iters, rng) {
+  rng = rng || Math.random;
+  // 随机选 k 个点作为初始
+  const centers = [];
+  const used = new Set();
+  while (centers.length < k) {
+    const i = Math.floor(rng() * points.length);
+    if (!used.has(i)) { used.add(i); centers.push(points[i].slice()); }
+  }
+  for (let it = 0; it < iters; it++) {
+    const bins = Array.from({length: k}, () => []);
+    for (const p of points) {
+      let bi = 0, bd = Infinity;
+      for (let i = 0; i < k; i++) {
+        const d = dist2(p, centers[i]);
+        if (d < bd) { bd = d; bi = i; }
+      }
+      bins[bi].push(p);
+    }
+    for (let i = 0; i < k; i++) {
+      if (bins[i].length === 0) continue;
+      let sx=0, sy=0;
+      for (const p of bins[i]) { sx+=p[0]; sy+=p[1]; }
+      centers[i][0] = sx / bins[i].length;
+      centers[i][1] = sy / bins[i].length;
+    }
+  }
+  return centers;
+}
+
+// ========== HNSW 简化实现（在质心集合上） ==========
+class MiniHNSW {
+  constructor(M) {
+    this.M = M;                 // 邻居数
+    this.M0 = M * 2;            // Layer 0 邻居数
+    this.mL = 1 / Math.log(M);  // 层分布参数
+    this.entry = null;
+    this.layers = [];           // 每层: [{id, neighbors: Set}]
+    this.points = [];           // 全部点
+    this.pointLevel = [];       // 每点最高层
+  }
+  _randomLevel(rng) {
+    return Math.floor(-Math.log(rng() + 1e-9) * this.mL);
+  }
+  _searchLayer(q, ep, ef, layer) {
+    const visited = new Set([ep]);
+    const dEp = dist(this.points[ep], q);
+    const cand = [{id: ep, d: dEp}];  // 待扩展（min-heap 语义，用数组维护）
+    const results = [{id: ep, d: dEp}]; // 目前 ef-nearest（max-heap 语义）
+    const path = [ep];
+    while (cand.length) {
+      cand.sort((a, b) => a.d - b.d);
+      const c = cand.shift();
+      results.sort((a, b) => b.d - a.d);
+      if (c.d > results[0].d && results.length >= ef) break;
+      const neighbors = this.layers[layer].get(c.id) || new Set();
+      for (const nb of neighbors) {
+        if (visited.has(nb)) continue;
+        visited.add(nb);
+        const d = dist(this.points[nb], q);
+        results.sort((a, b) => b.d - a.d);
+        if (d < results[0].d || results.length < ef) {
+          cand.push({id: nb, d});
+          results.push({id: nb, d});
+          if (results.length > ef) { results.sort((a, b) => b.d - a.d); results.shift(); }
+          path.push(nb);
+        }
+      }
+    }
+    results.sort((a, b) => a.d - b.d);
+    return { results, visited: [...visited], path };
+  }
+  insert(p, rng) {
+    const id = this.points.length;
+    this.points.push(p);
+    const lvl = this._randomLevel(rng);
+    this.pointLevel.push(lvl);
+    while (this.layers.length <= lvl) this.layers.push(new Map());
+    for (let l = 0; l <= lvl; l++) {
+      if (!this.layers[l].has(id)) this.layers[l].set(id, new Set());
+    }
+    if (this.entry === null) { this.entry = id; return; }
+    let ep = this.entry;
+    // 从最高层往下贪心找入口
+    const topLevel = this.layers.length - 1;
+    for (let l = topLevel; l > lvl; l--) {
+      const { results } = this._searchLayer(p, ep, 1, l);
+      ep = results[0].id;
+    }
+    // 在 lvl..0 层连接邻居
+    for (let l = Math.min(lvl, topLevel); l >= 0; l--) {
+      const efC = Math.max(this.M, 8);
+      const { results } = this._searchLayer(p, ep, efC, l);
+      const maxDeg = l === 0 ? this.M0 : this.M;
+      const chosen = results.slice(0, maxDeg);
+      for (const c of chosen) {
+        this.layers[l].get(id).add(c.id);
+        this.layers[l].get(c.id).add(id);
+        // 修剪对面
+        if (this.layers[l].get(c.id).size > maxDeg) {
+          // 移除最远
+          const cur = [...this.layers[l].get(c.id)];
+          cur.sort((a, b) => dist(this.points[a], this.points[c.id]) - dist(this.points[b], this.points[c.id]));
+          const keep = new Set(cur.slice(0, maxDeg));
+          for (const k of cur) if (!keep.has(k)) {
+            this.layers[l].get(c.id).delete(k);
+            this.layers[l].get(k).delete(c.id);
+          }
+        }
+      }
+      ep = results[0].id;
+    }
+    // 更新入口
+    if (lvl > (this.pointLevel[this.entry] ?? 0)) this.entry = id;
+  }
+  search(q, ef, topK) {
+    if (this.entry === null) return { results: [], visitedAll: [], pathHi: [], pathLo: [] };
+    let ep = this.entry;
+    const topLevel = this.layers.length - 1;
+    const allVisited = new Set();
+    const pathHi = [];
+    for (let l = topLevel; l >= 1; l--) {
+      const { results, visited, path } = this._searchLayer(q, ep, 1, l);
+      ep = results[0].id;
+      for (const v of visited) allVisited.add(v);
+      for (const v of path) pathHi.push({lvl: l, id: v});
+    }
+    const { results, visited, path } = this._searchLayer(q, ep, ef, 0);
+    for (const v of visited) allVisited.add(v);
+    return {
+      results: results.slice(0, topK),
+      visitedAll: [...allVisited],
+      pathHi,
+      pathLo: path
+    };
+  }
+}
+
+// ========== 全局状态 ==========
+const W = 540, H = 440;
+const state = {
+  centers: [],
+  points: [],
+  postings: [],   // 每个 posting: {centerIdx, points: [...点索引]}
+  hnsw: null,
+  query: null,
+  searchResult: null,
+  rng: seed(42),
+  // PQ 状态
+  pqCodebook: null,   // Array<Array<number>>: codebook[m][k] = float
+  pqCodes: null,      // 每点的 M 位 code
+  pqM: 2,
+  pqK: 8,
+  postingIdx: 0,
+  // 端到端
+  e2eStep: 0,
+};
+
+// ========== 生成质心 + 数据点 ==========
+function generateData(nlist) {
+  state.rng = seed(2024 + nlist);
+  // 生成多簇数据
+  const points = [];
+  const nClusters = 12;
+  const clusterCenters = [];
+  for (let i = 0; i < nClusters; i++) {
+    clusterCenters.push([rand(60, W - 60), rand(50, H - 50)]);
+  }
+  for (let i = 0; i < 600; i++) {
+    const cc = clusterCenters[i % nClusters];
+    const angle = state.rng() * Math.PI * 2;
+    const r = state.rng() * 45;
+    points.push([cc[0] + Math.cos(angle) * r, cc[1] + Math.sin(angle) * r]);
+  }
+  // 均匀撒一些噪声
+  for (let i = 0; i < 100; i++) {
+    points.push([rand(30, W - 30), rand(30, H - 30)]);
+  }
+  state.points = points;
+  // KMeans 得到质心
+  state.centers = kmeans(points, nlist, 15, state.rng);
+  // 分配 posting
+  state.postings = Array.from({length: nlist}, (_, i) => ({centerIdx: i, points: []}));
+  points.forEach((p, idx) => {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < nlist; i++) {
+      const d = dist2(p, state.centers[i]);
+      if (d < bd) { bd = d; bi = i; }
+    }
+    state.postings[bi].points.push(idx);
+  });
+}
+
+function buildHNSW(M) {
+  const h = new MiniHNSW(M);
+  const rng = seed(7);
+  state.centers.forEach(c => h.insert(c, rng));
+  state.hnsw = h;
+}
+
+function pointInVoronoi(x, y, centers) {
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < centers.length; i++) {
+    const d = dist2([x, y], centers[i]);
+    if (d < bd) { bd = d; bi = i; }
+  }
+  return bi;
+}
+
+// ========== 绘制 HNSW 图 ==========
+function drawHNSW() {
+  const cv = document.getElementById('cv-hnsw');
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  // 背景
+  ctx.fillStyle = '#fafbfc';
+  ctx.fillRect(0, 0, W, H);
+  if (!state.hnsw) return;
+  const h = state.hnsw;
+  const centers = state.centers;
+
+  // 画各层边
+  for (let l = 0; l < h.layers.length; l++) {
+    ctx.strokeStyle = l === 0 ? 'rgba(148,163,184,0.35)' : 'rgba(2,132,199,0.55)';
+    ctx.lineWidth = l === 0 ? 0.7 : 1.4;
+    for (const [id, nbs] of h.layers[l]) {
+      const p1 = centers[id];
+      for (const nb of nbs) {
+        if (nb <= id) continue;
+        const p2 = centers[nb];
+        ctx.beginPath();
+        ctx.moveTo(p1[0], p1[1]);
+        ctx.lineTo(p2[0], p2[1]);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // 已访问的节点高亮
+  const visited = new Set(state.searchResult?.visitedAll || []);
+  const topCandidates = new Set((state.searchResult?.results || []).map(r => r.id));
+
+  // 节点
+  centers.forEach((c, i) => {
+    const lvl = h.pointLevel[i];
+    let color = '#94a3b8';
+    if (visited.has(i)) color = '#22c55e';
+    if (topCandidates.has(i)) color = '#f59e0b';
+    // 表示层高的圆环
+    ctx.beginPath();
+    ctx.arc(c[0], c[1], 3 + lvl * 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    if (i === h.entry) {
+      ctx.beginPath();
+      ctx.arc(c[0], c[1], 9, 0, Math.PI * 2);
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  });
+
+  // 搜索路径连线
+  if (state.searchResult?.pathHi?.length || state.searchResult?.pathLo?.length) {
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    const q = state.query;
+    ctx.moveTo(q[0], q[1]);
+    const combined = [...(state.searchResult.pathHi || []).map(x => x.id), ...(state.searchResult.pathLo || [])];
+    for (const id of combined) {
+      const c = centers[id];
+      ctx.lineTo(c[0], c[1]);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // 查询点
+  if (state.query) {
+    const q = state.query;
+    ctx.beginPath();
+    ctx.moveTo(q[0], q[1] - 9);
+    ctx.lineTo(q[0] - 8, q[1] + 6);
+    ctx.lineTo(q[0] + 8, q[1] + 6);
+    ctx.closePath();
+    ctx.fillStyle = '#ef4444';
+    ctx.fill();
+    ctx.strokeStyle = '#7f1d1d';
+    ctx.stroke();
+  }
+}
+
+// ========== 绘制 Voronoi ==========
+function drawVoronoi() {
+  const cv = document.getElementById('cv-voronoi');
+  const ctx = cv.getContext('2d');
+  const nlist = state.centers.length;
+  // 用近似方法：像素级最近邻着色
+  const imgData = ctx.createImageData(W, H);
+  const palette = [];
+  for (let i = 0; i < nlist; i++) {
+    const h = (i * 137.5) % 360;
+    const rgb = hsl2rgb(h, 40, 90);
+    palette.push(rgb);
+  }
+  const selected = new Set((state.searchResult?.results || []).map(r => r.id));
+  for (let y = 0; y < H; y += 2) {
+    for (let x = 0; x < W; x += 2) {
+      let bi = 0, bd = Infinity;
+      for (let i = 0; i < nlist; i++) {
+        const c = state.centers[i];
+        const d = (x - c[0])**2 + (y - c[1])**2;
+        if (d < bd) { bd = d; bi = i; }
+      }
+      let col = palette[bi];
+      if (selected.has(bi)) col = [253, 230, 138]; // 高亮 posting: 淡黄
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+        const idx = ((y + dy) * W + (x + dx)) * 4;
+        imgData.data[idx] = col[0];
+        imgData.data[idx+1] = col[1];
+        imgData.data[idx+2] = col[2];
+        imgData.data[idx+3] = 255;
+      }
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // 画数据点
+  ctx.fillStyle = 'rgba(139,92,246,0.7)';
+  state.points.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // 画质心
+  state.centers.forEach((c, i) => {
+    ctx.beginPath();
+    ctx.arc(c[0], c[1], 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = selected.has(i) ? '#f59e0b' : '#334155';
+    ctx.fill();
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+
+  // 画 query
+  if (state.query) {
+    const q = state.query;
+    ctx.beginPath();
+    ctx.moveTo(q[0], q[1] - 8);
+    ctx.lineTo(q[0] - 7, q[1] + 5);
+    ctx.lineTo(q[0] + 7, q[1] + 5);
+    ctx.closePath();
+    ctx.fillStyle = '#ef4444';
+    ctx.fill();
+    ctx.strokeStyle = '#7f1d1d';
+    ctx.stroke();
+  }
+}
+
+function hsl2rgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(255 * f(0)), Math.round(255 * f(8)), Math.round(255 * f(4))];
+}
+
+// ========== 执行 HNSW 查询 ==========
+async function doHNSWQuery(qx, qy) {
+  if (!state.hnsw) return;
+  state.query = [qx, qy];
+  const ef = parseInt(document.getElementById('s-ef').value);
+  const nprobe = parseInt(document.getElementById('s-nprobe').value);
+  document.getElementById('log-hnsw').innerHTML = '';
+  log('log-hnsw', `发起查询 q = (${qx.toFixed(1)}, ${qy.toFixed(1)})`, 'l1');
+  log('log-hnsw', `从入口点 entry=${state.hnsw.entry} 开始，逐层贪心`, 'l2');
+  const speed = parseInt(document.getElementById('s-speed').value);
+
+  // 分步动画：先高层
+  state.searchResult = { visitedAll: [], results: [], pathHi: [], pathLo: [] };
+  const topLevel = state.hnsw.layers.length - 1;
+  let ep = state.hnsw.entry;
+  for (let l = topLevel; l >= 1; l--) {
+    const r = state.hnsw._searchLayer(state.query, ep, 1, l);
+    ep = r.results[0].id;
+    for (const v of r.visited) if (!state.searchResult.visitedAll.includes(v)) state.searchResult.visitedAll.push(v);
+    for (const v of r.path) state.searchResult.pathHi.push({lvl: l, id: v});
+    log('log-hnsw', `  第 ${l} 层：访问 ${r.visited.length} 节点，最近邻 -> id=${ep} (d=${r.results[0].d.toFixed(2)})`, 'l2');
+    drawHNSW(); drawVoronoi();
+    await sleep(speed);
+  }
+  // Layer 0
+  const r0 = state.hnsw._searchLayer(state.query, ep, ef, 0);
+  for (const v of r0.visited) if (!state.searchResult.visitedAll.includes(v)) state.searchResult.visitedAll.push(v);
+  state.searchResult.pathLo = r0.path;
+  const topN = r0.results.slice(0, nprobe);
+  state.searchResult.results = topN;
+  log('log-hnsw', `  第 0 层：ef=${ef}，访问 ${r0.visited.length} 节点`, 'l3');
+  log('log-hnsw', `选中 nprobe=${nprobe} 个 posting: [${topN.map(t => t.id).join(', ')}]`, 'l3');
+
+  // 计算统计
+  const visited = state.searchResult.visitedAll.length;
+  const linear = state.centers.length;
+  document.getElementById('stat-visited').textContent = visited;
+  document.getElementById('stat-linear').textContent = linear;
+  document.getElementById('stat-speedup').textContent = (linear / visited).toFixed(2) + '×';
+
+  // 召回率：真近邻 top-nprobe vs HNSW top-nprobe
+  const gt = state.centers.map((c, i) => ({id: i, d: dist(state.query, c)})).sort((a, b) => a.d - b.d).slice(0, nprobe);
+  const gtSet = new Set(gt.map(x => x.id));
+  const hit = topN.filter(t => gtSet.has(t.id)).length;
+  document.getElementById('stat-recall').textContent = `${hit}/${nprobe}`;
+
+  drawHNSW(); drawVoronoi();
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ========== PQ 演示 ==========
+function trainPQ() {
+  const M = state.pqM = parseInt(document.getElementById('s-pqM').value);
+  const K = state.pqK = parseInt(document.getElementById('s-pqk').value);
+  // 在 2D 情况下 M=1 就是整向量码本, M=2 就是每维一段
+  // 我们只演示 M=2 的情况
+  const points = state.points;
+  const rng = seed(31);
+  state.pqCodebook = [];
+  state.pqCodes = new Array(points.length).fill(null).map(() => new Array(M).fill(0));
+  for (let m = 0; m < M; m++) {
+    // 提取该段的所有子向量
+    const sub = points.map(p => (M === 2 ? [p[m]] : p));  // M=1 直接用整个 2D
+    const cb = kmeans(sub, K, 15, rng);
+    state.pqCodebook.push(cb);
+    // 编码
+    points.forEach((p, idx) => {
+      const sv = M === 2 ? [p[m]] : p;
+      let bi = 0, bd = Infinity;
+      for (let k = 0; k < K; k++) {
+        const d = distNd(sv, cb[k]);
+        if (d < bd) { bd = d; bi = k; }
+      }
+      state.pqCodes[idx][m] = bi;
+    });
+  }
+}
+
+function distNd(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; s += d * d; }
+  return Math.sqrt(s);
+}
+
+function drawPQ() {
+  const cv = document.getElementById('cv-pq');
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#fafbfc';
+  ctx.fillRect(0, 0, W, H);
+  if (!state.pqCodebook || !state.searchResult) return;
+
+  // 高亮当前 posting
+  const results = state.searchResult.results;
+  if (!results.length) return;
+  const idx = Math.min(state.postingIdx, results.length - 1);
+  const centerIdx = results[idx].id;
+  const posting = state.postings[centerIdx];
+  const center = state.centers[centerIdx];
+
+  // 计算残差
+  const residuals = posting.points.map(pi => [state.points[pi][0] - center[0], state.points[pi][1] - center[1]]);
+  const qResidual = [state.query[0] - center[0], state.query[1] - center[1]];
+
+  // 中心 = 画布中心
+  const cx = W / 2, cy = H / 2;
+  // 缩放
+  let maxR = 30;
+  residuals.forEach(r => { maxR = Math.max(maxR, Math.abs(r[0]), Math.abs(r[1])); });
+  maxR = Math.max(maxR, Math.abs(qResidual[0]), Math.abs(qResidual[1]));
+  const scale = Math.min(W, H) * 0.4 / maxR;
+
+  const M = state.pqM;
+  const K = state.pqK;
+  const cb = state.pqCodebook;
+
+  // 画坐标轴
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, cy); ctx.lineTo(W, cy);
+  ctx.moveTo(cx, 0); ctx.lineTo(cx, H);
+  ctx.stroke();
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('残差 x', W - 40, cy - 5);
+  ctx.fillText('残差 y', cx + 5, 15);
+
+  // 画码本线（M=2 情况：每维独立）
+  if (M === 2) {
+    // dim0: x 方向的码字
+    ctx.strokeStyle = 'rgba(14,165,233,0.5)';
+    ctx.lineWidth = 1;
+    for (let k = 0; k < K; k++) {
+      const cx0 = cx + (cb[0][k][0] - center[0]) * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx0, 0); ctx.lineTo(cx0, H);
+      ctx.stroke();
+    }
+    // dim1: y 方向
+    for (let k = 0; k < K; k++) {
+      const cy0 = cy + (cb[1][k][0] - center[1]) * scale;
+      ctx.beginPath();
+      ctx.moveTo(0, cy0); ctx.lineTo(W, cy0);
+      ctx.stroke();
+    }
+    // 码字交点
+    ctx.fillStyle = '#0ea5e9';
+    for (let k1 = 0; k1 < K; k1++) {
+      for (let k2 = 0; k2 < K; k2++) {
+        const x = cx + (cb[0][k1][0] - center[0]) * scale;
+        const y = cy + (cb[1][k2][0] - center[1]) * scale;
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // 画残差数据点
+  ctx.fillStyle = 'rgba(167,139,250,0.8)';
+  residuals.forEach(r => {
+    ctx.beginPath();
+    ctx.arc(cx + r[0] * scale, cy + r[1] * scale, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // 查询残差
+  ctx.beginPath();
+  ctx.arc(cx + qResidual[0] * scale, cy + qResidual[1] * scale, 6, 0, Math.PI * 2);
+  ctx.fillStyle = '#ef4444';
+  ctx.fill();
+  ctx.strokeStyle = '#7f1d1d';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 标题
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(`Posting #${centerIdx}   |   点数=${posting.points.length}   |   M=${M}, k=${K}`, 12, 22);
+}
+
+function drawADC() {
+  const cv = document.getElementById('cv-adc');
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#fafbfc';
+  ctx.fillRect(0, 0, W, H);
+  if (!state.pqCodebook || !state.searchResult) return;
+  const results = state.searchResult.results;
+  if (!results.length) return;
+  const idx = Math.min(state.postingIdx, results.length - 1);
+  const centerIdx = results[idx].id;
+  const posting = state.postings[centerIdx];
+  const center = state.centers[centerIdx];
+  const qResidual = [state.query[0] - center[0], state.query[1] - center[1]];
+
+  const M = state.pqM;
+  const K = state.pqK;
+  const cb = state.pqCodebook;
+
+  // 预计算 LUT: LUT[m][k] = || q_r[m] - cb[m][k] ||^2
+  const LUT = [];
+  for (let m = 0; m < M; m++) {
+    const row = [];
+    const qm = M === 2 ? [qResidual[m]] : qResidual;
+    for (let k = 0; k < K; k++) {
+      const d = distNd(qm, cb[m][k]);
+      row.push(d * d);
+    }
+    LUT.push(row);
+  }
+
+  // 画 LUT
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('LUT (M × k) 预计算距离表', 12, 22);
+
+  const cellW = 40, cellH = 22;
+  const startX = 30, startY = 40;
+  // 表头
+  ctx.fillStyle = '#64748b';
+  ctx.font = '11px sans-serif';
+  for (let k = 0; k < K; k++) {
+    ctx.fillText('c' + k, startX + k * cellW + 12, startY - 4);
+  }
+  // 找最大最小做归一化着色
+  let mn = Infinity, mx = -Infinity;
+  for (const row of LUT) for (const v of row) { if (v < mn) mn = v; if (v > mx) mx = v; }
+  for (let m = 0; m < M; m++) {
+    ctx.fillStyle = '#64748b';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('m' + m, startX - 22, startY + m * cellH + 15);
+    for (let k = 0; k < K; k++) {
+      const v = LUT[m][k];
+      const t = (v - mn) / (mx - mn + 1e-9);
+      // t=0 绿，t=1 红
+      const r = Math.round(167 + t * (254 - 167));
+      const g = Math.round(243 - t * (243 - 202));
+      const b = Math.round(208 - t * (208 - 202));
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(startX + k * cellW, startY + m * cellH, cellW - 2, cellH - 2);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '10px monospace';
+      ctx.fillText(v.toFixed(1), startX + k * cellW + 6, startY + m * cellH + 14);
+    }
+  }
+
+  // ADC: 对 posting 内每点计算近似距离
+  const approxD = [];
+  for (const pi of posting.points) {
+    const code = state.pqCodes[pi];
+    let s = 0;
+    for (let m = 0; m < M; m++) s += LUT[m][code[m]];
+    approxD.push({id: pi, d: Math.sqrt(s), real: dist([state.points[pi][0] - center[0], state.points[pi][1] - center[1]], qResidual)});
+  }
+  approxD.sort((a, b) => a.d - b.d);
+  const topShow = approxD.slice(0, 8);
+
+  // 画 top 列表
+  const listY = startY + M * cellH + 40;
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('ADC 近似距离排序 (top-8)', 12, listY);
+  ctx.font = '11px monospace';
+  ctx.fillStyle = '#334155';
+  ctx.fillText('rank  point_id   approx_d   real_d   误差', 20, listY + 20);
+  topShow.forEach((r, i) => {
+    const y = listY + 40 + i * 18;
+    const err = Math.abs(r.d - r.real);
+    ctx.fillStyle = i === 0 ? '#22c55e' : '#334155';
+    ctx.fillText(`${(i+1).toString().padStart(2)}    ${r.id.toString().padStart(5)}      ${r.d.toFixed(2).padStart(6)}    ${r.real.toFixed(2).padStart(6)}   ${err.toFixed(2)}`, 20, y);
+  });
+
+  // 统计
+  document.getElementById('stat-postsize').textContent = posting.points.length;
+  document.getElementById('stat-flops-orig').textContent = posting.points.length + ' × 2 = ' + (posting.points.length * 2);
+  document.getElementById('stat-flops-adc').textContent = M + ' × ' + posting.points.length + ' = ' + (M * posting.points.length);
+  document.getElementById('stat-topid').textContent = topShow.length ? topShow[0].id : '-';
+}
+
+// ========== 端到端可视化 ==========
+async function e2eRun(stepMode) {
+  const cv = document.getElementById('cv-e2e');
+  const ctx = cv.getContext('2d');
+  const W2 = cv.width, H2 = cv.height;
+  const midX = W2 / 2;
+  ctx.clearRect(0, 0, W2, H2);
+  ctx.fillStyle = '#fafbfc';
+  ctx.fillRect(0, 0, W2, H2);
+
+  // 分左右两块：左边是全局图，右边是最近 posting 内 PQ
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(midX, 0); ctx.lineTo(midX, H2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#334155';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillText('阶段 1: HNSW 找 posting', 20, 22);
+  ctx.fillText('阶段 2: PQ ADC 内部估距', midX + 20, 22);
+
+  // 左侧：缩放 Voronoi + query
+  const leftScale = midX / W;
+  const topOffY = 40;
+  const leftH = H2 - topOffY;
+  // 画质心
+  state.centers.forEach((c, i) => {
+    const x = c[0] * leftScale, y = topOffY + c[1] * (leftH / H);
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fill();
+  });
+  // 数据点
+  state.points.forEach(p => {
+    const x = p[0] * leftScale, y = topOffY + p[1] * (leftH / H);
+    ctx.beginPath();
+    ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(167,139,250,0.5)';
+    ctx.fill();
+  });
+
+  // 生成一个随机 query
+  if (!state.query) state.query = [rand(80, W - 80), rand(50, H - 50)];
+  await doHNSWQuery(state.query[0], state.query[1]);
+
+  // 在 e2e 左边高亮 posting
+  const results = state.searchResult.results;
+  results.forEach(r => {
+    const c = state.centers[r.id];
+    ctx.beginPath();
+    ctx.arc(c[0] * leftScale, topOffY + c[1] * (leftH / H), 8, 0, Math.PI * 2);
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+  // 画 query
+  const qx = state.query[0] * leftScale, qy = topOffY + state.query[1] * (leftH / H);
+  ctx.beginPath();
+  ctx.moveTo(qx, qy - 8);
+  ctx.lineTo(qx - 6, qy + 4);
+  ctx.lineTo(qx + 6, qy + 4);
+  ctx.closePath();
+  ctx.fillStyle = '#ef4444';
+  ctx.fill();
+
+  // 右侧：对第一个 posting 展示 PQ
+  const posting = state.postings[results[0].id];
+  const center = state.centers[results[0].id];
+  const rightX = midX + 40;
+  const rightW = W2 - midX - 60;
+  const rightCX = midX + W2 / 2 - midX / 2;
+  const rightCY = H2 / 2 + 10;
+
+  // 找到该 posting 中 query 的近似最近点
+  const qResidual = [state.query[0] - center[0], state.query[1] - center[1]];
+  const M = state.pqM, K = state.pqK;
+  if (!state.pqCodebook) trainPQ();
+  const LUT = [];
+  for (let m = 0; m < M; m++) {
+    const row = [];
+    const qm = M === 2 ? [qResidual[m]] : qResidual;
+    for (let k = 0; k < K; k++) {
+      const d = distNd(qm, state.pqCodebook[m][k]);
+      row.push(d * d);
+    }
+    LUT.push(row);
+  }
+  const scored = posting.points.map(pi => {
+    const code = state.pqCodes[pi];
+    let s = 0;
+    for (let m = 0; m < M; m++) s += LUT[m][code[m]];
+    return {id: pi, d: Math.sqrt(s)};
+  });
+  scored.sort((a, b) => a.d - b.d);
+  const top1 = scored[0];
+
+  // 画残差布局
+  let maxR = 40;
+  posting.points.forEach(pi => {
+    const r = [state.points[pi][0] - center[0], state.points[pi][1] - center[1]];
+    maxR = Math.max(maxR, Math.abs(r[0]), Math.abs(r[1]));
+  });
+  maxR = Math.max(maxR, Math.abs(qResidual[0]), Math.abs(qResidual[1]));
+  const s2 = 160 / maxR;
+
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.beginPath();
+  ctx.moveTo(rightCX - 180, rightCY); ctx.lineTo(rightCX + 180, rightCY);
+  ctx.moveTo(rightCX, rightCY - 180); ctx.lineTo(rightCX, rightCY + 180);
+  ctx.stroke();
+
+  // 码本网格
+  if (state.pqCodebook && M === 2) {
+    ctx.strokeStyle = 'rgba(14,165,233,0.3)';
+    for (let k = 0; k < K; k++) {
+      const x = rightCX + (state.pqCodebook[0][k][0] - center[0]) * s2;
+      const y = rightCY + (state.pqCodebook[1][k][0] - center[1]) * s2;
+      ctx.beginPath();
+      ctx.moveTo(x, rightCY - 180); ctx.lineTo(x, rightCY + 180);
+      ctx.moveTo(rightCX - 180, y); ctx.lineTo(rightCX + 180, y);
+      ctx.stroke();
+    }
+  }
+  // 点
+  ctx.fillStyle = 'rgba(139,92,246,0.8)';
+  posting.points.forEach(pi => {
+    const r = [state.points[pi][0] - center[0], state.points[pi][1] - center[1]];
+    ctx.beginPath();
+    ctx.arc(rightCX + r[0] * s2, rightCY + r[1] * s2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // top-1
+  const r1 = [state.points[top1.id][0] - center[0], state.points[top1.id][1] - center[1]];
+  ctx.beginPath();
+  ctx.arc(rightCX + r1[0] * s2, rightCY + r1[1] * s2, 8, 0, Math.PI * 2);
+  ctx.strokeStyle = '#22c55e';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // 查询残差
+  ctx.beginPath();
+  ctx.arc(rightCX + qResidual[0] * s2, rightCY + qResidual[1] * s2, 6, 0, Math.PI * 2);
+  ctx.fillStyle = '#ef4444';
+  ctx.fill();
+
+  // 全局真近邻
+  let gtId = 0, gtD = Infinity;
+  state.points.forEach((p, i) => {
+    const d = dist2(p, state.query);
+    if (d < gtD) { gtD = d; gtId = i; }
+  });
+
+  document.getElementById('e2e-t1').textContent = '~15%';
+  document.getElementById('e2e-t2').textContent = '~85%';
+  document.getElementById('e2e-top1').textContent = top1.id;
+  document.getElementById('e2e-gt').textContent = gtId;
+}
+
+// ========== 性能对比图 ==========
+function drawPerf() {
+  const cv = document.getElementById('cv-perf');
+  const ctx = cv.getContext('2d');
+  const w = cv.width, h = cv.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#fafbfc';
+  ctx.fillRect(0, 0, w, h);
+  // 坐标系
+  const pad = { l: 60, r: 40, t: 30, b: 50 };
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, h - pad.b); ctx.lineTo(w - pad.r, h - pad.b);
+  ctx.stroke();
+  ctx.fillStyle = '#334155';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('Recall@10 vs QPS (SIFT1M, 单线程, 示意)', pad.l, 20);
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = '#64748b';
+  ctx.fillText('Recall@10', pad.l - 40, pad.t + 10);
+  ctx.fillText('QPS (log)', w - pad.r - 40, h - pad.b + 24);
+
+  // 网格 & 刻度
+  const x2px = qps => pad.l + (Math.log10(qps) - 2) / (5 - 2) * (w - pad.l - pad.r);
+  const y2py = rec => h - pad.b - (rec - 0.6) / (1 - 0.6) * (h - pad.t - pad.b);
+  ctx.strokeStyle = '#e2e8f0';
+  for (let p = 2; p <= 5; p++) {
+    const x = x2px(Math.pow(10, p));
+    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, h - pad.b); ctx.stroke();
+    ctx.fillStyle = '#64748b';
+    ctx.font = '11px monospace';
+    ctx.fillText('10^' + p, x - 12, h - pad.b + 14);
+  }
+  for (let r = 0.6; r <= 1.0; r += 0.1) {
+    const y = y2py(r);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+    ctx.fillStyle = '#64748b';
+    ctx.font = '11px monospace';
+    ctx.fillText(r.toFixed(2), pad.l - 32, y + 3);
+  }
+
+  // 示意曲线
+  const curves = [
+    { name: 'Flat', color: '#ef4444', pts: [[200, 1.0]] },
+    { name: 'IVF-Flat', color: '#f59e0b', pts: [[500, 0.75], [1000, 0.88], [2000, 0.95], [3000, 0.98]] },
+    { name: 'HNSW', color: '#22c55e', pts: [[3000, 0.85], [6000, 0.94], [10000, 0.98], [15000, 0.99]] },
+    { name: 'IVF-HNSW+PQ', color: '#2563eb', pts: [[5000, 0.82], [10000, 0.92], [15000, 0.95], [25000, 0.97]] },
+    { name: 'ScaNN', color: '#a855f7', pts: [[8000, 0.85], [15000, 0.93], [25000, 0.96], [40000, 0.98]] },
+  ];
+  curves.forEach(c => {
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    c.pts.forEach((p, i) => {
+      const x = x2px(p[0]), y = y2py(p[1]);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    c.pts.forEach(p => {
+      const x = x2px(p[0]), y = y2py(p[1]);
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = c.color;
+      ctx.fill();
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  });
+}
+
+// ========== 事件绑定 ==========
+function bindEvents() {
+  const bind = (sid, vid, cb) => {
+    const s = document.getElementById(sid);
+    const v = document.getElementById(vid);
+    s.addEventListener('input', () => { v.textContent = s.value + (sid === 's-speed' ? 'ms' : ''); if (cb) cb(); });
+  };
+  bind('s-nlist', 'v-nlist', () => { rebuildAll(); });
+  bind('s-M', 'v-M', () => { buildHNSW(parseInt(document.getElementById('s-M').value)); redraw(); });
+  bind('s-ef', 'v-ef');
+  bind('s-nprobe', 'v-nprobe');
+  bind('s-speed', 'v-speed');
+  bind('s-pqM', 'v-pqM', () => { trainPQ(); drawPQ(); drawADC(); });
+  bind('s-pqk', 'v-pqk', () => { trainPQ(); drawPQ(); drawADC(); });
+  bind('s-selpost', 'v-selpost', () => { state.postingIdx = parseInt(document.getElementById('s-selpost').value); drawPQ(); drawADC(); });
+
+  document.getElementById('btn-regen').addEventListener('click', rebuildAll);
+  document.getElementById('btn-hnsw-query').addEventListener('click', () => {
+    doHNSWQuery(rand(60, W - 60), rand(50, H - 50)).then(() => { drawPQ(); drawADC(); });
+  });
+  document.getElementById('btn-hnsw-reset').addEventListener('click', () => {
+    state.searchResult = null;
+    drawHNSW(); drawVoronoi();
+  });
+  document.getElementById('cv-hnsw').addEventListener('click', e => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    doHNSWQuery(e.clientX - rect.left, e.clientY - rect.top).then(() => { drawPQ(); drawADC(); });
+  });
+  document.getElementById('cv-voronoi').addEventListener('click', e => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    doHNSWQuery(e.clientX - rect.left, e.clientY - rect.top).then(() => { drawPQ(); drawADC(); });
+  });
+  document.getElementById('btn-pq-train').addEventListener('click', () => { trainPQ(); drawPQ(); drawADC(); });
+  document.getElementById('btn-pq-query').addEventListener('click', () => { drawPQ(); drawADC(); });
+
+  document.getElementById('btn-e2e-run').addEventListener('click', () => { e2eRun(false); });
+  document.getElementById('btn-e2e-step').addEventListener('click', () => { e2eRun(true); });
+}
+
+function rebuildAll() {
+  const nlist = parseInt(document.getElementById('s-nlist').value);
+  const M = parseInt(document.getElementById('s-M').value);
+  generateData(nlist);
+  buildHNSW(M);
+  trainPQ();
+  state.searchResult = null;
+  state.query = null;
+  // 更新 posting 选择范围
+  document.getElementById('s-selpost').max = Math.max(1, nlist - 1);
+  redraw();
+}
+
+function redraw() {
+  drawHNSW();
+  drawVoronoi();
+  drawPQ();
+  drawADC();
+  drawPerf();
+}
+
+// ========== 初始化 ==========
+window.addEventListener('load', () => {
+  bindEvents();
+  rebuildAll();
+  // 默认发起一次查询
+  setTimeout(() => {
+    doHNSWQuery(W / 2 + 40, H / 2 - 30).then(() => { drawPQ(); drawADC(); });
+  }, 300);
+});
+</script>
+</body>
+</html>

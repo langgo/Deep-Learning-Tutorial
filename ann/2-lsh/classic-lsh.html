@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>经典 LSH（Random Projection / p-stable）演示</title>
+<style>
+/* ============ 全局样式 ============ */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf3 100%);
+    color: #24292f;
+    line-height: 1.7;
+    min-height: 100vh;
+}
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+}
+/* 顶部导航 */
+.nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+}
+.nav a {
+    color: #0969da;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+.nav a:hover { background: #ddf4ff; }
+h1 {
+    font-size: 28px;
+    color: #1f2328;
+    margin: 0;
+}
+h2 {
+    font-size: 22px;
+    color: #1f2328;
+    border-bottom: 2px solid #d0d7de;
+    padding-bottom: 6px;
+    margin-top: 8px;
+}
+h3 {
+    font-size: 18px;
+    color: #24292f;
+    margin: 20px 0 10px 0;
+}
+/* 卡片 */
+.card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #d0d7de;
+}
+.card.info {
+    background: linear-gradient(135deg, #ddf4ff 0%, #e6f7ff 100%);
+    border-left: 4px solid #0969da;
+}
+.card.warn {
+    background: linear-gradient(135deg, #fff8c5 0%, #fff3c4 100%);
+    border-left: 4px solid #d4a72c;
+}
+.card.success {
+    background: linear-gradient(135deg, #dafbe1 0%, #d4f5da 100%);
+    border-left: 4px solid #1a7f37;
+}
+/* 代码块 */
+pre {
+    background: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: "SF Mono", Monaco, Consolas, "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.55;
+}
+code {
+    background: #f6f8fa;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 13px;
+    color: #cf222e;
+}
+pre code { background: transparent; color: #24292f; padding: 0; }
+/* 参数控制 */
+.controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+    margin-bottom: 16px;
+}
+.control-item {
+    background: #f6f8fa;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid #d0d7de;
+}
+.control-item label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #57606a;
+    margin-bottom: 6px;
+}
+.control-item input[type=range] {
+    width: 100%;
+    accent-color: #0969da;
+}
+.value-badge {
+    display: inline-block;
+    background: #0969da;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 6px;
+}
+.btn {
+    background: #1f883d;
+    color: white;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    margin: 4px;
+    transition: background 0.2s;
+}
+.btn:hover { background: #1a7431; }
+.btn.secondary { background: #0969da; }
+.btn.secondary:hover { background: #085bbc; }
+.btn.danger { background: #cf222e; }
+.btn.danger:hover { background: #a4141e; }
+/* Canvas */
+canvas {
+    display: block;
+    background: #ffffff;
+    border-radius: 8px;
+    border: 1px solid #d0d7de;
+    cursor: crosshair;
+}
+.canvas-wrap {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 16px;
+    align-items: start;
+}
+@media (max-width: 860px) {
+    .canvas-wrap { grid-template-columns: 1fr; }
+}
+/* 桶列表 */
+.bucket-panel {
+    background: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 12px;
+    max-height: 520px;
+    overflow-y: auto;
+}
+.bucket-item {
+    background: #ffffff;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    font-family: monospace;
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-left: 3px solid #0969da;
+}
+.bucket-code {
+    color: #6f42c1;
+    font-weight: 600;
+}
+.stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+}
+.stat-box {
+    background: #f6f8fa;
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid #d0d7de;
+}
+.stat-box .label {
+    font-size: 12px;
+    color: #57606a;
+}
+.stat-box .value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #0969da;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+}
+th, td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #d0d7de;
+}
+th {
+    background: #f6f8fa;
+    font-weight: 600;
+}
+.legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    font-size: 12px;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+ul li { margin: 4px 0; }
+.formula {
+    background: #f6f8fa;
+    padding: 12px 16px;
+    border-radius: 6px;
+    text-align: center;
+    font-family: "Times New Roman", serif;
+    font-style: italic;
+    font-size: 16px;
+    margin: 10px 0;
+    border-left: 3px solid #6f42c1;
+}
+/* ============ 教学辅助样式 ============ */
+.prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+.prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+.glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+.glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+.glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+.glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+.new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.pitfall h4 { color: #92400e; margin-top: 0; }
+.next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.next-steps a { color: #047857; font-weight: 600; }
+.symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+.symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+.symbol-table th { background: #f9fafb; color: #374151; }
+.symbol-table code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-family: Monaco, monospace; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- 导航 -->
+<div class="nav">
+    <h1>经典 LSH：Random Projection / p-stable</h1>
+    <a href="../index.html">← 返回目录</a>
+</div>
+
+<!-- ============ 前置阅读 ============ -->
+<div class="prereq-bar">
+    <b>前置：</b>
+    <span class="pill">欧氏距离基础</span>
+    <span class="pill">KD-Tree（对照理解为什么高维要用哈希）</span>
+</div>
+
+<!-- ============ 关键术语速查 ============ -->
+<details class="glossary">
+    <summary>关键术语速查（点击展开）</summary>
+    <dl>
+        <dt>哈希族（hash family）</dt>
+        <dd>一组同构造的随机哈希函数，每次抽一个，用来对点进行"随机分桶"。</dd>
+        <dt>局部敏感（locality-sensitive）</dt>
+        <dd>相似样本以高概率被哈到同一个桶（"碰撞"），不相似的样本以低概率碰撞。</dd>
+        <dt>(r, cr, p₁, p₂)-sensitive</dt>
+        <dd>距离 ≤ r 的两点碰撞概率 ≥ p₁；距离 ≥ cr 的两点碰撞概率 ≤ p₂。这就是 LSH 的官方定义。</dd>
+        <dt>p-stable 分布</dt>
+        <dd>从中随机采样后做线性组合，结果仍服从同族分布。L2 距离对应高斯（2-stable），L1 距离对应柯西（1-stable）。</dd>
+        <dt>AND 组合</dt>
+        <dd>用 K 个哈希函数拼签名，只有 K 位都一样才算命中。命中概率变成 p<sup>K</sup>，让曲线更陡。</dd>
+        <dt>OR 组合</dt>
+        <dd>建 L 张独立哈希表，任意一张表命中即算候选。整体命中率变成 1−(1−p<sup>K</sup>)<sup>L</sup>，把陡曲线的高相似段抬回来。</dd>
+        <dt>S-curve</dt>
+        <dd>把 AND-K 与 OR-L 组合起来，碰撞概率随相似度呈 S 形跳变：低相似段几乎不命中，高相似段几乎必命中。</dd>
+    </dl>
+</details>
+
+<!-- ============ 新手引导 ============ -->
+<div class="new-user-tip">
+    <b>新手怎么玩这个页面？</b>
+    <ol style="margin:6px 0 0 20px;padding:0;">
+        <li>点画布左上角放一个查询点（红色 ✚）。</li>
+        <li>观察黄色描边的真实近邻和蓝色描边的 LSH 候选点。</li>
+        <li>把 K 从 1 拉到 8，观察候选集迅速变少（要求越来越严）。</li>
+        <li>再把 L 从 1 拉大，观察召回率被"多张表"补救回来。</li>
+    </ol>
+</div>
+
+<!-- ============ 直观理解 ============ -->
+<div class="card info">
+    <h2>1. 直观理解：把相似的东西装进同一个抽屉</h2>
+    <p>想象你在整理一堆彩色玻璃球。如果你按颜色抽屉分类，那么颜色相近的球（红-粉红、深蓝-浅蓝）大概率会被扔进同一个抽屉。查找和某个球最像的邻居时，只需检查那只抽屉，不必翻遍整间屋子。</p>
+    <p><b>LSH（Locality Sensitive Hashing）</b> 就是这样一种"魔法哈希"：与传统哈希"尽量把冲突分开"相反，LSH <b>刻意让相似的点碰撞</b>，让不相似的点分离。</p>
+    <ul>
+        <li><b>经典 LSH（基于随机投影 / p-stable 分布）</b> 用于 <b>欧氏距离</b> 或 <b>余弦距离</b>。</li>
+        <li>核心思想：随机切一刀（超平面 / 投影线），落在同一侧或同一 bucket 的点更可能靠得近。</li>
+        <li>切多次（K 次），把签名拼起来 → 桶更精细；开多张哈希表（L 张） → 提高召回率。</li>
+    </ul>
+</div>
+
+<!-- ============ 算法原理 ============ -->
+<div class="card">
+    <h2>2. 算法原理</h2>
+
+    <h3>2.0 符号速查表</h3>
+    <table class="symbol-table">
+        <tr><th>符号</th><th>含义</th></tr>
+        <tr><td><code>a</code></td><td>随机高斯向量，用来把 d 维点投影到一根随机方向上</td></tr>
+        <tr><td><code>w</code></td><td>桶宽，投影后每隔 w 切一段，w 越大桶越粗</td></tr>
+        <tr><td><code>b</code></td><td>[0, w) 上的随机偏移，避免切割线固定在整数点</td></tr>
+        <tr><td><code>K</code></td><td>AND 组合数量，一张表里堆叠 K 个哈希</td></tr>
+        <tr><td><code>L</code></td><td>OR 组合数量，用 L 张独立哈希表</td></tr>
+        <tr><td><code>k</code></td><td>要返回的近邻个数（top-k）</td></tr>
+        <tr><td><code>p₁</code></td><td>相邻点（距离 ≤ r）在单次哈希下的碰撞概率下界</td></tr>
+        <tr><td><code>p₂</code></td><td>远点（距离 ≥ cr）在单次哈希下的碰撞概率上界</td></tr>
+        <tr><td><code>r</code></td><td>"近"的距离阈值</td></tr>
+        <tr><td><code>cr</code></td><td>"远"的距离阈值，倍率 c &gt; 1</td></tr>
+        <tr><td><code>φ(t)</code></td><td>标准正态 CDF，用来推导 p-stable LSH 的解析碰撞概率</td></tr>
+    </table>
+
+    <h3>2.1 (r, cr, p₁, p₂)-sensitive 哈希族定义</h3>
+    <p><b>直觉铺垫：</b>想象一个哈希函数就像抽奖，我们希望相邻的两个人（距离 r 以内）抽到相同结果的概率高（≥ p₁），距离较远的人（距离 cr 以外）抽到相同结果的概率低（≤ p₂）。这个性质就叫"局部敏感"。</p>
+    <p>一个哈希族 <b>H</b> 是 <code>(r, cr, p₁, p₂)</code>-sensitive 的，当且仅当对任意 <code>q, p</code>：</p>
+    <div class="formula">
+        d(q, p) ≤ r &nbsp; ⇒ &nbsp; Pr[h(q) = h(p)] ≥ p₁ <br>
+        d(q, p) ≥ cr &nbsp; ⇒ &nbsp; Pr[h(q) = h(p)] ≤ p₂
+    </div>
+    <p>其中 <code>c &gt; 1</code>，<code>p₁ &gt; p₂</code>。这个"间隙"越大，LSH 家族越好用。</p>
+
+    <h3>2.2 p-stable LSH 哈希函数（本页所用）</h3>
+    <p><b>直觉铺垫：</b>所谓 p-stable 分布，是指从中随机采样后做线性组合，结果仍属于同分布家族。高斯就是 2-stable 的（对应 L2 欧氏距离），柯西是 1-stable 的（对应 L1 曼哈顿距离）。所以对 L2 欧氏距离做 LSH，用高斯投影正好。</p>
+    <p>对于 L₂ 欧氏距离，Datar-Immorlica-Indyk-Mirrokni 2004 的 p-stable LSH 定义：</p>
+    <div class="formula">
+        h<sub>a,b</sub>(v) = ⌊ (a · v + b) / w ⌋
+    </div>
+    <ul>
+        <li><code>a</code>：从高斯分布 N(0, 1) 抽样的随机向量（对 L₂ 是 2-stable）</li>
+        <li><code>b</code>：从均匀分布 U[0, w) 抽样的随机偏移</li>
+        <li><code>w</code>：桶宽（越大越粗糙，越小越精细）</li>
+    </ul>
+
+    <h3>2.3 AND 与 OR 组合：放大间隙</h3>
+    <p><b>AND 组合（K 个）</b>：将 K 个独立哈希函数并置成一个 K 维签名 <code>g(v) = (h₁(v), h₂(v), …, h_K(v))</code>。两点必须 <b>所有</b> K 位都相同才算碰撞。</p>
+    <div class="formula">
+        Pr[碰撞] = p<sup>K</sup>
+    </div>
+    <p><b>OR 组合（L 个哈希表）</b>：构造 L 张独立的哈希表，只要在 <b>任意一张</b> 表中碰撞即视为候选。</p>
+    <div class="formula">
+        Pr[至少一张表碰撞] = 1 − (1 − p<sup>K</sup>)<sup>L</sup>
+    </div>
+    <p><b>直觉解释：</b><code>p<sup>K</sup></code> 让曲线变陡（要求 K 次同时命中，非常严格，只有非常相似的点才扛得住），而 <code>1 − (1 − p<sup>K</sup>)<sup>L</sup></code> 又把这条陡峭曲线的下沿抬起来（L 张表任一命中即可）——这个"先陡后抬"的组合，正是 LSH 的精髓，也是所谓 S-curve 的来源。</p>
+
+    <h3>2.4 伪代码</h3>
+<pre><code>输入：数据集 P，参数 K, L, w
+构建：
+  for i = 1..L:
+    随机生成 K 个 (a_j, b_j) 对
+    for v in P:
+      sig = (h_1(v), h_2(v), ..., h_K(v))
+      Table_i[sig].append(v)
+查询 q：
+  候选集 C = ∅
+  for i = 1..L:
+    sig_q = g_i(q)
+    C ∪= Table_i[sig_q]
+  返回 C 中距离 q 最近的 top-k</code></pre>
+</div>
+
+<!-- ============ 交互演示 ============ -->
+<div class="card">
+    <h2>3. 交互式演示：随机投影切割 2D 平面</h2>
+
+    <div class="controls">
+        <div class="control-item">
+            <label>点数 N: <span class="value-badge" id="v-n">100</span></label>
+            <input type="range" id="c-n" min="20" max="400" value="100" step="10">
+        </div>
+        <div class="control-item">
+            <label>哈希函数数 K: <span class="value-badge" id="v-k">3</span></label>
+            <input type="range" id="c-k" min="1" max="8" value="3" step="1">
+        </div>
+        <div class="control-item">
+            <label>哈希表数 L: <span class="value-badge" id="v-l">1</span></label>
+            <input type="range" id="c-l" min="1" max="6" value="1" step="1">
+        </div>
+        <div class="control-item">
+            <label>桶宽 w: <span class="value-badge" id="v-w">80</span></label>
+            <input type="range" id="c-w" min="20" max="200" value="80" step="10">
+        </div>
+        <div class="control-item">
+            <label>当前显示第几张表: <span class="value-badge" id="v-ti">1</span></label>
+            <input type="range" id="c-ti" min="1" max="1" value="1" step="1">
+        </div>
+        <div class="control-item">
+            <label>&nbsp;</label>
+            <button class="btn" id="btn-regen">重新生成随机点</button>
+            <button class="btn secondary" id="btn-rehash">重新采样哈希函数</button>
+        </div>
+    </div>
+
+    <p style="color:#57606a;font-size:13px;">
+        <b>操作提示：</b>在画布上点击任意位置作为 <b>查询点 q</b>（红色 ✚），页面会计算它在 L 张表里的候选邻居（青色描边），并显示真实的 top-3 欧氏近邻（金色描边）。
+    </p>
+
+    <div class="canvas-wrap">
+        <canvas id="lshCanvas" width="720" height="520"></canvas>
+        <div>
+            <div class="stat-row">
+                <div class="stat-box">
+                    <div class="label">bucket 总数</div>
+                    <div class="value" id="stat-buckets">-</div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">候选集大小</div>
+                    <div class="value" id="stat-cand">-</div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">召回 top-3</div>
+                    <div class="value" id="stat-recall">-</div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">扫描比例</div>
+                    <div class="value" id="stat-ratio">-</div>
+                </div>
+            </div>
+            <h3 style="margin-top:0">当前表的 bucket 分布</h3>
+            <div class="bucket-panel" id="bucketPanel"></div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div>普通点</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#cf222e"></div>查询点 q</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#0969da"></div>候选（LSH 碰撞）</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#d4a72c"></div>真实 top-3</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============ 案例讲解 ============ -->
+<div class="card success">
+    <h2>4. 案例逐步讲解：100 个 2D 点的碰撞概率</h2>
+    <p>假设某两个点距离 <code>d</code>。对于 p-stable LSH，用高斯投影后再离散化，一次哈希碰撞概率的解析形式（简化后）为：</p>
+    <div class="formula">
+        p(d) = 1 − 2 · Φ(−w/d) − (2 / √(2π)) · (d/w) · (1 − e<sup>−w²/(2d²)</sup>)
+    </div>
+    <p>其中 <code>Φ</code> 是标准正态 CDF。直觉：</p>
+    <ul>
+        <li>d → 0 时 p → 1（几乎必然碰撞）</li>
+        <li>d → ∞ 时 p → 0（几乎不会碰撞）</li>
+        <li>w 越大，曲线越平坦（区分度差）；w 越小，曲线陡但短距离也难碰撞</li>
+    </ul>
+    <p>下方图表展示：随着距离 <code>d</code> 增大，<b>单个哈希</b>、<b>AND-K</b>、<b>OR-L 全组合</b> 的碰撞概率如何变化。移动上方 K、L、w 滑块，观察曲线形状！</p>
+    <canvas id="curveCanvas" width="720" height="280"></canvas>
+</div>
+
+<!-- ============ 复杂度 & 权衡 ============ -->
+<div class="card">
+    <h2>5. 复杂度 & 召回率-精度权衡</h2>
+    <table>
+        <tr><th>指标</th><th>值</th><th>说明</th></tr>
+        <tr><td>构建时间</td><td>O(N · K · L · d)</td><td>d 是向量维度</td></tr>
+        <tr><td>索引空间</td><td>O(N · L)</td><td>每张表存 N 个 id</td></tr>
+        <tr><td>查询时间</td><td>O(K · L · d + |C| · d)</td><td>|C| 是候选集大小</td></tr>
+        <tr><td>召回率</td><td>1 − (1 − p₁<sup>K</sup>)<sup>L</sup></td><td>K↑ → 精度↑ 召回↓；L↑ → 召回↑ 但内存和候选量↑</td></tr>
+    </table>
+    <p><b>调参口诀：</b>先按目标召回率求 <code>p₁<sup>K</sup></code>，再由 <code>1 − (1 − p₁<sup>K</sup>)<sup>L</sup> ≥ target_recall</code> 反解 L。</p>
+</div>
+
+<!-- ============ 优缺点 ============ -->
+<div class="card warn">
+    <h2>6. 优缺点 & 适用场景</h2>
+    <table>
+        <tr><th></th><th>优点</th><th>缺点</th></tr>
+        <tr>
+            <td><b>Random Projection LSH</b></td>
+            <td>
+                <ul>
+                    <li>亚线性查询时间</li>
+                    <li>理论保证（(r, cr, p₁, p₂)-sensitive）</li>
+                    <li>可分布式（每张表独立）</li>
+                    <li>更新友好（增量插入桶）</li>
+                </ul>
+            </td>
+            <td>
+                <ul>
+                    <li>需要多张表 L，内存占用大</li>
+                    <li>调参 K/L/w 敏感</li>
+                    <li>召回率低于图索引</li>
+                    <li>高维稀疏数据表现不如 HNSW</li>
+                </ul>
+            </td>
+        </tr>
+    </table>
+    <p><b>典型场景：</b>大规模欧氏 / 余弦相似度检索（图像特征、Word2Vec 向量、指纹）、亚线性重复文档检测（配合 MinHash）、大规模广告 / 推荐候选召回。</p>
+</div>
+
+<!-- ============ 常见误区 ============ -->
+<div class="pitfall">
+    <h4>常见误区</h4>
+    <ul>
+        <li><b>K 太大 → 召回崩塌。</b>K 决定一次命中要"K 位全对"，K 从 3 拉到 8，签名瞬间被切碎，即使最近邻也可能一位不合就掉队。要记得同时用 L 补救。</li>
+        <li><b>L 太大 → 内存爆炸。</b>每张表都要存一份 <code>N</code> 个 id 的桶结构，L=50 就是 50× 索引成本，很快撑爆机器。</li>
+        <li><b>w 与数据尺度不匹配。</b>如果数据方差是 100，却把 <code>w=1</code>，几乎每个点独占一桶，碰撞率趋近 0；反过来 <code>w</code> 太大又让所有点挤成一桶，失去区分度。先看数据的投影分布再选 w。</li>
+    </ul>
+</div>
+
+<!-- ============ 下一步 ============ -->
+<div class="next-steps">
+    <b>下一步学什么？</b>
+    <ul>
+        <li><a href="minhash.html">MinHash</a> — 如果你的数据是集合（网页 shingle、用户点击集合），换个 LSH 家族。</li>
+        <li><a href="simhash.html">SimHash</a> — 如果你要做文档去重，加权指纹更省内存。</li>
+        <li><b>Multi-Probe LSH</b> — 工业改进版，只用 1 张表也能取回相邻桶。</li>
+        <li><b>HNSW</b>（在图索引章节）— 对比看看现代主流方案与 LSH 的差别。</li>
+    </ul>
+    <p style="margin-top:10px;color:#065f46;">交叉引用：如果你的数据是集合，请看 <a href="minhash.html">MinHash</a>；如果是文档去重，请看 <a href="simhash.html">SimHash</a>。</p>
+</div>
+
+<script>
+/* ==========================================================
+   经典 LSH 演示（p-stable / Random Projection for L2）
+   ========================================================== */
+
+// -------- 全局状态 --------
+const canvas = document.getElementById('lshCanvas');
+const ctx = canvas.getContext('2d');
+const curveCanvas = document.getElementById('curveCanvas');
+const cctx = curveCanvas.getContext('2d');
+
+let params = { N: 100, K: 3, L: 1, w: 80, tableIndex: 0 };
+let points = [];             // {x, y}
+let hashTables = [];         // 每张表: { a: [[]], b: [], buckets: Map<key, [ids]> }
+let query = null;            // {x, y}
+let candidateSet = new Set();
+let trueTop3 = [];
+
+// -------- 工具函数 --------
+function gaussian() {
+    // Box-Muller
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1]; }
+function dist(p, q) { return Math.hypot(p.x - q.x, p.y - q.y); }
+
+// -------- 生成随机点 --------
+function generatePoints() {
+    points = [];
+    // 生成若干簇 + 少量噪声，让分布更真实
+    const numClusters = 4 + Math.floor(Math.random() * 3);
+    const centers = [];
+    for (let c = 0; c < numClusters; c++) {
+        centers.push({
+            x: 100 + Math.random() * (canvas.width - 200),
+            y: 60 + Math.random() * (canvas.height - 120)
+        });
+    }
+    for (let i = 0; i < params.N; i++) {
+        if (Math.random() < 0.85) {
+            const c = centers[Math.floor(Math.random() * centers.length)];
+            const r = gaussian() * 40;
+            const theta = Math.random() * Math.PI * 2;
+            points.push({
+                x: Math.max(10, Math.min(canvas.width - 10, c.x + r * Math.cos(theta))),
+                y: Math.max(10, Math.min(canvas.height - 10, c.y + r * Math.sin(theta)))
+            });
+        } else {
+            points.push({
+                x: 10 + Math.random() * (canvas.width - 20),
+                y: 10 + Math.random() * (canvas.height - 20)
+            });
+        }
+    }
+}
+
+// -------- 构建哈希表 --------
+function buildHashTables() {
+    hashTables = [];
+    for (let t = 0; t < params.L; t++) {
+        const table = { a: [], b: [], buckets: new Map() };
+        for (let k = 0; k < params.K; k++) {
+            table.a.push([gaussian(), gaussian()]);
+            table.b.push(Math.random() * params.w);
+        }
+        // 哈希每个点
+        for (let i = 0; i < points.length; i++) {
+            const sig = signature(points[i], table);
+            const key = sig.join(',');
+            if (!table.buckets.has(key)) table.buckets.set(key, []);
+            table.buckets.get(key).push(i);
+        }
+        hashTables.push(table);
+    }
+    // 更新表切换滑块上限
+    const tiSlider = document.getElementById('c-ti');
+    tiSlider.max = params.L;
+    if (params.tableIndex >= params.L) params.tableIndex = 0;
+    tiSlider.value = params.tableIndex + 1;
+    document.getElementById('v-ti').textContent = params.tableIndex + 1;
+}
+
+function signature(p, table) {
+    const sig = [];
+    for (let k = 0; k < table.a.length; k++) {
+        const proj = dot(table.a[k], [p.x, p.y]);
+        sig.push(Math.floor((proj + table.b[k]) / params.w));
+    }
+    return sig;
+}
+
+// -------- 查询 --------
+function runQuery() {
+    candidateSet = new Set();
+    if (!query) return;
+    for (let t = 0; t < hashTables.length; t++) {
+        const sig = signature(query, hashTables[t]);
+        const key = sig.join(',');
+        if (hashTables[t].buckets.has(key)) {
+            hashTables[t].buckets.get(key).forEach(id => candidateSet.add(id));
+        }
+    }
+    // 真实 top-3
+    const dists = points.map((p, i) => ({ id: i, d: dist(p, query) }));
+    dists.sort((a, b) => a.d - b.d);
+    trueTop3 = dists.slice(0, 3).map(d => d.id);
+}
+
+// -------- 绘制 --------
+function draw() {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 绘制当前表的分割线（如果 K 不大）
+    if (hashTables.length > 0 && params.K <= 4) {
+        const table = hashTables[params.tableIndex];
+        for (let k = 0; k < table.a.length; k++) {
+            drawHyperplaneLines(table.a[k], table.b[k], params.w, k);
+        }
+    }
+
+    // 画普通点
+    for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        let color = '#8b949e';
+        let radius = 3;
+        let strokeColor = null;
+        if (candidateSet.has(i)) { color = '#0969da'; radius = 4; strokeColor = '#0550ae'; }
+        if (trueTop3.includes(i)) { strokeColor = '#d4a72c'; radius = 5; }
+        ctx.beginPath();
+        ctx.fillStyle = color;
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        if (strokeColor) {
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    }
+
+    // 画查询点
+    if (query) {
+        ctx.strokeStyle = '#cf222e';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(query.x - 8, query.y);
+        ctx.lineTo(query.x + 8, query.y);
+        ctx.moveTo(query.x, query.y - 8);
+        ctx.lineTo(query.x, query.y + 8);
+        ctx.stroke();
+        ctx.fillStyle = '#cf222e';
+        ctx.beginPath();
+        ctx.arc(query.x, query.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+function drawHyperplaneLines(a, b, w, k) {
+    // a[0]*x + a[1]*y + b = k*w  →  可视化几条这样的等值线
+    // 将画布范围内所有 floor((a·v+b)/w) 的整数边界画出
+    const colors = ['#f0aeae', '#aec6f0', '#aef0c0', '#f0e0ae'];
+    const color = colors[k % colors.length];
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 4]);
+    // 找当前边界值范围
+    const corners = [
+        [0, 0], [canvas.width, 0], [0, canvas.height], [canvas.width, canvas.height]
+    ];
+    let minV = Infinity, maxV = -Infinity;
+    for (const c of corners) {
+        const v = (a[0] * c[0] + a[1] * c[1] + b) / w;
+        if (v < minV) minV = v;
+        if (v > maxV) maxV = v;
+    }
+    for (let idx = Math.floor(minV); idx <= Math.ceil(maxV); idx++) {
+        // 求等值线 a[0]*x + a[1]*y + b = idx*w 与画布边界的交点
+        const target = idx * w - b;
+        const seg = intersectLineWithRect(a[0], a[1], target, 0, 0, canvas.width, canvas.height);
+        if (seg) {
+            ctx.beginPath();
+            ctx.moveTo(seg[0][0], seg[0][1]);
+            ctx.lineTo(seg[1][0], seg[1][1]);
+            ctx.stroke();
+        }
+    }
+    ctx.setLineDash([]);
+}
+
+function intersectLineWithRect(A, B, C, x1, y1, x2, y2) {
+    // A*x + B*y = C ； 求与矩形四边的交点
+    const pts = [];
+    // 左边 x=x1
+    if (Math.abs(B) > 1e-9) {
+        const y = (C - A * x1) / B;
+        if (y >= y1 - 0.01 && y <= y2 + 0.01) pts.push([x1, y]);
+    }
+    // 右边 x=x2
+    if (Math.abs(B) > 1e-9) {
+        const y = (C - A * x2) / B;
+        if (y >= y1 - 0.01 && y <= y2 + 0.01) pts.push([x2, y]);
+    }
+    // 上边 y=y1
+    if (Math.abs(A) > 1e-9) {
+        const x = (C - B * y1) / A;
+        if (x >= x1 - 0.01 && x <= x2 + 0.01) pts.push([x, y1]);
+    }
+    // 下边 y=y2
+    if (Math.abs(A) > 1e-9) {
+        const x = (C - B * y2) / A;
+        if (x >= x1 - 0.01 && x <= x2 + 0.01) pts.push([x, y2]);
+    }
+    if (pts.length < 2) return null;
+    return [pts[0], pts[1]];
+}
+
+// -------- 曲线绘制（碰撞概率 vs 距离）--------
+function normalCDF(x) {
+    // 近似（Abramowitz & Stegun 26.2.17）
+    const a1 =  0.254829592;
+    const a2 = -0.284496736;
+    const a3 =  1.421413741;
+    const a4 = -1.453152027;
+    const a5 =  1.061405429;
+    const p  =  0.3275911;
+    const sign = x < 0 ? -1 : 1;
+    x = Math.abs(x) / Math.sqrt(2);
+    const t = 1.0 / (1.0 + p * x);
+    const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+    return 0.5 * (1 + sign * y);
+}
+function pSingle(d, w) {
+    if (d < 1e-6) return 1;
+    // Datar 2004 公式
+    const r = w / d;
+    return 1 - 2 * normalCDF(-r) - (2 / Math.sqrt(2 * Math.PI)) * (1 / r) * (1 - Math.exp(-r * r / 2));
+}
+
+function drawCurve() {
+    cctx.fillStyle = '#ffffff';
+    cctx.fillRect(0, 0, curveCanvas.width, curveCanvas.height);
+    const pad = { l: 55, r: 20, t: 20, b: 40 };
+    const W = curveCanvas.width - pad.l - pad.r;
+    const H = curveCanvas.height - pad.t - pad.b;
+    // 坐标
+    cctx.strokeStyle = '#d0d7de';
+    cctx.lineWidth = 1;
+    for (let i = 0; i <= 10; i++) {
+        const y = pad.t + H * (i / 10);
+        cctx.beginPath(); cctx.moveTo(pad.l, y); cctx.lineTo(pad.l + W, y); cctx.stroke();
+    }
+    // 坐标轴文本
+    cctx.fillStyle = '#57606a';
+    cctx.font = '11px sans-serif';
+    cctx.textAlign = 'right';
+    for (let i = 0; i <= 5; i++) {
+        const y = pad.t + H * (1 - i / 5);
+        cctx.fillText((i / 5).toFixed(1), pad.l - 6, y + 4);
+    }
+    cctx.textAlign = 'center';
+    const dMax = 300;
+    for (let i = 0; i <= 6; i++) {
+        const x = pad.l + W * (i / 6);
+        cctx.fillText((dMax * i / 6).toFixed(0), x, pad.t + H + 16);
+    }
+    cctx.textAlign = 'center';
+    cctx.font = 'bold 12px sans-serif';
+    cctx.fillText('距离 d', pad.l + W / 2, pad.t + H + 34);
+    cctx.save();
+    cctx.translate(15, pad.t + H / 2);
+    cctx.rotate(-Math.PI / 2);
+    cctx.fillText('碰撞概率', 0, 0);
+    cctx.restore();
+
+    // 单哈希曲线
+    drawProbCurve(pad, W, H, d => pSingle(d, params.w), '#0969da', '单次哈希 p');
+    // AND-K
+    drawProbCurve(pad, W, H, d => Math.pow(pSingle(d, params.w), params.K), '#6f42c1', 'AND-K: p^K');
+    // OR-L over AND-K
+    drawProbCurve(pad, W, H, d => 1 - Math.pow(1 - Math.pow(pSingle(d, params.w), params.K), params.L),
+        '#1a7f37', 'OR-L: 1-(1-p^K)^L');
+
+    // 图例
+    cctx.font = '12px sans-serif';
+    cctx.textAlign = 'left';
+    let ly = pad.t + 6;
+    const legends = [
+        ['#0969da', '单次哈希 p'],
+        ['#6f42c1', 'AND-K：p^K'],
+        ['#1a7f37', 'OR-L(AND-K)：1-(1-p^K)^L']
+    ];
+    for (const [c, t] of legends) {
+        cctx.fillStyle = c;
+        cctx.fillRect(pad.l + W - 200, ly, 14, 3);
+        cctx.fillStyle = '#24292f';
+        cctx.fillText(t, pad.l + W - 180, ly + 5);
+        ly += 18;
+    }
+}
+function drawProbCurve(pad, W, H, fn, color, name) {
+    cctx.strokeStyle = color;
+    cctx.lineWidth = 2;
+    cctx.beginPath();
+    for (let i = 0; i <= 200; i++) {
+        const d = 300 * (i / 200);
+        const p = Math.max(0, Math.min(1, fn(d)));
+        const x = pad.l + (i / 200) * W;
+        const y = pad.t + (1 - p) * H;
+        if (i === 0) cctx.moveTo(x, y);
+        else cctx.lineTo(x, y);
+    }
+    cctx.stroke();
+}
+
+// -------- UI 更新 --------
+function updateStats() {
+    let totalBuckets = 0;
+    if (hashTables.length > 0) totalBuckets = hashTables[params.tableIndex].buckets.size;
+    document.getElementById('stat-buckets').textContent = totalBuckets;
+    document.getElementById('stat-cand').textContent = candidateSet.size;
+    let recall = '-';
+    if (query && trueTop3.length > 0) {
+        const hit = trueTop3.filter(id => candidateSet.has(id)).length;
+        recall = `${hit}/3`;
+    }
+    document.getElementById('stat-recall').textContent = recall;
+    const ratio = points.length > 0 ? Math.round(candidateSet.size / points.length * 100) : 0;
+    document.getElementById('stat-ratio').textContent = ratio + '%';
+
+    // bucket 列表
+    const panel = document.getElementById('bucketPanel');
+    panel.innerHTML = '';
+    if (hashTables.length > 0) {
+        const table = hashTables[params.tableIndex];
+        const entries = Array.from(table.buckets.entries()).sort((a, b) => b[1].length - a[1].length);
+        for (const [key, ids] of entries.slice(0, 40)) {
+            const item = document.createElement('div');
+            item.className = 'bucket-item';
+            item.innerHTML = `<span class="bucket-code">[${key}]</span><span>${ids.length} 点</span>`;
+            panel.appendChild(item);
+        }
+        if (entries.length > 40) {
+            const more = document.createElement('div');
+            more.style.fontSize = '11px';
+            more.style.color = '#57606a';
+            more.style.textAlign = 'center';
+            more.textContent = `… 还有 ${entries.length - 40} 个 bucket`;
+            panel.appendChild(more);
+        }
+    }
+}
+
+function refreshAll() {
+    buildHashTables();
+    runQuery();
+    draw();
+    drawCurve();
+    updateStats();
+}
+
+// -------- 事件 --------
+canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    query = {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+    };
+    runQuery();
+    draw();
+    updateStats();
+});
+
+document.getElementById('c-n').addEventListener('input', (e) => {
+    params.N = +e.target.value;
+    document.getElementById('v-n').textContent = params.N;
+    generatePoints();
+    refreshAll();
+});
+document.getElementById('c-k').addEventListener('input', (e) => {
+    params.K = +e.target.value;
+    document.getElementById('v-k').textContent = params.K;
+    refreshAll();
+});
+document.getElementById('c-l').addEventListener('input', (e) => {
+    params.L = +e.target.value;
+    document.getElementById('v-l').textContent = params.L;
+    refreshAll();
+});
+document.getElementById('c-w').addEventListener('input', (e) => {
+    params.w = +e.target.value;
+    document.getElementById('v-w').textContent = params.w;
+    refreshAll();
+});
+document.getElementById('c-ti').addEventListener('input', (e) => {
+    params.tableIndex = +e.target.value - 1;
+    document.getElementById('v-ti').textContent = e.target.value;
+    runQuery();
+    draw();
+    updateStats();
+});
+document.getElementById('btn-regen').addEventListener('click', () => {
+    generatePoints();
+    refreshAll();
+});
+document.getElementById('btn-rehash').addEventListener('click', () => {
+    refreshAll();
+});
+
+// -------- 初始化 --------
+generatePoints();
+// 默认查询点在画布中央
+query = { x: canvas.width / 2, y: canvas.height / 2 };
+refreshAll();
+</script>
+
+</div>
+</body>
+</html>

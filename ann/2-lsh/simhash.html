@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SimHash 演示：Google 网页去重指纹</title>
+<style>
+/* ============ 全局样式 ============ */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf3 100%);
+    color: #24292f;
+    line-height: 1.7;
+    min-height: 100vh;
+}
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+}
+.nav a { color: #0969da; text-decoration: none; font-weight: 500; padding: 6px 14px; border-radius: 6px; transition: background 0.2s; }
+.nav a:hover { background: #ddf4ff; }
+h1 { font-size: 26px; color: #1f2328; margin: 0; }
+h2 { font-size: 22px; color: #1f2328; border-bottom: 2px solid #d0d7de; padding-bottom: 6px; margin-top: 8px; }
+h3 { font-size: 18px; color: #24292f; margin: 20px 0 10px 0; }
+.card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #d0d7de;
+}
+.card.info { background: linear-gradient(135deg, #ddf4ff 0%, #e6f7ff 100%); border-left: 4px solid #0969da; }
+.card.warn { background: linear-gradient(135deg, #fff8c5 0%, #fff3c4 100%); border-left: 4px solid #d4a72c; }
+.card.success { background: linear-gradient(135deg, #dafbe1 0%, #d4f5da 100%); border-left: 4px solid #1a7f37; }
+pre {
+    background: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+}
+code {
+    background: #f6f8fa;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 13px;
+    color: #cf222e;
+}
+pre code { background: transparent; color: #24292f; padding: 0; }
+.controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.control-item {
+    background: #f6f8fa;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid #d0d7de;
+}
+.control-item label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #57606a;
+    margin-bottom: 6px;
+}
+.control-item input[type=range] { width: 100%; accent-color: #d4a72c; }
+.control-item textarea {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 12px;
+    resize: vertical;
+}
+.value-badge {
+    display: inline-block;
+    background: #d4a72c;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 6px;
+}
+.btn {
+    background: #1f883d;
+    color: white;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    margin: 4px;
+    transition: background 0.2s;
+}
+.btn:hover { background: #1a7431; }
+.btn.secondary { background: #d4a72c; color: #24292f; }
+.btn.secondary:hover { background: #b8901f; color: white; }
+
+.formula {
+    background: #f6f8fa;
+    padding: 12px 16px;
+    border-radius: 6px;
+    text-align: center;
+    font-family: "Times New Roman", serif;
+    font-style: italic;
+    font-size: 16px;
+    margin: 10px 0;
+    border-left: 3px solid #d4a72c;
+}
+table.reg {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+}
+table.reg th, table.reg td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #d0d7de;
+}
+table.reg th { background: #f6f8fa; font-weight: 600; }
+
+.stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+}
+.stat-box {
+    background: #f6f8fa;
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid #d0d7de;
+}
+.stat-box .label { font-size: 12px; color: #57606a; }
+.stat-box .value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #d4a72c;
+}
+
+/* Documents grid */
+.doc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+@media (max-width: 720px) { .doc-grid { grid-template-columns: 1fr; } }
+.doc-card {
+    background: #f6f8fa;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #d0d7de;
+}
+.doc-card label { font-size: 13px; font-weight: 600; color: #57606a; }
+.doc-card textarea {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+}
+
+/* Feature table */
+.feat-table {
+    max-height: 260px;
+    overflow-y: auto;
+    background: #ffffff;
+    border-radius: 8px;
+    border: 1px solid #d0d7de;
+}
+.feat-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.feat-table th, .feat-table td { padding: 4px 8px; text-align: left; }
+.feat-table th { background: #f6f8fa; position: sticky; top: 0; }
+.feat-table tr:nth-child(even) { background: #fafbfc; }
+.feat-table .binstr { font-family: monospace; color: #57606a; letter-spacing: 1px; }
+
+/* Bit visualization */
+.bit-bars { display: flex; gap: 1px; margin: 8px 0; }
+.bit-col {
+    flex: 1;
+    text-align: center;
+    font-family: monospace;
+    font-size: 10px;
+}
+.bit-bar-wrap {
+    height: 100px;
+    position: relative;
+    background: #f6f8fa;
+    border-radius: 3px;
+    margin-bottom: 2px;
+    overflow: hidden;
+    border: 1px solid #eaeef2;
+}
+.bit-bar-pos, .bit-bar-neg {
+    position: absolute;
+    left: 0; right: 0;
+    height: 50%;
+}
+.bit-bar-pos { top: 50%; background: linear-gradient(to bottom, #a3d3af, #1f883d); transform-origin: top center; }
+.bit-bar-neg { bottom: 50%; background: linear-gradient(to top, #f0a3a3, #cf222e); transform-origin: bottom center; }
+.bit-zero-line {
+    position: absolute;
+    top: 50%; left: 0; right: 0;
+    height: 1px;
+    background: #57606a;
+}
+.bit-val {
+    font-size: 10px;
+    color: #24292f;
+    font-weight: 600;
+}
+.bit-idx { color: #57606a; }
+
+/* Fingerprint */
+.fingerprint {
+    font-family: monospace;
+    background: #ffffff;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #d0d7de;
+    letter-spacing: 3px;
+    font-size: 14px;
+    word-break: break-all;
+    text-align: center;
+}
+.fp-bit-0 { color: #57606a; }
+.fp-bit-1 { color: #1a7f37; font-weight: 700; }
+.fp-diff { background: #fff8c5; padding: 0 2px; border-radius: 2px; color: #cf222e; font-weight: 700; }
+
+/* Legend */
+.legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 8px 0; font-size: 12px; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+
+.pair-result {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+}
+.pair-item {
+    background: #f6f8fa;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border-left: 4px solid #0969da;
+    font-size: 13px;
+}
+.pair-item.dup { border-left-color: #cf222e; background: #ffebe9; }
+.pair-item.near { border-left-color: #d4a72c; background: #fff8c5; }
+ul li { margin: 4px 0; }
+canvas { display: block; background: #ffffff; border-radius: 8px; border: 1px solid #d0d7de; }
+/* ============ 教学辅助样式 ============ */
+.prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+.prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+.glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+.glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+.glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+.glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+.new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.pitfall h4 { color: #92400e; margin-top: 0; }
+.next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.next-steps a { color: #047857; font-weight: 600; }
+.symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+.symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+.symbol-table th { background: #f9fafb; color: #374151; }
+.symbol-table code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-family: Monaco, monospace; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="nav">
+    <h1>SimHash：Google 网页去重指纹</h1>
+    <a href="../index.html">← 返回目录</a>
+</div>
+
+<!-- ============ 前置阅读 ============ -->
+<div class="prereq-bar">
+    <b>前置：</b>
+    <span class="pill">向量内积</span>
+    <span class="pill">随机投影 LSH（推荐先读 Classic LSH）</span>
+    <span style="color:#1e40af;font-size:0.85rem;margin-left:6px;">（SimHash 是 cosine 距离的 LSH 变种，可以先看 <a href="classic-lsh.html" style="color:#1e40af;">Classic LSH</a> 理解基础）</span>
+</div>
+
+<!-- ============ 关键术语速查 ============ -->
+<details class="glossary">
+    <summary>关键术语速查（点击展开）</summary>
+    <dl>
+        <dt>汉明距离（Hamming distance）</dt>
+        <dd>两串等长二进制不同位的个数。SimHash 用汉明距离衡量两个指纹的接近程度。</dd>
+        <dt>指纹（fingerprint）</dt>
+        <dd>SimHash 的输出：一串 f 位（常见 64 位）二进制串，用来代表整篇文档。</dd>
+        <dt>加权符号哈希</dt>
+        <dd>每维加权投票，正数记 1、负数记 0。相当于按特征权重做一次"多数表决"。</dd>
+        <dt>分块索引</dt>
+        <dd>把 f 位指纹切成 c 块，用每一块当哈希键分桶。鸽笼原理保证真的重复项至少有 <code>c − k</code> 块完全一致。</dd>
+        <dt>鸽笼原理</dt>
+        <dd>如果两个指纹只差 k 位，把它们切成 c 块，最多有 k 块被影响 → 一定有 c − k 块完全一致。</dd>
+        <dt>cosine 与 π 的关系</dt>
+        <dd>随机超平面把两向量切开的概率恰好等于两向量夹角 θ 占 π 的比例：<code>Pr = 1 − θ/π</code>。这是 SimHash 局部敏感性的数学根基。</dd>
+    </dl>
+</details>
+
+<!-- ============ 新手引导 ============ -->
+<div class="new-user-tip">
+    <b>新手怎么玩这个页面？</b>
+    <ol style="margin:6px 0 0 20px;padding:0;">
+        <li>修改 D1 的文本，观察下方特征表和加权求和柱状图跟着变。</li>
+        <li>柱状图正值柱越高，那位的 bit 会被顶到 1；负值柱越深，那位 bit 落到 0。</li>
+        <li>拉动指纹位数 f 从 8 → 64，观察短指纹波动大、长指纹更稳定。</li>
+        <li>下滑到分块索引，观察红色高亮的"不等块"和绿色的"相等块"分布。</li>
+    </ol>
+</div>
+
+<!-- ============ 直观理解 ============ -->
+<div class="card info">
+    <h2>1. 直观理解：让相似文档留下相似"指纹"</h2>
+    <p>MinHash 处理"集合"很擅长，但如果我们要考虑<b>词频权重</b>、<b>短文档差异</b>，就轮到 SimHash 出场了。</p>
+    <p>SimHash 是 Charikar 2002 年提出、Google 2007 论文《Detecting Near-Duplicates for Web Crawling》推广的技术。它做一件事：把任意长度的文档压缩成一个 <b>f 位（通常 64 位）二进制指纹</b>，让相似文档产生只有几位不同的指纹。</p>
+    <p>类比：想象每个词都在 f 维空间中投了一票（带权），最终每一维的正负号取决于"多数表决"。相似文档投票分布相近，指纹自然相近 → 用 <b>汉明距离</b> 比较即可判定重复。</p>
+    <ul>
+        <li>SimHash 是 <b>局部敏感</b> 的：两文档余弦相似度越高，指纹汉明距离越小</li>
+        <li>Google 报告：对 8×10⁹ 网页，取 64 位指纹、汉明距 ≤ 3 判为重复，效果与准确度俱佳</li>
+    </ul>
+</div>
+
+<!-- ============ 算法原理 ============ -->
+<div class="card">
+    <h2>2. 算法原理</h2>
+
+    <h3>2.0 符号速查表</h3>
+    <table class="symbol-table">
+        <tr><th>符号</th><th>含义</th></tr>
+        <tr><td><code>f</code></td><td>指纹位数（常用 64）</td></tr>
+        <tr><td><code>k</code></td><td>汉明距阈值，两指纹差 ≤ k 就算近似重复</td></tr>
+        <tr><td><code>c</code></td><td>分块数，把 f 位指纹切成 c 块</td></tr>
+        <tr><td><code>θ</code></td><td>两向量夹角（弧度），<code>θ = arccos(sim)</code></td></tr>
+        <tr><td><code>w<sub>i</sub></code></td><td>特征 i 的权重（如词频、TF-IDF）</td></tr>
+    </table>
+
+    <h3>2.1 SimHash 步骤</h3>
+    <pre><code>输入：文档 D，位数 f（如 64）
+1. 特征抽取：切词 / n-gram → 特征列表 {(token, weight)}
+2. 初始化 v = [0.0] * f
+3. 对每个特征 token：
+     h = f-bit hash(token)         // 如 MurmurHash / SHA-1 高 f 位
+     for i in 0..f-1:
+         if bit_i(h) == 1: v[i] += weight(token)
+         else:              v[i] -= weight(token)
+4. 生成指纹 fp：
+     fp_i = 1 if v[i] > 0 else 0
+5. 输出 fp（f 位二进制串）</code></pre>
+
+    <h3>2.2 为什么是"局部敏感"的？</h3>
+    <p>设两文档特征集合相似，改动一个词只会给某些维加/减一个小权重，不足以翻转"多数派"的符号 → 大部分 bit 保持不变。</p>
+    <p><b>直觉铺垫：</b>更严谨地看，SimHash 等价于用 f 个随机超平面把加权特征向量"切开"。每个 bit 位就是"落在超平面哪一边"的 0/1 标签。<b>随机超平面把两个向量切开的概率 = 两向量夹角占 π 的比例</b>——夹角越小（向量越相似），越难被随机切开，指纹在这一位相同的概率就越高。</p>
+    <p>可以证明：对随机映射假设下，两文档余弦相似度 <code>sim(A, B)</code> 与它们指纹的相同位比例满足：</p>
+    <div class="formula">
+        Pr[fp<sub>i</sub>(A) = fp<sub>i</sub>(B)] = 1 − θ(A, B) / π
+    </div>
+    <p>其中 <code>θ(A, B) = arccos(sim(A, B))</code>。也就是说，越相似的文档指纹汉明距越小。</p>
+
+    <h3>2.3 汉明距离阈值 & Google 分桶技巧</h3>
+    <p><b>直觉铺垫：鸽笼原理。</b>假设指纹总共有 k 位不同，把它切成 c 块，最坏情况这 k 个"不同位"都被分散到 c 块里；即便每一块都被至少 1 个"不同位"污染，也只能污染 <code>min(k, c)</code> 块。所以一定至少有 <code>c − k</code> 块完全一致。换句话说：只要 <code>c ≥ k + 1</code>，就至少有 1 块能作为"确定命中"的哈希键。</p>
+    <p>典型经验值：</p>
+    <ul>
+        <li><code>f = 64</code>，<code>k = 3</code>（近似重复 threshold）</li>
+        <li>暴力比较 N 个指纹是 O(N²)；不可扩展</li>
+        <li>Google 的解法：把 64 位分成 <b>c 块</b>（如 c=4），如果两个指纹汉明距 ≤ k，那么至少存在 <code>c − k</code> 块完全一致；把每块作为哈希键分桶查找即可</li>
+    </ul>
+
+    <h3>2.4 与 MinHash / Random Projection 的关系</h3>
+    <table class="reg">
+        <tr><th></th><th>SimHash</th><th>MinHash</th><th>p-stable LSH</th></tr>
+        <tr><td>相似度</td><td>余弦 / 汉明</td><td>Jaccard</td><td>欧氏 / 余弦</td></tr>
+        <tr><td>输入</td><td>加权特征向量</td><td>集合</td><td>稠密向量</td></tr>
+        <tr><td>输出</td><td>f-bit 指纹</td><td>k 维签名</td><td>K 维整数签名</td></tr>
+        <tr><td>存储</td><td>极小（8 Byte / 64bit）</td><td>k×4 Byte</td><td>K×4 Byte × L</td></tr>
+    </table>
+</div>
+
+<!-- ============ 交互演示 ============ -->
+<div class="card">
+    <h2>3. 交互式演示：文档 → 特征 → 加权投票 → 指纹</h2>
+
+    <div class="controls">
+        <div class="control-item">
+            <label>指纹位数 f: <span class="value-badge" id="v-f">32</span></label>
+            <input type="range" id="c-f" min="8" max="64" value="32" step="8">
+        </div>
+        <div class="control-item">
+            <label>近重阈值（汉明距）: <span class="value-badge" id="v-th">3</span></label>
+            <input type="range" id="c-th" min="0" max="16" value="3">
+        </div>
+        <div class="control-item">
+            <label>分词粒度</label>
+            <select id="c-tokenizer" style="width:100%;padding:6px;border-radius:6px;border:1px solid #d0d7de">
+                <option value="word">按空格分词</option>
+                <option value="char2">字符 2-gram</option>
+                <option value="char3" selected>字符 3-gram</option>
+            </select>
+        </div>
+        <div class="control-item">
+            <label>特征加权方式</label>
+            <select id="c-weight" style="width:100%;padding:6px;border-radius:6px;border:1px solid #d0d7de">
+                <option value="tf" selected>TF（词频）</option>
+                <option value="uniform">均匀 1</option>
+                <option value="tfidflog">log(1+tf)（近似 IDF 效果）</option>
+            </select>
+        </div>
+        <div class="control-item">
+            <label>&nbsp;</label>
+            <button class="btn" id="btn-recompute">重新计算</button>
+        </div>
+    </div>
+
+    <h3>输入文档（可编辑）</h3>
+    <div class="doc-grid">
+        <div class="doc-card">
+            <label>文档 D1</label>
+            <textarea id="doc-1" rows="4">局部敏感哈希是一种用于近似最近邻搜索的哈希方法，能把相似的向量以较高概率映射到同一个桶里。</textarea>
+        </div>
+        <div class="doc-card">
+            <label>文档 D2（与 D1 高度相似）</label>
+            <textarea id="doc-2" rows="4">局部敏感哈希是一种用于近似最近邻查找的哈希算法，能把相似的向量以较高概率放到同一个桶中。</textarea>
+        </div>
+        <div class="doc-card">
+            <label>文档 D3（部分相似）</label>
+            <textarea id="doc-3" rows="4">哈希算法在数据库中被广泛使用，用于快速索引和查找记录，也用于校验数据完整性。</textarea>
+        </div>
+        <div class="doc-card">
+            <label>文档 D4（无关）</label>
+            <textarea id="doc-4" rows="4">今天天气不错，我准备下班去公园跑步锻炼身体，顺便看看夕阳。</textarea>
+        </div>
+    </div>
+
+    <h3 style="margin-top:24px">Step 1：D1 的特征表（token, weight, hash 高 f 位）</h3>
+    <div class="feat-table" id="featTable"></div>
+
+    <h3>Step 2：D1 的每一位加权求和（正值 → bit=1，负值 → bit=0）</h3>
+    <div class="bit-bars" id="bitBars"></div>
+    <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#1f883d"></div>投正票（bit=1 累加）</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#cf222e"></div>投负票（bit=0 累加）</div>
+    </div>
+
+    <h3>Step 3：四个文档的指纹与相似度</h3>
+    <div id="fingerprints"></div>
+
+    <h3>两两比较：汉明距 & 判定</h3>
+    <div class="pair-result" id="pairResult"></div>
+
+    <h3 style="margin-top:24px">Step 4：分块索引示意（f 分 c 块，汉明距 ≤ k ⇒ 至少 c-k 块完全一致）</h3>
+    <p style="font-size:13px;color:#57606a">滑动 c 观察每一块 index 的样子；红色高亮的块表示 D1、D2 在该块不完全一致。</p>
+    <div class="controls" style="margin-top:0">
+        <div class="control-item">
+            <label>块数 c: <span class="value-badge" id="v-c">4</span></label>
+            <input type="range" id="c-c" min="1" max="8" value="4">
+        </div>
+        <div class="control-item">
+            <label>&nbsp;</label>
+            <div style="font-size:13px;color:#57606a">保证 <code>c ≥ k+1</code> 才能保证汉明距 ≤ k 的指纹至少有一块相同</div>
+        </div>
+    </div>
+    <div id="blockView"></div>
+
+    <h3 style="margin-top:24px">相似度 vs 汉明距曲线</h3>
+    <p style="font-size:13px;color:#57606a">理论关系 <code>E[汉明距] = f · θ / π</code>，其中 <code>θ = arccos(sim)</code>。绿色圆点是当前四文档两两位置。</p>
+    <canvas id="simCurve" width="720" height="280"></canvas>
+</div>
+
+<!-- ============ 案例讲解 ============ -->
+<div class="card success">
+    <h2>4. 案例逐步讲解</h2>
+    <p>以默认四个中文文档为例（<code>f=32</code>、3-gram + TF 权重）：</p>
+    <ul>
+        <li>D1 vs D2：只替换了几个近义词（搜索→查找、桶里→桶中、映射→放到），大量 3-gram 相同 → 汉明距通常 &lt; 3</li>
+        <li>D1 vs D3：都提到"哈希"但主题不同 → 汉明距在 8~14 之间</li>
+        <li>D1 vs D4：完全不同的主题 → 汉明距接近 f/2（≈16），说明"几乎独立"</li>
+    </ul>
+    <p>把 f 调到 64 位、阈值设 3 就是 Google 论文的经典配置；把粒度切换成 <code>字符 2-gram</code> 会让指纹对短文档更敏感，但也更容易被噪声影响。</p>
+</div>
+
+<!-- ============ 复杂度 ============ -->
+<div class="card">
+    <h2>5. 复杂度 & 权衡</h2>
+    <table class="reg">
+        <tr><th>指标</th><th>值</th><th>说明</th></tr>
+        <tr><td>指纹生成</td><td>O(|features| · f)</td><td>每个特征更新 f 维累加器</td></tr>
+        <tr><td>存储</td><td>O(f/8) Byte 每文档</td><td>64bit → 8 Byte</td></tr>
+        <tr><td>暴力比对</td><td>O(N²)</td><td>不可扩展</td></tr>
+        <tr><td>分块索引比对</td><td>≈ O(N · C(c, k) / 2^{f/c})</td><td>k 是允许的汉明距</td></tr>
+    </table>
+    <p><b>调参口诀：</b>阈值 k 越小 → 判定越严；c 越大 → 索引越轻但每块越短、每桶命中越多。经验：<code>f=64, k=3, c=4</code> 是网页去重的黄金起点。</p>
+</div>
+
+<!-- ============ 优缺点 ============ -->
+<div class="card warn">
+    <h2>6. 优缺点 & 适用场景</h2>
+    <table class="reg">
+        <tr><th></th><th>优点</th><th>缺点</th></tr>
+        <tr>
+            <td><b>SimHash</b></td>
+            <td>
+                <ul>
+                    <li>指纹极小（8 Byte / doc）</li>
+                    <li>支持词频权重，效果比 MinHash 更精</li>
+                    <li>与 Google 分块索引结合可亚线性查询</li>
+                    <li>可流式增量（不需重排全集）</li>
+                </ul>
+            </td>
+            <td>
+                <ul>
+                    <li>对短文档鲁棒性较差</li>
+                    <li>阈值 k 需人工调</li>
+                    <li>受 tokenizer 影响明显</li>
+                    <li>非稀疏 & 长文档效果最好</li>
+                </ul>
+            </td>
+        </tr>
+    </table>
+    <p><b>典型场景：</b>网页去重（Google 论文场景）、新闻聚合去重、Twitter/朋友圈"洗稿"检测、语料清洗，配合分块索引可以支撑百亿级文档规模。</p>
+</div>
+
+<!-- ============ 常见误区 ============ -->
+<div class="pitfall">
+    <h4>常见误区</h4>
+    <ul>
+        <li><b>短文本极不稳定。</b>只有几十字的推文/评论，一个高权重词就能让某几位彻底翻转。工业界通常要求文档 ≥ 数百词，否则改用 MinHash 或 BM25。</li>
+        <li><b>tokenizer 换一种，指纹全变。</b>字符 3-gram 和词级分词得到完全不同的特征分布，指纹不可跨系统比较。<b>务必把分词方式当成"哈希盐"记下来</b>，全流水线固定。</li>
+        <li><b>停用词/高频词不处理，会让 "the / 的 / 是" 独占 top 权重</b>，指纹被这些无信息词主导。上线前记得 IDF 打压或直接停用词过滤。</li>
+    </ul>
+</div>
+
+<!-- ============ 下一步 ============ -->
+<div class="next-steps">
+    <b>下一步学什么？</b>
+    <ul>
+        <li><a href="classic-lsh.html">Classic LSH</a> — 回看欧氏 LSH，理解 SimHash 只是随机超平面 LSH 的一种压缩形式。</li>
+        <li><a href="minhash.html">MinHash</a> — 集合场景的姊妹算法，理论保证更干净。</li>
+        <li><b>SpotSig</b> — 结合停用词位置和 shingle 的改进版指纹，抗噪更强。</li>
+        <li><b>Weighted SimHash</b> — 把 TF-IDF、位置权重一起塞进 SimHash。</li>
+        <li><b>现代方案：SBERT + HNSW</b> — 语义嵌入 + 图索引，对短文本和跨语言更友好，是当代去重推荐链路的默认起点。</li>
+    </ul>
+</div>
+
+<script>
+/* ==========================================================
+   SimHash 交互演示
+   ========================================================== */
+
+// -------- 全局参数 --------
+let params = {
+    f: 32,           // 指纹位数
+    threshold: 3,    // 汉明距阈值
+    tokenizer: 'char3',
+    weightMode: 'tf',
+    c: 4             // 分块数
+};
+
+// -------- 工具：字符串 hash → BigInt (64bit) --------
+// 使用两个 FNV-1a 变种得到 64bit
+function fnv1a_32(str, seed) {
+    let h = (0x811c9dc5 ^ seed) >>> 0;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+}
+function hash64(str) {
+    // 拼接两个不同种子的 32bit hash 成 64bit
+    const hi = fnv1a_32(str, 0);
+    const lo = fnv1a_32(str + '#salt', 0x1234abcd);
+    return (BigInt(hi) << 32n) | BigInt(lo);
+}
+// 取 f 位 (从 hash64 的高位)
+function extractBits(hash64Value, f) {
+    // 返回一个长度 f 的 0/1 数组（bit 0 是最高位）
+    const arr = new Array(f);
+    for (let i = 0; i < f; i++) {
+        // 从最高位开始
+        const shift = BigInt(63 - (i % 64));
+        arr[i] = Number((hash64Value >> shift) & 1n);
+    }
+    return arr;
+}
+
+// -------- 分词 --------
+function tokenize(text) {
+    text = text.trim();
+    if (params.tokenizer === 'word') {
+        // 空格 / 中文按字切
+        return text.split(/[\s，。、；！？,\.\!\?;:]+/).filter(x => x.length > 0);
+    } else if (params.tokenizer === 'char2') {
+        const arr = [];
+        for (let i = 0; i + 2 <= text.length; i++) arr.push(text.substr(i, 2));
+        return arr;
+    } else {
+        const arr = [];
+        for (let i = 0; i + 3 <= text.length; i++) arr.push(text.substr(i, 3));
+        return arr;
+    }
+}
+
+function featureCounts(text) {
+    const tokens = tokenize(text);
+    const counts = new Map();
+    for (const t of tokens) counts.set(t, (counts.get(t) || 0) + 1);
+    // 权重变换
+    const feats = [];
+    for (const [t, c] of counts) {
+        let w = c;
+        if (params.weightMode === 'uniform') w = 1;
+        else if (params.weightMode === 'tfidflog') w = Math.log(1 + c) * 2;
+        feats.push({ token: t, weight: w });
+    }
+    return feats;
+}
+
+// -------- SimHash 计算 --------
+function simhash(text) {
+    const feats = featureCounts(text);
+    const v = new Array(params.f).fill(0);
+    const rows = [];
+    for (const feat of feats) {
+        const h = hash64(feat.token);
+        const bits = extractBits(h, params.f);
+        for (let i = 0; i < params.f; i++) {
+            if (bits[i] === 1) v[i] += feat.weight;
+            else v[i] -= feat.weight;
+        }
+        rows.push({ token: feat.token, weight: feat.weight, bits: bits });
+    }
+    const fp = v.map(x => x > 0 ? 1 : 0);
+    return { fp, v, rows, feats };
+}
+
+function hammingDistance(a, b) {
+    let d = 0;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
+    return d;
+}
+
+// 由指纹估算余弦相似度：sim = cos(π · d / f)
+function estimateSimilarity(hammingDist, f) {
+    return Math.cos(Math.PI * hammingDist / f);
+}
+
+// -------- 渲染 --------
+function renderFeatureTable(res) {
+    const el = document.getElementById('featTable');
+    let html = '<table><thead><tr><th>#</th><th>Token</th><th>Weight</th><th>Hash 前 ' + params.f + ' 位</th></tr></thead><tbody>';
+    for (let i = 0; i < Math.min(res.rows.length, 60); i++) {
+        const r = res.rows[i];
+        html += `<tr><td>${i}</td><td>${escapeHTML(r.token)}</td><td>${r.weight.toFixed(2)}</td>`;
+        html += `<td class="binstr">${r.bits.join('')}</td></tr>`;
+    }
+    if (res.rows.length > 60) {
+        html += `<tr><td colspan="4" style="text-align:center;color:#57606a">… 还有 ${res.rows.length - 60} 个特征</td></tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+}
+
+function renderBitBars(res) {
+    const el = document.getElementById('bitBars');
+    // 归一化
+    const maxAbs = Math.max(1, ...res.v.map(Math.abs));
+    let html = '';
+    for (let i = 0; i < params.f; i++) {
+        const v = res.v[i];
+        const ratio = Math.abs(v) / maxAbs;
+        const isPos = v > 0;
+        const bit = isPos ? 1 : 0;
+        html += `<div class="bit-col">`;
+        html += `<div class="bit-bar-wrap">`;
+        html += `<div class="bit-zero-line"></div>`;
+        if (isPos) {
+            html += `<div class="bit-bar-pos" style="transform: scaleY(${ratio.toFixed(3)})"></div>`;
+        } else {
+            html += `<div class="bit-bar-neg" style="transform: scaleY(${ratio.toFixed(3)})"></div>`;
+        }
+        html += `</div>`;
+        html += `<div class="bit-val" style="color:${isPos ? '#1a7f37' : '#cf222e'}">${bit}</div>`;
+        if (params.f <= 32 || i % 4 === 0) {
+            html += `<div class="bit-idx">${i}</div>`;
+        } else {
+            html += `<div class="bit-idx">&nbsp;</div>`;
+        }
+        html += `</div>`;
+    }
+    el.innerHTML = html;
+}
+
+function renderFingerprints(res1, res2, res3, res4) {
+    const el = document.getElementById('fingerprints');
+    const results = [
+        { label: 'D1', res: res1 },
+        { label: 'D2', res: res2 },
+        { label: 'D3', res: res3 },
+        { label: 'D4', res: res4 }
+    ];
+    let html = '';
+    for (const r of results) {
+        html += `<div style="margin-bottom:6px">`;
+        html += `<b>${r.label}</b> (${r.res.fp.length} bits, ${r.res.feats.length} 个特征):&nbsp;`;
+        html += `<span class="fingerprint">${fpToHTML(r.res.fp)}</span>`;
+        html += `</div>`;
+    }
+    el.innerHTML = html;
+}
+
+function fpToHTML(fp, diffMask) {
+    let html = '';
+    for (let i = 0; i < fp.length; i++) {
+        const cls = fp[i] === 1 ? 'fp-bit-1' : 'fp-bit-0';
+        const diff = diffMask && diffMask[i] ? ' fp-diff' : '';
+        html += `<span class="${cls}${diff}">${fp[i]}</span>`;
+        if ((i + 1) % 8 === 0) html += ' ';
+    }
+    return html;
+}
+
+function renderPairResults(results) {
+    const el = document.getElementById('pairResult');
+    let html = '';
+    const pairs = [];
+    for (let i = 0; i < 4; i++) {
+        for (let j = i + 1; j < 4; j++) {
+            const d = hammingDistance(results[i].fp, results[j].fp);
+            const sim = estimateSimilarity(d, params.f);
+            pairs.push({ i, j, d, sim });
+        }
+    }
+    for (const p of pairs) {
+        let cls = 'pair-item';
+        let label = '不同';
+        if (p.d <= params.threshold) { cls += ' dup'; label = '判定为重复'; }
+        else if (p.d <= params.threshold * 2) { cls += ' near'; label = '较为相似'; }
+        html += `<div class="${cls}">`;
+        html += `<b>D${p.i + 1} vs D${p.j + 1}</b><br>`;
+        html += `汉明距: <b>${p.d}</b> / ${params.f}<br>`;
+        html += `估算相似度: <b>${p.sim.toFixed(3)}</b><br>`;
+        html += `${label}`;
+        html += `</div>`;
+    }
+    el.innerHTML = html;
+}
+
+function renderBlockView(res1, res2) {
+    const el = document.getElementById('blockView');
+    const f = params.f;
+    const c = params.c;
+    const blockSize = Math.ceil(f / c);
+    let html = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
+    for (let bi = 0; bi < c; bi++) {
+        const start = bi * blockSize;
+        const end = Math.min(start + blockSize, f);
+        const seg1 = res1.fp.slice(start, end).join('');
+        const seg2 = res2.fp.slice(start, end).join('');
+        const equal = seg1 === seg2;
+        const bg = equal ? '#dafbe1' : '#ffebe9';
+        const border = equal ? '#1a7f37' : '#cf222e';
+        html += `<div style="background:${bg};border-left:4px solid ${border};padding:8px 12px;border-radius:6px;font-family:monospace;font-size:12px;min-width:120px">`;
+        html += `<div style="font-size:11px;color:#57606a;margin-bottom:4px">块 ${bi}（位 ${start}-${end - 1}）</div>`;
+        html += `<div>D1: ${seg1}</div>`;
+        html += `<div>D2: ${seg2}</div>`;
+        html += `<div style="margin-top:4px;color:${border};font-weight:600">${equal ? '✓ 相等' : '✗ 不等'}</div>`;
+        html += `</div>`;
+    }
+    html += '</div>';
+    // 说明
+    let hd12 = hammingDistance(res1.fp, res2.fp);
+    let equalBlocks = 0;
+    for (let bi = 0; bi < c; bi++) {
+        const start = bi * blockSize;
+        const end = Math.min(start + blockSize, f);
+        const seg1 = res1.fp.slice(start, end).join('');
+        const seg2 = res2.fp.slice(start, end).join('');
+        if (seg1 === seg2) equalBlocks++;
+    }
+    html += `<p style="margin-top:10px;font-size:13px;color:#57606a">D1、D2 汉明距 = <b>${hd12}</b>，相等块数 = <b>${equalBlocks}</b>；理论最小相等块数 = c - k = <b>${Math.max(0, c - params.threshold)}</b></p>`;
+    el.innerHTML = html;
+}
+
+function drawSimCurve(pairs) {
+    const cv = document.getElementById('simCurve');
+    const cx = cv.getContext('2d');
+    cx.fillStyle = '#ffffff';
+    cx.fillRect(0, 0, cv.width, cv.height);
+    const pad = { l: 50, r: 20, t: 20, b: 40 };
+    const W = cv.width - pad.l - pad.r;
+    const H = cv.height - pad.t - pad.b;
+
+    cx.strokeStyle = '#d0d7de';
+    cx.lineWidth = 1;
+    for (let i = 0; i <= 10; i++) {
+        const y = pad.t + H * (i / 10);
+        cx.beginPath(); cx.moveTo(pad.l, y); cx.lineTo(pad.l + W, y); cx.stroke();
+    }
+    for (let i = 0; i <= 10; i++) {
+        const x = pad.l + W * (i / 10);
+        cx.beginPath(); cx.moveTo(x, pad.t); cx.lineTo(x, pad.t + H); cx.stroke();
+    }
+    cx.fillStyle = '#57606a';
+    cx.font = '11px sans-serif';
+    cx.textAlign = 'right';
+    for (let i = 0; i <= 5; i++) {
+        const y = pad.t + H * (1 - i / 5);
+        cx.fillText((i / 5).toFixed(1), pad.l - 6, y + 4);
+    }
+    cx.textAlign = 'center';
+    for (let i = 0; i <= 10; i++) {
+        const x = pad.l + W * (i / 10);
+        const d = Math.round(params.f * i / 10);
+        cx.fillText(String(d), x, pad.t + H + 16);
+    }
+    cx.font = 'bold 12px sans-serif';
+    cx.fillText('汉明距 d', pad.l + W / 2, pad.t + H + 34);
+    cx.save();
+    cx.translate(15, pad.t + H / 2);
+    cx.rotate(-Math.PI / 2);
+    cx.fillText('估算相似度 sim', 0, 0);
+    cx.restore();
+
+    // 理论曲线 sim = cos(π * d / f)
+    cx.strokeStyle = '#d4a72c';
+    cx.lineWidth = 2.5;
+    cx.beginPath();
+    for (let i = 0; i <= 200; i++) {
+        const d = params.f * (i / 200);
+        const sim = Math.cos(Math.PI * d / params.f);
+        // sim ∈ [-1, 1]，映射到 [0, 1] 显示
+        const y_ratio = (sim + 1) / 2;
+        const x = pad.l + (i / 200) * W;
+        const y = pad.t + (1 - y_ratio) * H;
+        if (i === 0) cx.moveTo(x, y);
+        else cx.lineTo(x, y);
+    }
+    cx.stroke();
+
+    // 阈值线
+    cx.strokeStyle = '#cf222e';
+    cx.setLineDash([6, 4]);
+    cx.beginPath();
+    const xTh = pad.l + (params.threshold / params.f) * W;
+    cx.moveTo(xTh, pad.t);
+    cx.lineTo(xTh, pad.t + H);
+    cx.stroke();
+    cx.setLineDash([]);
+    cx.fillStyle = '#cf222e';
+    cx.font = '12px sans-serif';
+    cx.textAlign = 'left';
+    cx.fillText(`阈值 k=${params.threshold}`, xTh + 4, pad.t + 14);
+
+    // 点：pairs
+    cx.font = '11px sans-serif';
+    for (const p of pairs) {
+        const x = pad.l + (p.d / params.f) * W;
+        const y_ratio = (p.sim + 1) / 2;
+        const y = pad.t + (1 - y_ratio) * H;
+        cx.fillStyle = '#1f883d';
+        cx.beginPath();
+        cx.arc(x, y, 6, 0, Math.PI * 2);
+        cx.fill();
+        cx.fillStyle = '#24292f';
+        cx.fillText(`D${p.i + 1}-D${p.j + 1}`, x + 8, y + 4);
+    }
+}
+
+function escapeHTML(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// -------- 全流程 --------
+function runAll() {
+    const docs = [
+        document.getElementById('doc-1').value,
+        document.getElementById('doc-2').value,
+        document.getElementById('doc-3').value,
+        document.getElementById('doc-4').value
+    ];
+    const results = docs.map(simhash);
+    renderFeatureTable(results[0]);
+    renderBitBars(results[0]);
+    renderFingerprints(...results);
+    renderPairResults(results);
+    renderBlockView(results[0], results[1]);
+
+    // pairs (i,j,d,sim)
+    const pairs = [];
+    for (let i = 0; i < 4; i++) {
+        for (let j = i + 1; j < 4; j++) {
+            const d = hammingDistance(results[i].fp, results[j].fp);
+            const sim = estimateSimilarity(d, params.f);
+            pairs.push({ i, j, d, sim });
+        }
+    }
+    drawSimCurve(pairs);
+}
+
+// -------- 事件 --------
+document.getElementById('c-f').addEventListener('input', (e) => {
+    params.f = +e.target.value;
+    document.getElementById('v-f').textContent = params.f;
+    // 阈值不能超过 f/2
+    const thSlider = document.getElementById('c-th');
+    thSlider.max = Math.floor(params.f / 2);
+    if (params.threshold > thSlider.max) {
+        params.threshold = thSlider.max;
+        thSlider.value = params.threshold;
+        document.getElementById('v-th').textContent = params.threshold;
+    }
+    runAll();
+});
+document.getElementById('c-th').addEventListener('input', (e) => {
+    params.threshold = +e.target.value;
+    document.getElementById('v-th').textContent = params.threshold;
+    runAll();
+});
+document.getElementById('c-tokenizer').addEventListener('change', (e) => {
+    params.tokenizer = e.target.value;
+    runAll();
+});
+document.getElementById('c-weight').addEventListener('change', (e) => {
+    params.weightMode = e.target.value;
+    runAll();
+});
+document.getElementById('c-c').addEventListener('input', (e) => {
+    params.c = +e.target.value;
+    document.getElementById('v-c').textContent = params.c;
+    runAll();
+});
+document.getElementById('btn-recompute').addEventListener('click', runAll);
+['doc-1', 'doc-2', 'doc-3', 'doc-4'].forEach(id => {
+    document.getElementById(id).addEventListener('input', runAll);
+});
+
+// -------- 初始化 --------
+runAll();
+</script>
+
+</div>
+</body>
+</html>

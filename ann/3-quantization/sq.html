@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SQ - 标量量化 (Scalar Quantization)</title>
+<style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --border: #e3e6ee;
+  --text: #1f2933;
+  --muted: #6b7280;
+  --primary: #4f46e5;
+  --primary-light: #eef2ff;
+  --accent: #059669;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --code-bg: #f3f4f6;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.7;
+}
+.top-nav {
+  background: var(--card); border-bottom: 1px solid var(--border);
+  padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.top-nav a { color: var(--primary); text-decoration: none; font-weight: 500; }
+.top-nav a:hover { text-decoration: underline; }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+h1 { font-size: 28px; margin: 0 0 8px 0; }
+h2 { font-size: 22px; margin: 32px 0 12px 0; padding-left: 12px; border-left: 4px solid var(--primary); }
+h3 { font-size: 18px; margin: 20px 0 10px 0; color: var(--primary); }
+p, li { font-size: 15px; color: var(--text); }
+.subtitle { color: var(--muted); font-size: 15px; margin-bottom: 20px; }
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px; margin: 16px 0; box-shadow: var(--shadow);
+}
+.card.blue { background: #f0f7ff; border-color: #bfdbfe; }
+.card.green { background: #ecfdf5; border-color: #a7f3d0; }
+.card.yellow { background: #fffbeb; border-color: #fcd34d; }
+.formula {
+  background: var(--code-bg); padding: 12px 16px; border-radius: 6px;
+  font-family: "SF Mono", Consolas, monospace; font-size: 14px; overflow-x: auto;
+  margin: 8px 0; border-left: 3px solid var(--primary);
+}
+code {
+  background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
+  font-family: "SF Mono", Consolas, monospace; font-size: 13px;
+}
+pre {
+  background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: 6px;
+  overflow-x: auto; font-size: 13px; line-height: 1.5;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+.controls {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px; margin: 16px 0;
+}
+.control { display: flex; flex-direction: column; gap: 6px; }
+.control label { font-size: 13px; color: var(--muted); font-weight: 500; }
+.control .val { color: var(--primary); font-weight: 600; font-family: "SF Mono", Consolas, monospace; }
+.control input[type="range"] { width: 100%; }
+.control select {
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: white;
+}
+.btn {
+  background: var(--primary); color: white; border: none; padding: 8px 16px;
+  border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;
+}
+.btn:hover { background: #4338ca; }
+.btn.secondary { background: white; color: var(--primary); border: 1px solid var(--primary); }
+.btn.secondary:hover { background: var(--primary-light); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+canvas { background: white; border: 1px solid var(--border); border-radius: 4px; display: block; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 14px; }
+th, td { padding: 8px 12px; border: 1px solid var(--border); text-align: left; }
+th { background: #f9fafb; font-weight: 600; }
+tr:nth-child(even) td { background: #fafbfc; }
+.pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.pros-cons ul { padding-left: 20px; }
+.pros-cons .pros li { color: var(--accent); }
+.pros-cons .cons li { color: var(--danger); }
+.step-box {
+  padding: 12px 16px; background: var(--primary-light); border-radius: 6px;
+  min-height: 60px; margin: 12px 0; font-size: 14px;
+}
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.hl { background: #fff59d; padding: 1px 4px; border-radius: 3px; }
+.viz-container { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin: 16px 0; }
+.viz-block { border: 1px solid var(--border); border-radius: 6px; padding: 8px; background: #fafbfc; }
+.viz-block h4 { margin: 0 0 6px 0; font-size: 13px; color: var(--muted); text-align: center; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; margin: 8px 0; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.metric-row { display: flex; gap: 12px; margin: 8px 0; font-size: 13px; flex-wrap: wrap; }
+.metric {
+  background: #f1f5f9; padding: 8px 12px; border-radius: 6px;
+  display: flex; flex-direction: column;
+}
+.metric b { color: var(--primary); font-size: 16px; font-family: "SF Mono", Consolas, monospace; }
+.byte-vis {
+  display: flex; gap: 2px; flex-wrap: wrap; margin: 8px 0;
+  font-family: "SF Mono", Consolas, monospace; font-size: 12px;
+}
+.byte-cell {
+  padding: 3px 6px; border-radius: 3px;
+  background: #f3f4f6; border: 1px solid var(--border);
+}
+.byte-cell.hl { background: var(--primary-light); color: var(--primary); font-weight: bold; }
+.prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+.prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+.glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+.glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+.glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+.glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+.new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.pitfall h4 { color: #92400e; margin-top: 0; }
+.next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.next-steps a { color: #047857; font-weight: 600; }
+.intuition-box { background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.intuition-box h4 { color: #6d28d9; margin-top: 0; }
+.symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+.symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+.symbol-table th { background: #f9fafb; color: #374151; }
+</style>
+</head>
+<body>
+
+<div class="top-nav">
+  <div><strong>ANN 算法可视化</strong> · Scalar Quantization (SQ)</div>
+  <a href="../index.html">← 返回目录</a>
+</div>
+
+<div class="container">
+
+<h1>SQ · 标量量化 (Scalar Quantization)</h1>
+<p class="subtitle">最朴素的向量压缩：逐个数字量化到低比特整数 —— 简单、快、误差可控，是所有量化方案的基线。</p>
+
+<div class="prereq-bar">
+  <b>前置阅读：</b>
+  <span class="pill">前置：无 · 这是本类别入门</span>
+  <span class="pill">建议顺序：SQ (当前) → <a href="pq.html" style="color:inherit;text-decoration:none">PQ</a> → <a href="ivf-pq.html" style="color:inherit;text-decoration:none">IVF-PQ</a> → <a href="opq.html" style="color:inherit;text-decoration:none">OPQ</a></span>
+</div>
+
+<details class="glossary">
+<summary>关键术语速查（点击展开）</summary>
+<dl>
+  <dt>量化 (Quantization)</dt>
+  <dd>把连续/高精度数值映射到少量离散取值，用精度损失换存储空间。</dd>
+  <dt>bucket（桶）</dt>
+  <dd>量化后所有可能落入的离散取值之一。b 比特量化共有 L = 2<sup>b</sup> 个桶。</dd>
+  <dt>min-max 量化</dt>
+  <dd>用数据的最小值和最大值确定量化范围，把 [min, max] 均匀切成 L 段。实现最简单。</dd>
+  <dt>quantile 量化（等频桶）</dt>
+  <dd>让每个桶包含相同数量的数据点，桶宽按数据密度自适应变化。对长尾分布更友好。</dd>
+  <dt>clip（截断）</dt>
+  <dd>数据超出量化范围时直接压到边界值，防止越界。用来抵抗极端离群点。</dd>
+  <dt>MSE（均方误差）</dt>
+  <dd>Mean Squared Error，衡量量化重构值 x̂ 与原值 x 的平均平方偏差。</dd>
+  <dt>SIMD（单指令多数据并行）</dt>
+  <dd>CPU 一次指令对多个数据同时运算。int8 SIMD 距离计算通常比 float32 快 4~8 倍。</dd>
+</dl>
+</details>
+
+<div class="new-user-tip">
+<b>新手引导 · 建议按顺序体验：</b>
+<ol style="margin:6px 0 0 20px">
+  <li>先在"交互式演示"里<b>选一个分布</b>（正态 / 长尾偏态 / 双峰），看直方图形状。</li>
+  <li>把 <b>bit-width 从 8 拉到 2</b>，观察量化桶红点从密变疏。</li>
+  <li>观察 <b>MSE / 最大误差</b> 指标随比特下降迅速上升。</li>
+  <li>在 2D 演示区点击不同位置作为查询点，观察 <b>量化后 top-10 是否与真实 top-10 翻转</b>。</li>
+</ol>
+</div>
+
+<h2>一、直观理解</h2>
+<div class="card blue">
+<h3>类比：把体温度数从"36.578" 简写成"37"</h3>
+<p>你测体温得到 36.578°C，实际记录时说"36.5°C" 或"37°C" 也够用 —— 精度损失了一点但节省纸张。SQ 就干这事：
+<b>把 float32 (32 bit, 4 字节) 换成 int8 (8 bit, 1 字节)</b>，一个数字压缩 4 倍。128 维向量从 512 字节压到 128 字节。</p>
+<ul>
+  <li><b>逐维度独立</b>操作 (与 PQ 的"分段找码本"不同，SQ 就是把每个数字取整)</li>
+  <li>无需训练码本 (min/max SQ 只需扫一遍数据取范围)</li>
+  <li>解码 = 反向线性映射，一次浮点乘法就能还原</li>
+</ul>
+</div>
+
+<div class="card green">
+<h3>SQ vs PQ 的差别</h3>
+<table>
+  <tr><th></th><th>SQ (int8)</th><th>PQ (M=8, K=256)</th></tr>
+  <tr><td>压缩单位</td><td>每维 (标量)</td><td>每段 d 维子向量</td></tr>
+  <tr><td>码本</td><td>无 (只需 min/max)</td><td>M × K 个中心</td></tr>
+  <tr><td>压缩率</td><td>4× (float32→int8)</td><td>64× (128→8B)</td></tr>
+  <tr><td>误差</td><td>小 (0.4% ~ 2%)</td><td>大 (5% ~ 20%)</td></tr>
+  <tr><td>训练</td><td>秒级 (扫一遍)</td><td>分钟级 (M 次 K-Means)</td></tr>
+</table>
+</div>
+
+<h2>二、算法原理</h2>
+
+<h3>符号速查表</h3>
+<table class="symbol-table">
+  <tr><th>符号</th><th>含义</th><th>典型取值</th></tr>
+  <tr><td>D</td><td>向量维度</td><td>128</td></tr>
+  <tr><td>N</td><td>数据库向量数</td><td>10<sup>6</sup>（100 万）</td></tr>
+  <tr><td>b</td><td>量化位数（bit-width）</td><td>8 / 6 / 4 / 2</td></tr>
+  <tr><td>L</td><td>桶数 = 2<sup>b</sup></td><td>256 / 64 / 16 / 4</td></tr>
+  <tr><td>Δ</td><td>桶宽 = (max − min) / (L − 1)</td><td>随 b 变化</td></tr>
+  <tr><td>min<sub>j</sub>, max<sub>j</sub></td><td>第 j 维的最小/最大值</td><td>—</td></tr>
+  <tr><td>μ<sub>j</sub>, σ<sub>j</sub></td><td>第 j 维的均值/标准差</td><td>—</td></tr>
+  <tr><td>q(x<sub>j</sub>)</td><td>x<sub>j</sub> 落入的桶编号（整数码）</td><td>0 ~ L−1</td></tr>
+  <tr><td>x̂<sub>j</sub></td><td>解码重构值</td><td>约等于 x<sub>j</sub></td></tr>
+</table>
+
+<p><b>本页统一基线：</b>下文分析和存储对比均以 <code>D = 128, N = 100 万</code> 为例。原始 float32 存储 = 128 × 4 × 10<sup>6</sup> = <b>512 MB</b>。</p>
+
+<h3>2.1 均匀量化 (Uniform SQ)</h3>
+<p>对每维 j，扫描数据得到 <b>min<sub>j</sub></b> 和 <b>max<sub>j</sub></b> (或全局共用)。用 <b>b 比特</b>把 [min, max] 均匀切成 <code>L = 2<sup>b</sup></code> 份。</p>
+<div class="formula">
+  q(x<sub>j</sub>) = round(  (x<sub>j</sub> − min<sub>j</sub>) / (max<sub>j</sub> − min<sub>j</sub>) · (L − 1)  )
+</div>
+<div class="formula">
+  x̂<sub>j</sub> = min<sub>j</sub> + q(x<sub>j</sub>) · (max<sub>j</sub> − min<sub>j</sub>) / (L − 1)
+</div>
+<p>典型 <b>b=8</b> (int8, L=256)：4× 压缩，误差 ≈ 范围 / 512。</p>
+
+<h3>2.2 分位数 (Non-uniform / Quantile SQ)</h3>
+<p>均匀量化在数据长尾时浪费桶。改进：让每个"桶"包含相同数量的数据 (等频)，或参考直方图找最佳边界。
+<b>SQ-fp16</b> 是极简版：直接用 16 位半精度浮点保存，无量化桶概念但省一半空间。</p>
+
+<h3>2.3 分布参数量化 (SQ-mean-std)</h3>
+<p>假设数据近似正态分布，用 μ ± Kσ 作为量化范围 (K=3~4 覆盖 99.7%)，越界值 clip：</p>
+<div class="formula">
+  q(x<sub>j</sub>) = clip(round((x<sub>j</sub> − μ<sub>j</sub>) / σ<sub>j</sub> · S), −(L/2), L/2 − 1)
+</div>
+<p>比 min-max 更鲁棒 (对少数极端值不敏感)。</p>
+
+<h3>2.4 编码/解码流程</h3>
+<pre><code>def train_sq(X, bits, mode='minmax'):
+    D = X.shape[1]
+    L = 2 ** bits
+    params = {}
+    if mode == 'minmax':
+        params['min'] = X.min(axis=0)   # (D,)
+        params['max'] = X.max(axis=0)
+    elif mode == 'meanstd':
+        params['mean'] = X.mean(axis=0)
+        params['std'] = X.std(axis=0)
+    params['L'] = L
+    return params
+
+def encode(x, params, mode='minmax'):
+    L = params['L']
+    if mode == 'minmax':
+        norm = (x - params['min']) / (params['max'] - params['min'])
+        q = np.clip(np.round(norm * (L - 1)), 0, L - 1).astype(np.int32)
+    else:
+        norm = (x - params['mean']) / (params['std'] + 1e-9)
+        q = np.clip(np.round(norm * (L / 8) + L / 2), 0, L - 1).astype(np.int32)
+    return q
+
+def decode(q, params, mode='minmax'):
+    L = params['L']
+    if mode == 'minmax':
+        return params['min'] + q / (L - 1) * (params['max'] - params['min'])
+    else:
+        return params['mean'] + (q - L / 2) / (L / 8) * params['std']</code></pre>
+
+<h3>2.5 距离计算</h3>
+<p>解码后按 float32 常规计算，或直接在整数域上做 (Faiss <code>ScalarQuantizer</code> 支持 SIMD int8 加速)。<br>
+误差期望值 (均匀 SQ, 均匀分布)：<code>MSE ≈ Δ²/12</code>，其中 Δ = 桶宽。</p>
+
+<div class="intuition-box">
+<h4>直觉：为什么误差是 Δ²/12？</h4>
+<p>把量化想象成"四舍五入到最近的桶中心"。如果原始值 x 在桶宽 Δ 内均匀分布，那么误差 e = x − x̂ 也在 [−Δ/2, +Δ/2] 均匀分布。均匀分布的方差是 (b−a)²/12 = Δ²/12。这就是均匀量化的<b>理论误差下界</b>——只要数据近似均匀落在每个桶里，就无法比这个再小了。</p>
+<p style="margin-bottom:0"><b>推论：</b>每加 1 bit → L 翻倍 → Δ 减半 → MSE 变为 1/4。所以 8→4 bit 误差涨 16×，4→2 bit 再涨 16× —— 低比特下误差爆炸就是这条曲线。</p>
+</div>
+
+<h3>2.6 存储对比 (128 维 100 万向量)</h3>
+<table>
+  <tr><th>方案</th><th>每维比特</th><th>每向量字节</th><th>总内存</th><th>压缩率</th></tr>
+  <tr><td>float32 (原始)</td><td>32</td><td>512</td><td>512 MB</td><td>1×</td></tr>
+  <tr><td>SQ fp16</td><td>16</td><td>256</td><td>256 MB</td><td>2×</td></tr>
+  <tr><td>SQ int8</td><td>8</td><td>128</td><td>128 MB</td><td>4×</td></tr>
+  <tr><td>SQ int6</td><td>6</td><td>96</td><td>96 MB</td><td>≈5.3×</td></tr>
+  <tr><td>SQ int4</td><td>4</td><td>64</td><td>64 MB</td><td>8×</td></tr>
+  <tr><td>SQ int2</td><td>2</td><td>32</td><td>32 MB</td><td>16×</td></tr>
+  <tr><td>PQ (M=8)</td><td>—</td><td>8</td><td>8 MB</td><td>64×</td></tr>
+</table>
+
+<h2>三、交互式演示 · 直方图与量化桶</h2>
+
+<div class="card">
+<p>下方展示一维数据的直方图，可选择量化位数 (8/6/4/2 bit) 和量化模式，看量化边界、量化误差随位数下降的规律。</p>
+
+<div class="controls">
+  <div class="control">
+    <label>量化位数 · b <span class="val" id="sq-bits-val">4</span> bit (L=<span id="sq-L-val">16</span>)</label>
+    <input type="range" id="sq-bits" min="1" max="8" step="1" value="4">
+  </div>
+  <div class="control">
+    <label>量化模式</label>
+    <select id="sq-mode">
+      <option value="minmax">Min-Max (均匀)</option>
+      <option value="meanstd">Mean-Std (正态假设)</option>
+      <option value="quantile">Quantile (等频)</option>
+    </select>
+  </div>
+  <div class="control">
+    <label>数据分布</label>
+    <select id="sq-dist">
+      <option value="gauss">正态分布</option>
+      <option value="uniform">均匀分布</option>
+      <option value="bimodal">双峰分布</option>
+      <option value="skewed">长尾偏态</option>
+      <option value="mix">混合</option>
+    </select>
+  </div>
+  <div class="control">
+    <label>N · 样本数 <span class="val" id="sq-N-val">2000</span></label>
+    <input type="range" id="sq-N" min="200" max="10000" step="200" value="2000">
+  </div>
+</div>
+<div class="btn-row">
+  <button class="btn" id="sq-btn-regen">重新采样</button>
+</div>
+
+<div class="viz-container">
+  <div class="viz-block">
+    <h4>数据直方图 + 量化桶</h4>
+    <canvas id="sq-canvas-hist" width="900" height="280"></canvas>
+  </div>
+</div>
+<div class="viz-container">
+  <div class="viz-block">
+    <h4>原始 x vs 量化重构 x̂ (对角线为无损)</h4>
+    <canvas id="sq-canvas-scatter" width="440" height="340"></canvas>
+  </div>
+  <div class="viz-block">
+    <h4>量化误差 (x − x̂) 分布</h4>
+    <canvas id="sq-canvas-err" width="440" height="340"></canvas>
+  </div>
+</div>
+<div class="metric-row">
+  <div class="metric"><span style="color:var(--muted)">MSE</span><b id="sq-mse">-</b></div>
+  <div class="metric"><span style="color:var(--muted)">MAE</span><b id="sq-mae">-</b></div>
+  <div class="metric"><span style="color:var(--muted)">最大误差</span><b id="sq-maxerr">-</b></div>
+  <div class="metric"><span style="color:var(--muted)">量化桶数 L</span><b id="sq-L">-</b></div>
+  <div class="metric"><span style="color:var(--muted)">每维字节</span><b id="sq-bytes">-</b></div>
+</div>
+
+<h3>2D 演示 · 距离误差</h3>
+<p>下面用 2D 数据模拟"逐维 SQ"，查询点 y (蓝色) 与所有数据的<b>真实距离</b>和<b>量化后近似距离</b>对比。可以看到低比特下近邻排序会被扰动。</p>
+<div class="viz-container">
+  <div class="viz-block">
+    <h4>原始数据 + 量化网格</h4>
+    <canvas id="sq-canvas-2d" width="500" height="500"></canvas>
+  </div>
+  <div class="viz-block">
+    <h4>真实 top-10 vs 量化后 top-10</h4>
+    <div id="sq-topk-out" style="font-size:12px"></div>
+    <div class="metric-row">
+      <div class="metric"><span style="color:var(--muted)">召回率</span><b id="sq-2d-recall">-</b></div>
+    </div>
+  </div>
+</div>
+
+<h3>示例：一个 128 维向量的量化字节展示</h3>
+<div id="sq-bytes-vis" class="byte-vis"></div>
+<button class="btn secondary" id="sq-btn-new-vec">生成新向量</button>
+
+<h3>案例逐步讲解</h3>
+<div class="btn-row">
+  <button class="btn secondary" id="sq-btn-prev">上一步</button>
+  <button class="btn" id="sq-btn-next">下一步 →</button>
+  <button class="btn secondary" id="sq-btn-reset">重置</button>
+</div>
+<div class="step-box" id="sq-step-box">点击"下一步"开始 SQ 流程演示。</div>
+</div>
+
+<h2>四、优缺点 & 适用场景</h2>
+<div class="pros-cons">
+  <div>
+    <h3 style="color:var(--accent)">优点</h3>
+    <ul class="pros">
+      <li>实现极简，无需 K-Means 训练</li>
+      <li>解码开销极小，一次线性映射</li>
+      <li>SIMD 友好 (int8 加速比 float32 快 4~8×)</li>
+      <li>可与任意索引组合 (SQ + IVF + HNSW)</li>
+    </ul>
+  </div>
+  <div>
+    <h3 style="color:var(--danger)">缺点</h3>
+    <ul class="cons">
+      <li>压缩率有限 (最多 8× / int4)</li>
+      <li>bit 数越低误差急剧上升</li>
+      <li>对偏态/多峰分布效果差 (min-max 浪费桶)</li>
+      <li>不能像 PQ 一样用 LUT 完全跳过原向量</li>
+    </ul>
+  </div>
+</div>
+<div class="card yellow">
+<b>工业实践：</b>Faiss <code>IndexScalarQuantizer</code>, ES <code>hnsw + int8</code>, PGVector <code>halfvec/bit</code>。作为"低成本高召回"方案先用 SQ，再看是否需要 PQ 进一步压缩。
+</div>
+
+<div class="pitfall">
+<h4>常见误区</h4>
+<ul style="margin:0;padding-left:20px">
+  <li><b>per-dim vs global min/max 差别巨大</b>：每维独立取 min/max 比整体共用一组参数误差小得多，但要存 2D 个参数（D=128 时 = 256 float）。工业实践一般选 per-dim。</li>
+  <li><b>长尾分布下 min-max 浪费大部分桶</b>：极端离群点把范围拉宽，中间稠密区域只用到少数几个桶。此时切到 quantile 或 mean-std 模式（在演示中拉动"数据分布 → 长尾偏态"看效果）。</li>
+  <li><b>int8 时 top-1 可能与 float32 不一致</b>：SQ 压缩后近邻排序会被扰动。安全做法：SQ 只作为 ANN 粗排（返回 top-100），再用原始 float 精排 top-10。</li>
+  <li><b>不要用极小 b（1~2 bit）做距离排序</b>：桶太粗导致大量点撞进同一个桶，任意排序都退化到随机。1-bit SQ 更适合作为哈希键。</li>
+</ul>
+</div>
+
+<div class="next-steps">
+<b>下一步学什么？</b>
+<ul style="margin:6px 0 0 20px">
+  <li>SQ 4× 压缩不够 → <a href="pq.html">PQ · 乘积量化</a> 可以再压 8~16 倍（总 64× 压缩），但需要训练码本。</li>
+  <li>亿级向量还嫌慢 → <a href="ivf-pq.html">IVF-PQ</a> 加入倒排索引，只扫少量分桶。</li>
+  <li>PQ 误差偏大（维度间相关）→ <a href="opq.html">OPQ</a> 先旋转再量化，同码率下再降 5~15% 误差。</li>
+</ul>
+</div>
+
+</div>
+
+<script>
+/* ================== 工具 ================== */
+function randn() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function sample(dist, n) {
+  const arr = [];
+  for (let i = 0; i < n; i++) {
+    let v;
+    if (dist === 'gauss') v = randn() * 0.15 + 0.5;
+    else if (dist === 'uniform') v = Math.random();
+    else if (dist === 'bimodal') {
+      v = (Math.random() < 0.5 ? -0.2 : 0.2) + randn() * 0.08 + 0.5;
+    } else if (dist === 'skewed') {
+      const u = Math.random();
+      v = -Math.log(1 - u) * 0.12;
+    } else if (dist === 'mix') {
+      const r = Math.random();
+      if (r < 0.6) v = randn() * 0.1 + 0.3;
+      else if (r < 0.9) v = randn() * 0.15 + 0.7;
+      else v = Math.random();
+    }
+    arr.push(Math.min(1.0, Math.max(0.0, v)));
+  }
+  return arr;
+}
+
+function quantizeMinMax(vals, L) {
+  const mn = Math.min(...vals), mx = Math.max(...vals);
+  const step = (mx - mn) / (L - 1);
+  const boundaries = [];
+  for (let k = 0; k < L; k++) boundaries.push(mn + k * step);
+  const codes = vals.map(v => Math.max(0, Math.min(L - 1, Math.round((v - mn) / (step || 1)))));
+  const recon = codes.map(c => mn + c * step);
+  return { codes, recon, boundaries, mn, mx };
+}
+function quantizeMeanStd(vals, L) {
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
+  const std = Math.sqrt(variance);
+  // 用 [mean - 3σ, mean + 3σ] 作范围, 均匀切
+  const mn = mean - 3 * std, mx = mean + 3 * std;
+  const step = (mx - mn) / (L - 1);
+  const boundaries = [];
+  for (let k = 0; k < L; k++) boundaries.push(mn + k * step);
+  const codes = vals.map(v => Math.max(0, Math.min(L - 1, Math.round((v - mn) / (step || 1)))));
+  const recon = codes.map(c => mn + c * step);
+  return { codes, recon, boundaries, mn, mx };
+}
+function quantizeQuantile(vals, L) {
+  const sorted = vals.slice().sort((a, b) => a - b);
+  const boundaries = [];
+  for (let k = 0; k < L; k++) boundaries.push(sorted[Math.min(sorted.length - 1, Math.round((k / (L - 1)) * (sorted.length - 1)))]);
+  // 每个桶的中心 = 相邻边界平均
+  const centers = boundaries.slice();
+  const codes = vals.map(v => {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < L; i++) {
+      const d = Math.abs(v - centers[i]);
+      if (d < bd) { bd = d; bi = i; }
+    }
+    return bi;
+  });
+  const recon = codes.map(c => centers[c]);
+  return { codes, recon, boundaries, mn: sorted[0], mx: sorted[sorted.length - 1] };
+}
+
+/* ================== 状态 ================== */
+const S = {
+  bits: 4, N: 2000, mode: 'minmax', dist: 'gauss',
+  vals: [],
+  result: null,
+  points2D: [],
+  query2D: [0.5, 0.5],
+  step: 0,
+  demoVec: []
+};
+
+const cvHist = document.getElementById('sq-canvas-hist');
+const cvScatter = document.getElementById('sq-canvas-scatter');
+const cvErr = document.getElementById('sq-canvas-err');
+const cv2D = document.getElementById('sq-canvas-2d');
+
+function quantize(vals, L) {
+  if (S.mode === 'minmax') return quantizeMinMax(vals, L);
+  if (S.mode === 'meanstd') return quantizeMeanStd(vals, L);
+  if (S.mode === 'quantile') return quantizeQuantile(vals, L);
+}
+
+function drawHist() {
+  const ctx = cvHist.getContext('2d');
+  const W = cvHist.width, H = cvHist.height;
+  ctx.clearRect(0, 0, W, H);
+  const nBin = 100;
+  const bins = new Array(nBin).fill(0);
+  const mn = 0, mx = 1;  // 假设 0..1
+  for (const v of S.vals) {
+    const b = Math.max(0, Math.min(nBin - 1, Math.floor((v - mn) / (mx - mn) * nBin)));
+    bins[b]++;
+  }
+  const bmax = Math.max(...bins);
+  // 直方图
+  const barW = (W - 60) / nBin;
+  const baseY = H - 40;
+  ctx.fillStyle = '#94a3b8';
+  for (let i = 0; i < nBin; i++) {
+    const h = (bins[i] / bmax) * (H - 60);
+    ctx.fillRect(40 + i * barW, baseY - h, barW - 0.5, h);
+  }
+  // 量化边界
+  const L = 2 ** S.bits;
+  const q = quantize(S.vals, L);
+  ctx.strokeStyle = 'rgba(220,38,38,0.5)';
+  ctx.lineWidth = 1;
+  const centers = q.boundaries;
+  for (const c of centers) {
+    if (c < 0 || c > 1) continue;
+    const x = 40 + (c - mn) / (mx - mn) * (W - 60);
+    ctx.beginPath();
+    ctx.setLineDash([4, 3]);
+    ctx.moveTo(x, 20); ctx.lineTo(x, baseY);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // 量化中心红点
+  ctx.fillStyle = '#dc2626';
+  for (const c of centers) {
+    if (c < 0 || c > 1) continue;
+    const x = 40 + (c - mn) / (mx - mn) * (W - 60);
+    ctx.beginPath();
+    ctx.arc(x, baseY + 8, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 坐标轴
+  ctx.strokeStyle = '#334155';
+  ctx.beginPath();
+  ctx.moveTo(40, baseY); ctx.lineTo(W - 20, baseY); ctx.stroke();
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('0.0', 30, baseY + 24);
+  ctx.fillText('0.5', 40 + (W - 60) / 2 - 8, baseY + 24);
+  ctx.fillText('1.0', W - 32, baseY + 24);
+  ctx.fillText(`bins=${nBin}, L=${L}, mode=${S.mode}`, 40, 16);
+  S.result = q;
+}
+
+function drawScatter() {
+  const ctx = cvScatter.getContext('2d');
+  const W = cvScatter.width, H = cvScatter.height;
+  ctx.clearRect(0, 0, W, H);
+  // 对角线
+  ctx.strokeStyle = '#059669';
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(30, H - 30); ctx.lineTo(W - 20, 20);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // 散点 (x vs x̂)
+  ctx.fillStyle = 'rgba(79,70,229,0.5)';
+  for (let i = 0; i < S.vals.length; i++) {
+    const x = 30 + S.vals[i] * (W - 50);
+    const y = H - 30 - S.result.recon[i] * (H - 50);
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = '#334155';
+  ctx.beginPath();
+  ctx.moveTo(30, 20); ctx.lineTo(30, H - 30); ctx.lineTo(W - 20, H - 30); ctx.stroke();
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('x (原始)', W - 60, H - 12);
+  ctx.save();
+  ctx.translate(14, H / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('x̂ (量化)', 0, 0);
+  ctx.restore();
+}
+
+function drawErr() {
+  const ctx = cvErr.getContext('2d');
+  const W = cvErr.width, H = cvErr.height;
+  ctx.clearRect(0, 0, W, H);
+  const errs = S.vals.map((v, i) => v - S.result.recon[i]);
+  const mn = Math.min(...errs), mx = Math.max(...errs);
+  const range = Math.max(Math.abs(mn), Math.abs(mx), 1e-6);
+  const nBin = 40;
+  const bins = new Array(nBin).fill(0);
+  for (const e of errs) {
+    const b = Math.max(0, Math.min(nBin - 1, Math.floor((e + range) / (2 * range) * nBin)));
+    bins[b]++;
+  }
+  const bmax = Math.max(...bins);
+  const barW = (W - 40) / nBin;
+  const baseY = H - 30;
+  // 0 线
+  ctx.strokeStyle = '#059669';
+  ctx.setLineDash([3, 3]);
+  const zx = 20 + (0 + range) / (2 * range) * (W - 40);
+  ctx.beginPath();
+  ctx.moveTo(zx, 20); ctx.lineTo(zx, baseY); ctx.stroke();
+  ctx.setLineDash([]);
+  for (let i = 0; i < nBin; i++) {
+    const h = (bins[i] / bmax) * (H - 60);
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(20 + i * barW, baseY - h, barW - 0.5, h);
+  }
+  ctx.strokeStyle = '#334155';
+  ctx.beginPath();
+  ctx.moveTo(20, baseY); ctx.lineTo(W - 20, baseY); ctx.stroke();
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '11px sans-serif';
+  ctx.fillText(`-${range.toFixed(3)}`, 20, baseY + 16);
+  ctx.fillText('0', zx - 2, baseY + 16);
+  ctx.fillText(`+${range.toFixed(3)}`, W - 60, baseY + 16);
+
+  // 指标
+  const mse = errs.reduce((a, b) => a + b * b, 0) / errs.length;
+  const mae = errs.reduce((a, b) => a + Math.abs(b), 0) / errs.length;
+  const maxerr = Math.max(...errs.map(Math.abs));
+  document.getElementById('sq-mse').textContent = mse.toExponential(2);
+  document.getElementById('sq-mae').textContent = mae.toFixed(5);
+  document.getElementById('sq-maxerr').textContent = maxerr.toFixed(5);
+  const L = 2 ** S.bits;
+  document.getElementById('sq-L').textContent = L;
+  document.getElementById('sq-bytes').textContent = (S.bits / 8).toFixed(3) + ' 字节';
+}
+
+function draw2D() {
+  const ctx = cv2D.getContext('2d');
+  const W = cv2D.width, H = cv2D.height;
+  ctx.clearRect(0, 0, W, H);
+  const L = 2 ** S.bits;
+  const xs = S.points2D.map(p => p[0]);
+  const ys = S.points2D.map(p => p[1]);
+  const qx = quantize(xs, L);
+  const qy = quantize(ys, L);
+  // 网格线
+  ctx.strokeStyle = 'rgba(220,38,38,0.25)';
+  ctx.setLineDash([2, 3]);
+  for (let i = 0; i < L; i++) {
+    const gx = 20 + qx.boundaries[i] / 1 * (W - 40);
+    ctx.beginPath(); ctx.moveTo(gx, 20); ctx.lineTo(gx, H - 20); ctx.stroke();
+    const gy = H - 20 - qy.boundaries[i] / 1 * (H - 40);
+    ctx.beginPath(); ctx.moveTo(20, gy); ctx.lineTo(W - 20, gy); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // 数据点
+  for (let i = 0; i < S.points2D.length; i++) {
+    const [x, y] = S.points2D[i];
+    ctx.fillStyle = '#94a3b8';
+    ctx.beginPath();
+    ctx.arc(20 + x * (W - 40), H - 20 - y * (H - 40), 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 查询点
+  const [qxv, qyv] = S.query2D;
+  ctx.fillStyle = '#4f46e5';
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(20 + qxv * (W - 40), H - 20 - qyv * (H - 40), 7, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+
+  // 计算真实 top-10, 量化 top-10
+  const trueD = S.points2D.map((p, i) => {
+    const dx = p[0] - qxv, dy = p[1] - qyv;
+    return [i, dx * dx + dy * dy];
+  }).sort((a, b) => a[1] - b[1]);
+  const topTrue = trueD.slice(0, 10);
+  // 量化重构
+  const rx = qx.recon;
+  const ry = qy.recon;
+  const qD = S.points2D.map((p, i) => {
+    const dx = rx[i] - qxv, dy = ry[i] - qyv;
+    return [i, dx * dx + dy * dy];
+  }).sort((a, b) => a[1] - b[1]);
+  const topQ = qD.slice(0, 10);
+  const trueSet = new Set(topTrue.map(t => t[0]));
+  const qSet = new Set(topQ.map(t => t[0]));
+  // 画 top
+  for (const [i, _] of topTrue) {
+    const [x, y] = S.points2D[i];
+    ctx.strokeStyle = '#059669';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(20 + x * (W - 40), H - 20 - y * (H - 40), 5.5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  for (const [i, _] of topQ) {
+    const [x, y] = S.points2D[i];
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(20 + x * (W - 40), H - 20 - y * (H - 40), 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const hits = topQ.filter(t => trueSet.has(t[0])).length;
+  const recall = hits / topTrue.length;
+  document.getElementById('sq-2d-recall').textContent = (recall * 100).toFixed(1) + '%';
+  // 表格
+  let html = '<table class="codebook-table" style="font-size:12px"><tr><th>rank</th><th>真实 idx</th><th>真距离²</th><th>量化 idx</th><th>量化距离²</th><th>命中</th></tr>';
+  for (let i = 0; i < 10; i++) {
+    const [ti, td] = topTrue[i];
+    const [qi, qd] = topQ[i];
+    const hit = trueSet.has(qi) ? '✓' : '✗';
+    const color = trueSet.has(qi) ? 'var(--accent)' : 'var(--danger)';
+    html += `<tr><td>${i + 1}</td><td>${ti}</td><td>${td.toFixed(4)}</td><td>${qi}</td><td>${qd.toFixed(4)}</td><td style="color:${color};font-weight:bold">${hit}</td></tr>`;
+  }
+  html += '</table>';
+  document.getElementById('sq-topk-out').innerHTML = html;
+}
+
+function drawByteVis() {
+  const el = document.getElementById('sq-bytes-vis');
+  const bytes = S.demoVec;
+  const L = 2 ** S.bits;
+  let html = '';
+  const shown = Math.min(32, bytes.length);
+  for (let i = 0; i < shown; i++) {
+    const q = Math.round(bytes[i] * (L - 1));
+    html += `<span class="byte-cell">${q}</span>`;
+  }
+  html += `<span class="byte-cell" style="background:transparent;border:none">...</span>`;
+  html += `<span class="byte-cell hl">共 128 维，每维 ${S.bits} bit = ${(128 * S.bits / 8).toFixed(0)} 字节</span>`;
+  el.innerHTML = html;
+}
+
+function updateAll() {
+  drawHist();
+  drawScatter();
+  drawErr();
+  draw2D();
+  drawByteVis();
+}
+
+/* ================== 事件 ================== */
+function resample() {
+  S.vals = sample(S.dist, S.N);
+  // 2D 数据 (两维分别独立采样, 但用类似分布)
+  const xs = sample(S.dist, 300);
+  const ys = sample(S.dist, 300);
+  S.points2D = xs.map((x, i) => [x, ys[i]]);
+  S.demoVec = sample(S.dist, 128);
+  updateAll();
+}
+document.getElementById('sq-bits').addEventListener('input', e => {
+  S.bits = parseInt(e.target.value);
+  document.getElementById('sq-bits-val').textContent = S.bits;
+  document.getElementById('sq-L-val').textContent = 2 ** S.bits;
+  updateAll();
+});
+document.getElementById('sq-N').addEventListener('input', e => {
+  S.N = parseInt(e.target.value);
+  document.getElementById('sq-N-val').textContent = S.N;
+  resample();
+});
+document.getElementById('sq-mode').addEventListener('change', e => {
+  S.mode = e.target.value;
+  updateAll();
+});
+document.getElementById('sq-dist').addEventListener('change', e => {
+  S.dist = e.target.value;
+  resample();
+});
+document.getElementById('sq-btn-regen').onclick = resample;
+document.getElementById('sq-btn-new-vec').onclick = () => {
+  S.demoVec = sample(S.dist, 128);
+  drawByteVis();
+};
+cv2D.addEventListener('click', ev => {
+  const rect = cv2D.getBoundingClientRect();
+  S.query2D = [
+    (ev.clientX - rect.left - 20) / (cv2D.width - 40),
+    1 - (ev.clientY - rect.top - 20) / (cv2D.height - 40)
+  ];
+  S.query2D[0] = Math.max(0, Math.min(1, S.query2D[0]));
+  S.query2D[1] = Math.max(0, Math.min(1, S.query2D[1]));
+  draw2D();
+});
+
+/* ================== 分步 ================== */
+const stepBox = document.getElementById('sq-step-box');
+const STEPS = [
+  { text: '<b>步骤 1</b>：收集数据 · 采样得到一批一维数值 (直方图展示的分布)。' },
+  { text: '<b>步骤 2</b>：确定量化范围 · min-max 模式下取全体的最小/最大值；mean-std 模式下取 μ ± 3σ。' },
+  { text: '<b>步骤 3</b>：把范围均匀切成 L = 2ᵇ 份 (红色虚线为桶边界，红点为桶中心)。b=8 → L=256, b=4 → L=16。' },
+  { text: '<b>步骤 4</b>：对每个数据点找最近的桶中心 → 得到整数码 q。存储时只保留 q，占 b 比特。' },
+  { text: '<b>步骤 5</b>：解码：x̂ = min + q · (max − min) / (L − 1)。x vs x̂ 散点越贴对角线越无损。' },
+  { text: '<b>步骤 6</b>：误差直方图集中在 0 附近，理论 MSE ≈ Δ²/12，其中 Δ = (max−min)/L。' },
+  { text: '<b>步骤 7</b>：在 2D 演示中：查询点 y 与每个数据点算真实距离 vs 量化距离，看 top-10 是否重合 → 召回率。' },
+  { text: '<b>步骤 8</b>：观察规律：bit 从 8 降到 2 时，桶变粗，误差急剧上升，召回率下降。分布偏态时 mean-std 或 quantile 更好。' }
+];
+function renderStep() { stepBox.innerHTML = STEPS[S.step].text; }
+document.getElementById('sq-btn-next').onclick = () => { S.step = Math.min(STEPS.length - 1, S.step + 1); renderStep(); };
+document.getElementById('sq-btn-prev').onclick = () => { S.step = Math.max(0, S.step - 1); renderStep(); };
+document.getElementById('sq-btn-reset').onclick = () => { S.step = 0; renderStep(); };
+
+/* ================== 初始 ================== */
+resample();
+renderStep();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>HNSW - Hierarchical Navigable Small World</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    background: #f5f7fa;
+    color: #2c3e50;
+    line-height: 1.7;
+    padding: 24px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  header {
+    background: linear-gradient(135deg, #4e79ff 0%, #7a5cff 100%);
+    color: #fff;
+    padding: 32px;
+    border-radius: 14px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 16px rgba(78, 121, 255, 0.25);
+  }
+  header h1 { font-size: 30px; margin-bottom: 8px; }
+  header p { opacity: 0.92; font-size: 15px; }
+  .back-link {
+    display: inline-block;
+    margin-bottom: 12px;
+    color: #fff;
+    text-decoration: none;
+    font-size: 14px;
+    opacity: 0.9;
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.18);
+    border-radius: 6px;
+  }
+  .back-link:hover { opacity: 1; background: rgba(255,255,255,0.28); }
+  .card {
+    background: #fff;
+    padding: 22px 26px;
+    margin-bottom: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  }
+  .card h2 {
+    font-size: 22px;
+    color: #4e79ff;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #eef2ff;
+    margin-bottom: 14px;
+  }
+  .card h3 { font-size: 17px; color: #34495e; margin: 14px 0 8px; }
+  p, li { font-size: 14.5px; color: #4a5568; }
+  ul, ol { padding-left: 22px; margin: 8px 0; }
+  li { margin-bottom: 4px; }
+  code {
+    background: #eef2ff;
+    color: #4a4de0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 13px;
+  }
+  pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 10px 0;
+  }
+  .analogy {
+    background: #fff8e6;
+    border-left: 4px solid #f0b429;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+  }
+  .tip {
+    background: #eaf5ff;
+    border-left: 4px solid #3b82f6;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+  }
+  .demo-area {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 18px;
+  }
+  @media (max-width: 900px) {
+    .demo-area { grid-template-columns: 1fr; }
+  }
+  .canvas-wrap {
+    background: #fafbfd;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px;
+    position: relative;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    background: #fff;
+    border-radius: 8px;
+    cursor: crosshair;
+  }
+  .controls {
+    background: #f8fafc;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+  }
+  .param {
+    margin-bottom: 12px;
+  }
+  .param label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 4px;
+  }
+  .param label span.val {
+    color: #4e79ff;
+    font-family: monospace;
+  }
+  .param input[type=range] {
+    width: 100%;
+    accent-color: #4e79ff;
+  }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  button {
+    background: #4e79ff;
+    color: #fff;
+    border: 0;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+  button:hover { background: #3b62e6; transform: translateY(-1px); }
+  button:disabled { background: #94a3b8; cursor: not-allowed; transform: none; }
+  button.ghost {
+    background: #fff;
+    color: #4e79ff;
+    border: 1px solid #4e79ff;
+  }
+  button.ghost:hover { background: #eef2ff; }
+  button.warn { background: #ef7d3f; }
+  button.warn:hover { background: #d96525; }
+  .status {
+    background: #1e293b;
+    color: #93c5fd;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 12.5px;
+    margin-top: 10px;
+    min-height: 90px;
+    max-height: 220px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+  .status .hi { color: #fbbf24; }
+  .status .ok { color: #4ade80; }
+  .status .layer { color: #a78bfa; }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: #475569;
+  }
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .legend .dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+  table.compare {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 13.5px;
+  }
+  table.compare th, table.compare td {
+    padding: 8px 10px;
+    border: 1px solid #e2e8f0;
+    text-align: left;
+  }
+  table.compare th { background: #eef2ff; color: #4a4de0; }
+  table.compare tr:nth-child(even) td { background: #f8fafc; }
+  .grid2 {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  .pill {
+    display: inline-block;
+    background: #eef2ff;
+    color: #4a4de0;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-size: 12px;
+    margin-right: 4px;
+  }
+  footer {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+    padding: 20px 0;
+  }
+  /* --- 教学增强样式 --- */
+  .prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+  .prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+  .glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+  .glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+  .glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+  .glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+  .new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+  .pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+  .pitfall h4 { color: #92400e; margin-top: 0; }
+  .next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+  .next-steps a { color: #047857; font-weight: 600; }
+  .intuition-box { background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+  .intuition-box h4 { color: #6d28d9; margin-top: 0; }
+  .symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+  .symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+  .symbol-table th { background: #f9fafb; color: #374151; }
+  .legend-guide { background: #f0fdf4; border-left: 3px solid #10b981; padding: 10px 14px; margin: 12px 0; border-radius: 4px; font-size: 0.9rem; }
+  .legend-guide .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<a href="../index.html" class="back-link">返回上级目录</a>
+
+<header>
+  <h1>HNSW - Hierarchical Navigable Small World</h1>
+  <p>分层可导航小世界图 — 当前工业界最主流的近似最近邻算法（Faiss、Milvus、Qdrant、Weaviate、pgvector 都采用）</p>
+</header>
+
+<!-- 前置阅读 -->
+<div class="prereq-bar">
+  <b>前置：</b>
+  <span class="pill">邻近图基础</span>
+  <span class="pill">贪心搜索</span>
+  <span class="pill">跳表（推荐了解）</span>
+  <br>
+  <b>建议顺序：</b> HNSW <b>(当前)</b> → <a class="pill" href="nsg.html">NSG</a> → <a class="pill" href="diskann.html">DiskANN</a> → <a class="pill" href="spann.html">SPANN</a>
+</div>
+
+<!-- 关键术语速查 -->
+<details class="glossary" open>
+  <summary>关键术语速查（点击展开/折叠）</summary>
+  <dl>
+    <dt>邻近图（proximity graph）</dt>
+    <dd>每条边连接空间中"距离较近"的一对点。ANN 图索引就是在这类图上做贪心导航。</dd>
+    <dt>贪心搜索</dt>
+    <dd>每一步走到"当前节点邻居中距离目标最近"的那一个，直到没有更近的邻居。</dd>
+    <dt>beam search（束搜索）</dt>
+    <dd>贪心的推广：不是只保留当前最近的 1 个点，而是同时保留 <code>ef</code> 个候选，一起向邻居扩展。ef 越大越不容易陷入局部最优。</dd>
+    <dt>entry point（入口点 EP）</dt>
+    <dd>查询开始的节点。HNSW 里 EP 是最高层唯一存在的那个点。</dd>
+    <dt>level（层）</dt>
+    <dd>每个节点被随机分配一个层号 <code>l</code>；节点会存在于 Layer 0..l 的所有层。</dd>
+    <dt>跳表（skip list）</dt>
+    <dd>多层链表结构：上层稀疏、下层密集。HNSW 是跳表在图上的推广。</dd>
+    <dt>efConstruction / efSearch</dt>
+    <dd>构建时 / 查询时的候选队列大小。越大质量越高、越慢。</dd>
+    <dt>M</dt>
+    <dd>每层每个节点保留的最大邻居数（Layer 0 通常允许 2M）。</dd>
+    <dt>几何分布</dt>
+    <dd>抛硬币直到出现正面的次数分布。HNSW 用 <code>l = ⌊-ln(uniform) · mL⌋</code> 采样，等价于几何分布，越高层节点越少。</dd>
+  </dl>
+  <h4 style="margin-top:12px;color:#374151;font-size:14px;">术语跨页对齐表</h4>
+  <table class="symbol-table">
+    <tr><th>抽象概念</th><th>HNSW</th><th>NSG</th><th>DiskANN</th><th>SPANN</th></tr>
+    <tr><td>候选池 / beam 大小</td><td>ef / efSearch</td><td>L</td><td>L</td><td>—（用 nprobe 控制读多少 posting）</td></tr>
+    <tr><td>每节点度</td><td>M（Layer 0 用 2M）</td><td>R</td><td>R</td><td>—（图在 head 之间才有）</td></tr>
+    <tr><td>入口</td><td>顶层 entry point</td><td>Navigating Point (medoid)</td><td>Medoid</td><td>Head 集合 + SPTAG 图</td></tr>
+    <tr><td>剪枝规则</td><td>选边启发式（多样性）</td><td>MRNG（lune 规则）</td><td>Robust Prune（alpha 松弛）</td><td>RNG 规则决定边界点复制</td></tr>
+  </table>
+</details>
+
+<!-- 新手引导 -->
+<div class="new-user-tip">
+  <b>新手引导（按顺序操作）：</b>
+  <ol style="margin:6px 0 0 22px">
+    <li>点【重建图】生成随机点并构建 HNSW</li>
+    <li>观察不同层的节点颜色区分（顶层节点更大更亮）</li>
+    <li>点【查询模式】按钮，然后点画布任意位置（或右键画布）发起查询</li>
+    <li>观察分层查询路径：从顶层"大跳"逐层下降到 Layer 0 精修</li>
+    <li>调节 efSearch 滑块，观察召回率与延迟的权衡</li>
+  </ol>
+</div>
+
+<!-- 直观理解 -->
+<section class="card">
+  <h2>一、直观理解：类比跳表</h2>
+  <p style="color:#64748b;font-size:13.5px;margin-bottom:8px">
+    <b>本方案解决了什么问题：</b> IVF/PQ 类倒排索引在千万级向量上召回受限；HNSW 用"分层图 + 贪心导航"把查询复杂度降到 <code>O(log N)</code>，同精度下比 IVF 快 5~10×。
+    如果不熟悉"邻近图"或"贪心搜索"概念，可先看本目录 <a href="../index.html" style="color:#4e79ff">上级导航</a> 中的基础章节。
+  </p>
+  <p>HNSW 由 Yury Malkov 于 2016 年提出，是图索引 ANN 的里程碑。它的核心思想借鉴了跳表（Skip List）：</p>
+
+  <div class="analogy">
+    <b>跳表回顾：</b> 有序链表中查一个值需要 O(n)。跳表在原始链表之上加多层"稀疏"链表，每一层跨度更大。查询时先在顶层做"大跳"，再逐层下降精修，最终降到 O(log n)。
+  </div>
+
+  <div class="analogy">
+    <b>HNSW 的类比：</b> 底层（Layer 0）是完整的 NSW 图，包含所有 N 个点，边只连近邻。往上每一层随机保留少量节点，扮演"高速公路"。查询时从顶层入口开始贪心走，一路"缩小范围"，走不动了下降一层，最终在底层做精细的 beam search。
+  </div>
+
+  <div class="tip">
+    <b>为什么快？</b> 顶层稀疏但跨距大，几步就能跳到"目标区域附近"；底层稠密但只需局部搜索。整体查询复杂度 <code>O(log N)</code>。
+  </div>
+
+  <p>层数按指数分布随机决定：约 <code>1 / ln(M)</code> 的概率进入更高层。所以底层几乎所有点，顶层只有个位数节点。</p>
+
+  <div class="intuition-box">
+    <h4>直觉：为什么用几何分布采样层数？</h4>
+    <p>每往上一层，节点数量减少一个固定比例（≈ <code>1/M</code>）。数学上这是<b>几何分布</b>：一枚硬币重复抛，第一次正面出现的次数。</p>
+    <p>实现上，HNSW 从均匀分布 <code>u ~ U(0,1)</code> 采样后取 <code>-ln(u)</code>，得到指数分布，再乘 <code>mL = 1/ln(M)</code> 并取下整——这个连续版本四舍五入后就是几何分布。</p>
+    <p>结果：Layer 0 有 N 个点，Layer 1 约 N/M，Layer 2 约 N/M²……顶层通常只有 1~几个节点，天然形成"高速公路"。</p>
+  </div>
+
+  <div class="intuition-box">
+    <h4>直觉：贪心 vs. beam search（束搜索）</h4>
+    <p>纯贪心只保留"当前最近的 1 个候选"，容易陷入局部最优——想象山谷里的小坑，你走进去出不来。</p>
+    <p><b>beam search</b> 同时保留 <code>ef</code> 个候选，每次扩展所有候选的邻居，直到 <b>没有比当前 ef 个更近的新邻居</b> 才停。相当于同时探索多条可能路径，容错更强。</p>
+    <p>HNSW 上层用 <code>ef=1</code>（快速大跳），Layer 0 用 <code>ef=efSearch</code>（精修）。</p>
+  </div>
+</section>
+
+<!-- 算法原理 -->
+<section class="card">
+  <h2>二、算法原理</h2>
+
+  <h3>2.1 图构建规则</h3>
+  <ul>
+    <li><code>M</code>：每个节点在每层保留的最大邻居数（底层通常允许 2M）。</li>
+    <li><code>M_max</code>：每层最大邻居数上限，防止 hub 过度连接。</li>
+    <li><code>efConstruction</code>：构建时候选队列大小。越大质量越高、构建越慢。</li>
+    <li><code>mL = 1 / ln(M)</code>：新节点采样层数用 <code>l = ⌊-ln(uniform) · mL⌋</code>。</li>
+    <li><b>选边启发式（select-neighbors-heuristic）</b>：不是简单选 M 个最近的，而是保证多样性——如果候选 v 相对已选邻居更近，则跳过 v，避免"聚集"，保留"长跳边"。</li>
+  </ul>
+
+  <h3>2.2 查询流程（Search）</h3>
+  <ol>
+    <li>从顶层入口点 <code>ep</code> 开始，贪心搜索 <code>ef=1</code>，找到该层最近点。</li>
+    <li>把该点作为下一层入口，重复直到 Layer 1。</li>
+    <li>在 Layer 0 做 <code>ef=efSearch</code> 的 beam search，返回 top-k。</li>
+  </ol>
+
+  <h3>2.3 伪代码</h3>
+  <pre>function INSERT(q, M, efConstruction, mL):
+    l = ⌊-ln(random()) · mL⌋       # 新节点层数
+    ep = entry_point
+    for lc from L..l+1:
+        W = search_layer(q, ep, ef=1, lc)
+        ep = closest(W, q)
+    for lc from min(L, l)..0:
+        W = search_layer(q, ep, ef=efConstruction, lc)
+        neighbors = select_heuristic(q, W, M)
+        for e in neighbors:
+            add_edge(q, e, lc)
+            # 双向连边并裁剪
+            if len(e.neighbors) > M_max: prune(e, lc)
+        ep = W
+    if l > L: entry_point = q; L = l
+
+function SEARCH(q, k, efSearch):
+    ep = entry_point
+    for lc from L..1:
+        W = search_layer(q, ep, ef=1, lc)
+        ep = closest(W, q)
+    W = search_layer(q, ep, ef=efSearch, lc=0)
+    return top-k of W
+
+function SEARCH_LAYER(q, ep, ef, lc):
+    visited = {ep}; C = min-heap; W = max-heap
+    push(C, ep); push(W, ep)
+    while C not empty:
+        c = pop_min(C)
+        f = top(W)
+        if dist(c,q) > dist(f,q): break
+        for e in neighbors(c, lc):
+            if e in visited: continue
+            visited.add(e)
+            if dist(e,q) < dist(f,q) or |W| < ef:
+                push(C, e); push(W, e)
+                if |W| > ef: pop_max(W)
+    return W</pre>
+
+  <h3>2.4 选边启发式（select-neighbors-heuristic）</h3>
+  <p>论文中最关键的 trick。对于候选集 <code>C</code>（按距 q 排序），从近到远考察每个 <code>v</code>：</p>
+  <ul>
+    <li>如果已选邻居中存在 <code>u</code> 使得 <code>d(u, v) &lt; d(q, v)</code>，说明 v 到 q 的方向已有 u 覆盖，跳过 v。</li>
+    <li>否则选入 v。</li>
+  </ul>
+  <p>直观上，这个规则保留了不同"方向"的邻居，避免图被局部团结构主导，保持了图的可导航性。</p>
+
+  <div class="intuition-box">
+    <h4>图示：为什么要"保留方向多样性"？</h4>
+    <p>想象 5 个候选邻居围绕节点 p：如果 v₂ 很靠近 v₁ 且都在 p 的同一侧，那么只保留 v₁ 就足够——v₂ 提供的方向已经被 v₁ 覆盖。删掉 v₂ 可以让剩下的边覆盖其它"方向"，避免所有邻居挤在同一片区。</p>
+    <div style="display:flex;justify-content:center;background:#fff;padding:8px;border-radius:6px;margin-top:6px">
+      <svg width="440" height="220" viewBox="0 0 440 220">
+        <!-- naïve：只选最近 M 个 -->
+        <g>
+          <text x="60" y="16" font-size="13" font-weight="600" fill="#6d28d9">朴素：选最近 M 个（差）</text>
+          <circle cx="100" cy="120" r="7" fill="#4e79ff"/>
+          <text x="105" y="140" font-size="11" fill="#334155">p</text>
+          <!-- 全都在右侧, 方向单一 -->
+          <circle cx="145" cy="105" r="5" fill="#ef4444"/>
+          <text x="150" y="102" font-size="10">v1</text>
+          <circle cx="152" cy="120" r="5" fill="#ef4444"/>
+          <text x="157" y="122" font-size="10">v2</text>
+          <circle cx="150" cy="140" r="5" fill="#ef4444"/>
+          <text x="157" y="147" font-size="10">v3</text>
+          <line x1="100" y1="120" x2="145" y2="105" stroke="#ef4444" stroke-width="1.4"/>
+          <line x1="100" y1="120" x2="152" y2="120" stroke="#ef4444" stroke-width="1.4"/>
+          <line x1="100" y1="120" x2="150" y2="140" stroke="#ef4444" stroke-width="1.4"/>
+          <text x="30" y="190" font-size="10" fill="#7f1d1d">→ 全指向东侧，西侧无邻居，导航死角</text>
+        </g>
+        <!-- heuristic：多样性 -->
+        <g transform="translate(240,0)">
+          <text x="20" y="16" font-size="13" font-weight="600" fill="#059669">启发式：方向多样（好）</text>
+          <circle cx="100" cy="120" r="7" fill="#4e79ff"/>
+          <text x="105" y="140" font-size="11" fill="#334155">p</text>
+          <circle cx="145" cy="105" r="5" fill="#10b981"/>
+          <text x="150" y="102" font-size="10">v1</text>
+          <circle cx="60" cy="130" r="5" fill="#10b981"/>
+          <text x="35" y="128" font-size="10">v4</text>
+          <circle cx="105" cy="60" r="5" fill="#10b981"/>
+          <text x="112" y="60" font-size="10">v5</text>
+          <line x1="100" y1="120" x2="145" y2="105" stroke="#10b981" stroke-width="1.4"/>
+          <line x1="100" y1="120" x2="60" y2="130" stroke="#10b981" stroke-width="1.4"/>
+          <line x1="100" y1="120" x2="105" y2="60" stroke="#10b981" stroke-width="1.4"/>
+          <!-- v2/v3 被剪枝 -->
+          <circle cx="152" cy="120" r="4" fill="#e5e7eb" stroke="#94a3b8" stroke-dasharray="2 2"/>
+          <text x="157" y="122" font-size="9" fill="#94a3b8">v2</text>
+          <text x="15" y="190" font-size="10" fill="#065f46">→ 覆盖东/西/北三个方向，图可导航</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- 交互式演示 -->
+<section class="card">
+  <h2>三、交互式演示：多层图 + 分层查询</h2>
+  <p>点击左侧 Canvas 空白区域可以插入新节点（会构建到图中）；点击右键或点击"查询点"按钮后再点击画布则触发查询动画。</p>
+
+  <div class="legend-guide">
+    <b>三态可视化图例：</b>
+    <span><i class="dot" style="background:#94a3b8"></i> 已访问节点（灰色实心）</span>&nbsp;·&nbsp;
+    <span><i class="dot" style="background:#fde047;border:1px solid #eab308"></i> 候选队列 W（黄色空心）</span>&nbsp;·&nbsp;
+    <span><i class="dot" style="background:#ef4444;box-shadow:0 0 6px #ef4444"></i> 当前扩展节点（红色发光）</span>
+    <br>本页面中：分层节点颜色代表所在层（Layer 0 蓝→顶层橙），查询路径用蓝色高亮线段。
+  </div>
+
+  <div class="demo-area">
+    <div>
+      <div class="canvas-wrap">
+        <canvas id="cv" width="820" height="560"></canvas>
+      </div>
+      <div class="legend">
+        <span><i class="dot" style="background:#4e79ff"></i> 底层节点</span>
+        <span><i class="dot" style="background:#7a5cff"></i> Layer 1</span>
+        <span><i class="dot" style="background:#e93d82"></i> Layer 2</span>
+        <span><i class="dot" style="background:#f0b429"></i> Layer 3+</span>
+        <span><i class="dot" style="background:#22c55e"></i> 结果</span>
+        <span><i class="dot" style="background:#0ea5e9"></i> 查询点</span>
+      </div>
+      <div class="status" id="log"></div>
+    </div>
+
+    <div class="controls">
+      <h3 style="margin-top:0;color:#4e79ff;">参数控制</h3>
+
+      <div class="param">
+        <label>M (每层最大邻居) <span class="val" id="Mv">6</span></label>
+        <input type="range" id="M" min="2" max="16" value="6">
+      </div>
+
+      <div class="param">
+        <label>efConstruction <span class="val" id="efCv">20</span></label>
+        <input type="range" id="efC" min="4" max="60" value="20">
+      </div>
+
+      <div class="param">
+        <label>efSearch <span class="val" id="efSv">10</span></label>
+        <input type="range" id="efS" min="1" max="40" value="10">
+      </div>
+
+      <div class="param">
+        <label>k (返回数量) <span class="val" id="kv">5</span></label>
+        <input type="range" id="k" min="1" max="20" value="5">
+      </div>
+
+      <div class="param">
+        <label>节点数 N <span class="val" id="nv">120</span></label>
+        <input type="range" id="n" min="30" max="220" value="120">
+      </div>
+
+      <div class="btn-row">
+        <button id="rebuild">重建图</button>
+        <button class="ghost" id="clear">清空</button>
+      </div>
+      <div class="btn-row">
+        <button id="query" class="warn">查询模式</button>
+        <button class="ghost" id="autoQuery">随机查询</button>
+      </div>
+      <div class="btn-row">
+        <button class="ghost" id="step">下一步</button>
+        <button class="ghost" id="reset">重置动画</button>
+      </div>
+      <div class="param" style="margin-top:12px">
+        <label>动画速度 <span class="val" id="spdv">280 ms</span></label>
+        <input type="range" id="spd" min="80" max="900" value="280">
+      </div>
+      <div class="param">
+        <label>显示层 <span class="val" id="showLv">全部</span></label>
+        <input type="range" id="showL" min="-1" max="4" value="-1">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 参数解释 -->
+<section class="card">
+  <h2>四、可调参数一览</h2>
+  <table class="compare">
+    <tr><th>参数</th><th>作用</th><th>典型取值</th><th>调大后果</th></tr>
+    <tr><td><code>M</code></td><td>每层最大邻居数</td><td>16 ~ 48</td><td>内存 ↑、精度 ↑、构建慢</td></tr>
+    <tr><td><code>efConstruction</code></td><td>构建时候选队列</td><td>100 ~ 400</td><td>构建时间 ↑、图质量 ↑</td></tr>
+    <tr><td><code>efSearch</code></td><td>查询时候选队列</td><td>50 ~ 500</td><td>查询延迟 ↑、召回 ↑</td></tr>
+    <tr><td><code>mL</code></td><td>层数分布 = 1/ln(M)</td><td>由 M 决定</td><td>—</td></tr>
+  </table>
+  <div class="tip">
+    <b>调参经验：</b> 生产上先固定 M=16，通过调 efSearch 平衡召回和延迟。构建期 efConstruction 至少 100，索引建好后 efSearch 可以动态调节。
+  </div>
+
+  <h3>符号速查表</h3>
+  <table class="symbol-table">
+    <tr><th>符号</th><th>含义</th><th>默认量级</th></tr>
+    <tr><td><code>M</code></td><td>每层最大邻居数（Layer 0 允许 <code>2M</code>）</td><td>16 ~ 48</td></tr>
+    <tr><td><code>M_max</code></td><td>每层邻居数硬上限，用于剪枝时防止 hub</td><td>= M（Layer 0 用 2M）</td></tr>
+    <tr><td><code>efConstruction</code></td><td>构建时候选队列大小</td><td>100 ~ 400</td></tr>
+    <tr><td><code>efSearch</code></td><td>查询时候选队列大小（=beam 宽度）</td><td>50 ~ 500</td></tr>
+    <tr><td><code>mL</code></td><td>层数分布常数 = <code>1/ln(M)</code></td><td>由 M 推导</td></tr>
+    <tr><td><code>L</code></td><td>顶层层号（= 最高节点的层）</td><td>≈ log_M(N)</td></tr>
+    <tr><td><code>W</code></td><td>search_layer 中的候选/结果队列</td><td>—</td></tr>
+    <tr><td><code>C</code></td><td>search_layer 中的活跃扩展队列</td><td>—</td></tr>
+  </table>
+</section>
+
+<!-- 复杂度 -->
+<section class="card">
+  <h2>五、复杂度与内存 vs 磁盘</h2>
+  <table class="compare">
+    <tr><th>指标</th><th>值</th><th>说明</th></tr>
+    <tr><td>构建时间</td><td>O(N · log N · efC)</td><td>每个插入相当于一次 search</td></tr>
+    <tr><td>查询时间</td><td>O(log N · efS)</td><td>层间 log N + 底层 efS 扫描</td></tr>
+    <tr><td>内存占用</td><td>~ N · M · 4 字节 + 向量</td><td>底层每节点最多 2M 条边</td></tr>
+    <tr><td>是否支持磁盘</td><td>否（原生）</td><td>DiskANN 才是磁盘友好版本</td></tr>
+  </table>
+  <div class="tip">
+    HNSW 是<b>内存索引</b>。1 亿 128 维向量约需 60GB 内存（向量 51GB + 图 8GB），单机放不下时切分到多机或改用 DiskANN。
+  </div>
+</section>
+
+<!-- 优缺点 -->
+<section class="card">
+  <h2>六、优缺点 &amp; 适用场景</h2>
+  <div class="grid2">
+    <div>
+      <h3>优点</h3>
+      <ul>
+        <li><span class="pill">召回高</span>同精度下比 IVF 快 5-10 倍</li>
+        <li><span class="pill">增量友好</span>支持在线插入（不像 IVF 需重训 k-means）</li>
+        <li><span class="pill">参数直观</span>M / ef 意义清晰</li>
+        <li><span class="pill">无需训练</span>无 k-means 训练阶段</li>
+      </ul>
+    </div>
+    <div>
+      <h3>缺点</h3>
+      <ul>
+        <li><span class="pill">内存重</span>整图必须驻留内存</li>
+        <li><span class="pill">删除慢</span>删除需要标记 + 定期重建</li>
+        <li><span class="pill">构建慢</span>大数据集构建时间线性于 N log N</li>
+        <li><span class="pill">分片难</span>跨机分布式版本尚不完美</li>
+      </ul>
+    </div>
+  </div>
+  <h3>适用场景</h3>
+  <ul>
+    <li>数据规模：百万至亿级向量</li>
+    <li>召回要求高（&gt; 95%）</li>
+    <li>查询延迟敏感（毫秒级）</li>
+    <li>数据基本不删除，主要是追加</li>
+  </ul>
+</section>
+
+<section class="pitfall">
+  <h4>常见误区</h4>
+  <ol>
+    <li><b>层数越多不一定越快</b>：顶层过稀（甚至只剩 1 个点）时，"大跳"步长其实退化，跳不到目标区域附近，反而浪费时间。</li>
+    <li><b>M 越大不一定越好</b>：M 决定内存和构建速度；M=64 相较 M=16 内存 4×、构建时间 3~4×，但召回提升有限。</li>
+    <li><b>efConstruction 太小图质量差</b>：构建期候选池不足会导致邻居选得偏，后期 efSearch 再高也救不回来。生产上 efConstruction ≥ 100。</li>
+    <li><b>不适合超大规模</b>：内存受限（10 亿 128 维 ≈ 500GB），单机装不下；此时应考虑 DiskANN / SPANN。</li>
+  </ol>
+</section>
+
+<section class="next-steps">
+  <h4>下一步学什么</h4>
+  <ul>
+    <li>→ <a href="nsg.html">NSG</a>：单层图，省内存 30%~50%，同精度下缓存更友好</li>
+    <li>→ <a href="../5-hybrid/ivf-hnsw.html">IVF-HNSW</a>：大规模场景（10 亿+）用 IVF 粗筛 + HNSW 精修 + PQ 压缩</li>
+    <li>→ <a href="diskann.html">DiskANN</a>：图存 SSD 的方案，先看 NSG 再看它更顺</li>
+  </ul>
+</section>
+
+<footer>HNSW 交互式演示 · 基于 Malkov &amp; Yashunin (2016) 原论文实现</footer>
+
+</div>
+
+<script>
+"use strict";
+
+// -------------------- 基础工具 --------------------
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const logEl = document.getElementById('log');
+function log(msg, cls='') {
+  const line = document.createElement('div');
+  line.innerHTML = cls ? `<span class="${cls}">${msg}</span>` : msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() { logEl.innerHTML = ''; }
+
+function dist(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+// 优先队列 (min-heap by distance to q)
+class MinHeap {
+  constructor() { this.a = []; }
+  push(item) {
+    this.a.push(item);
+    let i = this.a.length - 1;
+    while (i > 0) {
+      const p = (i-1)>>1;
+      if (this.a[p].d <= this.a[i].d) break;
+      [this.a[p], this.a[i]] = [this.a[i], this.a[p]];
+      i = p;
+    }
+  }
+  pop() {
+    if (this.a.length === 0) return null;
+    const top = this.a[0];
+    const last = this.a.pop();
+    if (this.a.length) {
+      this.a[0] = last;
+      let i = 0, n = this.a.length;
+      while (true) {
+        const l = 2*i+1, r = 2*i+2;
+        let s = i;
+        if (l<n && this.a[l].d < this.a[s].d) s = l;
+        if (r<n && this.a[r].d < this.a[s].d) s = r;
+        if (s === i) break;
+        [this.a[s], this.a[i]] = [this.a[i], this.a[s]];
+        i = s;
+      }
+    }
+    return top;
+  }
+  top() { return this.a[0]; }
+  get size() { return this.a.length; }
+}
+class MaxHeap {
+  constructor() { this.a = []; }
+  push(item) {
+    this.a.push(item);
+    let i = this.a.length - 1;
+    while (i > 0) {
+      const p = (i-1)>>1;
+      if (this.a[p].d >= this.a[i].d) break;
+      [this.a[p], this.a[i]] = [this.a[i], this.a[p]];
+      i = p;
+    }
+  }
+  pop() {
+    if (this.a.length === 0) return null;
+    const top = this.a[0];
+    const last = this.a.pop();
+    if (this.a.length) {
+      this.a[0] = last;
+      let i = 0, n = this.a.length;
+      while (true) {
+        const l = 2*i+1, r = 2*i+2;
+        let s = i;
+        if (l<n && this.a[l].d > this.a[s].d) s = l;
+        if (r<n && this.a[r].d > this.a[s].d) s = r;
+        if (s === i) break;
+        [this.a[s], this.a[i]] = [this.a[i], this.a[s]];
+        i = s;
+      }
+    }
+    return top;
+  }
+  top() { return this.a[0]; }
+  get size() { return this.a.length; }
+}
+
+// -------------------- HNSW 实现 --------------------
+class HNSW {
+  constructor(M=6, efC=20) {
+    this.M = M;
+    this.Mmax0 = 2*M;
+    this.Mmax = M;
+    this.efC = efC;
+    this.mL = 1 / Math.log(Math.max(2, M));
+    this.nodes = [];           // {id,x,y,level,neighbors:[Set(id)] per layer}
+    this.entry = -1;
+    this.topLayer = -1;
+  }
+
+  randomLevel() {
+    const r = Math.random();
+    return Math.floor(-Math.log(Math.max(1e-9, r)) * this.mL);
+  }
+
+  addNode(x, y) {
+    const level = this.randomLevel();
+    const node = {
+      id: this.nodes.length,
+      x, y,
+      level,
+      neighbors: Array.from({length: level+1}, () => new Set())
+    };
+    this.nodes.push(node);
+    this._insert(node);
+    return node;
+  }
+
+  _insert(q) {
+    if (this.entry === -1) {
+      this.entry = q.id;
+      this.topLayer = q.level;
+      return;
+    }
+    let ep = this.entry;
+    let epNode = this.nodes[ep];
+    // 顶层贪心 (ef=1) 逐层下降到 q.level+1
+    for (let lc = this.topLayer; lc > q.level; lc--) {
+      const W = this._searchLayer(q, [ep], 1, lc);
+      const best = W.reduce((a,b) => a.d < b.d ? a : b);
+      ep = best.id;
+    }
+    // 从 min(q.level, topLayer) 开始逐层插入
+    const startLayer = Math.min(q.level, this.topLayer);
+    let currentEP = [ep];
+    for (let lc = startLayer; lc >= 0; lc--) {
+      const W = this._searchLayer(q, currentEP, this.efC, lc);
+      const neighbors = this._selectNeighborsHeuristic(q, W, this.M);
+      // 双向连边
+      for (const e of neighbors) {
+        q.neighbors[lc].add(e.id);
+        this.nodes[e.id].neighbors[lc].add(q.id);
+        // 裁剪 e 的邻居
+        const mmax = lc === 0 ? this.Mmax0 : this.Mmax;
+        const eNode = this.nodes[e.id];
+        if (eNode.neighbors[lc].size > mmax) {
+          const cand = [...eNode.neighbors[lc]].map(id => ({id, d: dist(eNode, this.nodes[id])}));
+          const pruned = this._selectNeighborsHeuristic(eNode, cand, mmax);
+          eNode.neighbors[lc] = new Set(pruned.map(x => x.id));
+          // 双向同步：如果剪掉了某人的边，那人也要移除对 e 的引用（本演示保留双向不严格同步以简化）
+        }
+      }
+      currentEP = W.map(w => w.id);
+    }
+    if (q.level > this.topLayer) {
+      this.topLayer = q.level;
+      this.entry = q.id;
+    }
+  }
+
+  _searchLayer(q, epIds, ef, lc) {
+    const visited = new Set(epIds);
+    const C = new MinHeap();
+    const W = new MaxHeap();
+    for (const id of epIds) {
+      const d = dist(q, this.nodes[id]);
+      C.push({id, d});
+      W.push({id, d});
+    }
+    while (C.size > 0) {
+      const c = C.pop();
+      const f = W.top();
+      if (c.d > f.d) break;
+      const cNode = this.nodes[c.id];
+      if (!cNode.neighbors[lc]) continue;
+      for (const nId of cNode.neighbors[lc]) {
+        if (visited.has(nId)) continue;
+        visited.add(nId);
+        const d = dist(q, this.nodes[nId]);
+        const f2 = W.top();
+        if (d < f2.d || W.size < ef) {
+          C.push({id: nId, d});
+          W.push({id: nId, d});
+          if (W.size > ef) W.pop();
+        }
+      }
+    }
+    return W.a.slice();
+  }
+
+  _selectNeighborsHeuristic(q, candidates, M) {
+    // 候选按距 q 升序
+    const sorted = candidates.slice().sort((a,b)=>a.d-b.d);
+    const result = [];
+    for (const v of sorted) {
+      if (result.length >= M) break;
+      let good = true;
+      for (const u of result) {
+        const duv = dist(this.nodes[u.id], this.nodes[v.id]);
+        if (duv < v.d) { good = false; break; }
+      }
+      if (good) result.push(v);
+    }
+    return result;
+  }
+
+  // 带 trace 的查询：返回每层的路径 + 底层最终结果
+  searchWithTrace(q, k, efS) {
+    if (this.entry === -1) return {perLayer:[], result:[]};
+    const trace = [];
+    let ep = [this.entry];
+    for (let lc = this.topLayer; lc > 0; lc--) {
+      const layerTrace = { layer: lc, path: [] };
+      const visited = new Set(ep);
+      let currentBest = { id: ep[0], d: dist(q, this.nodes[ep[0]]) };
+      layerTrace.path.push(currentBest.id);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        const cNode = this.nodes[currentBest.id];
+        if (!cNode.neighbors[lc]) break;
+        for (const nId of cNode.neighbors[lc]) {
+          if (visited.has(nId)) continue;
+          visited.add(nId);
+          const d = dist(q, this.nodes[nId]);
+          if (d < currentBest.d) {
+            currentBest = { id: nId, d };
+            layerTrace.path.push(nId);
+            changed = true;
+          }
+        }
+      }
+      trace.push(layerTrace);
+      ep = [currentBest.id];
+    }
+    // Layer 0 beam search with ef
+    const l0Trace = { layer: 0, path: [], visitedOrder: [] };
+    const visited = new Set(ep);
+    const C = new MinHeap();
+    const W = new MaxHeap();
+    for (const id of ep) {
+      const d = dist(q, this.nodes[id]);
+      C.push({id, d}); W.push({id, d});
+      l0Trace.visitedOrder.push(id);
+    }
+    while (C.size > 0) {
+      const c = C.pop();
+      const f = W.top();
+      if (c.d > f.d) break;
+      l0Trace.path.push(c.id);
+      const cNode = this.nodes[c.id];
+      if (!cNode.neighbors[0]) continue;
+      for (const nId of cNode.neighbors[0]) {
+        if (visited.has(nId)) continue;
+        visited.add(nId);
+        const d = dist(q, this.nodes[nId]);
+        const f2 = W.top();
+        if (d < f2.d || W.size < efS) {
+          C.push({id: nId, d}); W.push({id: nId, d});
+          l0Trace.visitedOrder.push(nId);
+          if (W.size > efS) W.pop();
+        }
+      }
+    }
+    trace.push(l0Trace);
+    const result = W.a.slice().sort((a,b)=>a.d-b.d).slice(0, k);
+    return { perLayer: trace, result, entry: this.entry };
+  }
+}
+
+// -------------------- 绘制 --------------------
+const layerColors = ['#4e79ff', '#7a5cff', '#e93d82', '#f0b429', '#22c55e', '#0ea5e9'];
+
+let hnsw = new HNSW(6, 20);
+let queryMode = false;
+let queryPoint = null;
+let anim = null; // {trace, step}
+let displayLayer = -1; // -1: all
+let animSpeed = 280;
+
+function draw() {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  // 层选择
+  const showAll = displayLayer < 0;
+  // 绘制边（从底层开始，让高层压在上面）
+  const maxL = hnsw.topLayer;
+  for (let lc = 0; lc <= maxL; lc++) {
+    if (!showAll && lc !== displayLayer) continue;
+    ctx.strokeStyle = lc === 0 ? 'rgba(78,121,255,0.16)'
+                    : lc === 1 ? 'rgba(122,92,255,0.35)'
+                    : lc === 2 ? 'rgba(233,61,130,0.5)'
+                    : 'rgba(240,180,41,0.6)';
+    ctx.lineWidth = lc === 0 ? 0.8 : 1.2 + lc * 0.4;
+    for (const node of hnsw.nodes) {
+      if (node.level < lc) continue;
+      if (!node.neighbors[lc]) continue;
+      for (const nId of node.neighbors[lc]) {
+        if (nId <= node.id) continue;
+        const nn = hnsw.nodes[nId];
+        ctx.beginPath();
+        ctx.moveTo(node.x, node.y);
+        ctx.lineTo(nn.x, nn.y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // 动画路径
+  if (anim) {
+    const t = anim.trace;
+    // 已完成的层用不同色
+    for (let i = 0; i <= anim.step && i < t.perLayer.length; i++) {
+      const lt = t.perLayer[i];
+      const isCurrent = i === anim.step;
+      ctx.strokeStyle = isCurrent ? '#0ea5e9' : 'rgba(14,165,233,0.35)';
+      ctx.lineWidth = isCurrent ? 3.5 : 2;
+      ctx.beginPath();
+      const path = lt.path;
+      if (path.length > 0) {
+        const n0 = hnsw.nodes[path[0]];
+        ctx.moveTo(n0.x, n0.y);
+        for (let j = 1; j < path.length; j++) {
+          const nj = hnsw.nodes[path[j]];
+          ctx.lineTo(nj.x, nj.y);
+        }
+        if (queryPoint && isCurrent) {
+          const last = hnsw.nodes[path[path.length-1]];
+          ctx.lineTo(queryPoint.x, queryPoint.y);
+        }
+        ctx.stroke();
+      }
+      // 底层 beam search 标出访问过的节点
+      if (lt.visitedOrder && isCurrent) {
+        for (const id of lt.visitedOrder) {
+          const nn = hnsw.nodes[id];
+          ctx.strokeStyle = 'rgba(14,165,233,0.35)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(nn.x, nn.y, 9, 0, Math.PI*2);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // 绘制节点
+  for (const node of hnsw.nodes) {
+    if (!showAll && node.level < displayLayer) continue;
+    // 底层小圆点
+    const col = layerColors[Math.min(node.level, layerColors.length-1)];
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    const r = 3 + node.level * 1.6;
+    ctx.arc(node.x, node.y, r, 0, Math.PI*2);
+    ctx.fill();
+    // 高层节点加环
+    if (node.level > 0) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+  }
+
+  // 结果高亮
+  if (anim && anim.step >= anim.trace.perLayer.length && anim.trace.result) {
+    for (const r of anim.trace.result) {
+      const nn = hnsw.nodes[r.id];
+      ctx.fillStyle = '#22c55e';
+      ctx.beginPath();
+      ctx.arc(nn.x, nn.y, 7, 0, Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+
+  // 查询点
+  if (queryPoint) {
+    ctx.fillStyle = '#0ea5e9';
+    ctx.beginPath();
+    ctx.arc(queryPoint.x, queryPoint.y, 8, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    // 十字标
+    ctx.strokeStyle = '#0ea5e9'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(queryPoint.x-13, queryPoint.y);
+    ctx.lineTo(queryPoint.x+13, queryPoint.y);
+    ctx.moveTo(queryPoint.x, queryPoint.y-13);
+    ctx.lineTo(queryPoint.x, queryPoint.y+13);
+    ctx.stroke();
+  }
+
+  // 入口点标记
+  if (hnsw.entry >= 0) {
+    const ep = hnsw.nodes[hnsw.entry];
+    ctx.strokeStyle = '#e93d82';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(ep.x, ep.y, 12, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.fillStyle = '#e93d82';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('EP', ep.x+14, ep.y-8);
+  }
+
+  // 图例文字
+  ctx.fillStyle = '#64748b';
+  ctx.font = '11px monospace';
+  const info = `N=${hnsw.nodes.length}  L=${hnsw.topLayer}  M=${hnsw.M}  efC=${hnsw.efC}`;
+  ctx.fillText(info, 10, 16);
+}
+
+// -------------------- 初始化 --------------------
+function rebuildIndex() {
+  const N = parseInt(document.getElementById('n').value);
+  const M = parseInt(document.getElementById('M').value);
+  const efC = parseInt(document.getElementById('efC').value);
+  hnsw = new HNSW(M, efC);
+  clearLog();
+  log(`<span class="hi">重建索引:</span> N=${N}, M=${M}, efC=${efC}`);
+  // 生成聚簇分布
+  const clusters = 4;
+  const cs = [];
+  for (let i = 0; i < clusters; i++) {
+    cs.push({ x: 120 + Math.random() * (cv.width - 240), y: 100 + Math.random() * (cv.height - 200) });
+  }
+  for (let i = 0; i < N; i++) {
+    const c = cs[i % clusters];
+    const x = c.x + (Math.random() - 0.5) * 180;
+    const y = c.y + (Math.random() - 0.5) * 140;
+    const xc = Math.max(30, Math.min(cv.width - 30, x));
+    const yc = Math.max(30, Math.min(cv.height - 30, y));
+    hnsw.addNode(xc, yc);
+  }
+  // 统计每层节点数
+  const layerCount = [];
+  for (const node of hnsw.nodes) {
+    layerCount[node.level] = (layerCount[node.level] || 0) + 1;
+  }
+  log(`层数分布: ${layerCount.map((c,i)=>`L${i}=${c}`).join(', ')}`, 'layer');
+  log(`入口点 EP = 节点 ${hnsw.entry} (Layer ${hnsw.topLayer})`, 'ok');
+  queryPoint = null;
+  anim = null;
+  draw();
+}
+
+// -------------------- 事件绑定 --------------------
+function bindSlider(id, valId, cb) {
+  const s = document.getElementById(id);
+  const v = document.getElementById(valId);
+  s.oninput = () => {
+    v.textContent = s.value;
+    if (cb) cb();
+  };
+}
+bindSlider('M', 'Mv');
+bindSlider('efC', 'efCv');
+bindSlider('efS', 'efSv');
+bindSlider('k', 'kv');
+bindSlider('n', 'nv');
+bindSlider('spd', 'spdv', () => {
+  animSpeed = parseInt(document.getElementById('spd').value);
+  document.getElementById('spdv').textContent = animSpeed + ' ms';
+});
+document.getElementById('spdv').textContent = '280 ms';
+bindSlider('showL', 'showLv', () => {
+  const v = parseInt(document.getElementById('showL').value);
+  displayLayer = v;
+  document.getElementById('showLv').textContent = v < 0 ? '全部' : `L${v}`;
+  draw();
+});
+document.getElementById('showLv').textContent = '全部';
+
+document.getElementById('rebuild').onclick = rebuildIndex;
+document.getElementById('clear').onclick = () => {
+  hnsw = new HNSW(parseInt(document.getElementById('M').value), parseInt(document.getElementById('efC').value));
+  queryPoint = null; anim = null;
+  clearLog();
+  log('已清空');
+  draw();
+};
+
+document.getElementById('query').onclick = () => {
+  queryMode = !queryMode;
+  document.getElementById('query').textContent = queryMode ? '（点画布下钉）' : '查询模式';
+  log(`查询模式: ${queryMode ? '开' : '关'}`, 'hi');
+};
+
+document.getElementById('autoQuery').onclick = () => {
+  // 随机取一个位置
+  const qx = 60 + Math.random() * (cv.width - 120);
+  const qy = 60 + Math.random() * (cv.height - 120);
+  runQuery(qx, qy);
+};
+
+document.getElementById('step').onclick = () => {
+  if (!anim) return;
+  if (anim.step < anim.trace.perLayer.length) {
+    anim.step++;
+    logStep();
+    draw();
+  } else {
+    log('查询完成', 'ok');
+  }
+};
+document.getElementById('reset').onclick = () => {
+  if (anim) { anim.step = 0; draw(); }
+};
+
+cv.addEventListener('click', (e) => {
+  const rect = cv.getBoundingClientRect();
+  const scaleX = cv.width / rect.width;
+  const scaleY = cv.height / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+  if (queryMode) {
+    runQuery(x, y);
+  } else {
+    // 插入新节点
+    hnsw.addNode(x, y);
+    log(`插入节点 ${hnsw.nodes.length-1}: (${x.toFixed(0)},${y.toFixed(0)}) level=${hnsw.nodes[hnsw.nodes.length-1].level}`);
+    draw();
+  }
+});
+cv.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (cv.width / rect.width);
+  const y = (e.clientY - rect.top) * (cv.height / rect.height);
+  runQuery(x, y);
+});
+
+function runQuery(x, y) {
+  const efS = parseInt(document.getElementById('efS').value);
+  const k = parseInt(document.getElementById('k').value);
+  queryPoint = { x, y };
+  clearLog();
+  log(`<span class="hi">查询开始:</span> q=(${x.toFixed(0)},${y.toFixed(0)}) efS=${efS} k=${k}`);
+  const t = hnsw.searchWithTrace(queryPoint, k, efS);
+  anim = { trace: t, step: 0 };
+  log(`入口点 EP=${t.entry}, 顶层 L=${hnsw.topLayer}`, 'ok');
+  draw();
+  animateStep();
+}
+
+function animateStep() {
+  if (!anim) return;
+  if (anim.step >= anim.trace.perLayer.length) {
+    const res = anim.trace.result.map(r => `${r.id}(${r.d.toFixed(1)})`).join(', ');
+    log(`最终 top-k: ${res}`, 'ok');
+    return;
+  }
+  logStep();
+  draw();
+  setTimeout(() => { anim.step++; animateStep(); }, animSpeed);
+}
+
+function logStep() {
+  const lt = anim.trace.perLayer[anim.step];
+  if (!lt) return;
+  if (lt.layer > 0) {
+    log(`Layer ${lt.layer} 贪心: path=[${lt.path.join('→')}]`, 'layer');
+  } else {
+    log(`Layer 0 beam(ef=${document.getElementById('efS').value}): 访问 ${lt.visitedOrder.length} 个节点, 弹出序列=[${lt.path.slice(0,10).join('→')}${lt.path.length>10?'...':''}]`, 'layer');
+  }
+}
+
+// 初始构建
+rebuildIndex();
+
+</script>
+</body>
+</html>

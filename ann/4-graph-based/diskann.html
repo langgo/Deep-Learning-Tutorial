@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>DiskANN / Vamana - 微软的 SSD 图索引</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    background: #f5f7fa;
+    color: #2c3e50;
+    line-height: 1.7;
+    padding: 24px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  header {
+    background: linear-gradient(135deg, #dc2626 0%, #ea580c 100%);
+    color: #fff;
+    padding: 32px;
+    border-radius: 14px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 16px rgba(220, 38, 38, 0.25);
+  }
+  header h1 { font-size: 30px; margin-bottom: 8px; }
+  header p { opacity: 0.92; font-size: 15px; }
+  .back-link {
+    display: inline-block;
+    margin-bottom: 12px;
+    color: #fff;
+    text-decoration: none;
+    font-size: 14px;
+    opacity: 0.9;
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.18);
+    border-radius: 6px;
+  }
+  .back-link:hover { opacity: 1; background: rgba(255,255,255,0.28); }
+  .card {
+    background: #fff;
+    padding: 22px 26px;
+    margin-bottom: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  }
+  .card h2 {
+    font-size: 22px;
+    color: #dc2626;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #fee2e2;
+    margin-bottom: 14px;
+  }
+  .card h3 { font-size: 17px; color: #34495e; margin: 14px 0 8px; }
+  p, li { font-size: 14.5px; color: #4a5568; }
+  ul, ol { padding-left: 22px; margin: 8px 0; }
+  li { margin-bottom: 4px; }
+  code {
+    background: #fee2e2;
+    color: #b91c1c;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 13px;
+  }
+  pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 10px 0;
+  }
+  .analogy {
+    background: #fff8e6;
+    border-left: 4px solid #f0b429;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+  }
+  .tip {
+    background: #fef2f2;
+    border-left: 4px solid #dc2626;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+  }
+  .demo-area {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 18px;
+  }
+  @media (max-width: 900px) { .demo-area { grid-template-columns: 1fr; } }
+  .canvas-wrap {
+    background: #fafbfd;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px;
+    position: relative;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    background: #fff;
+    border-radius: 8px;
+    cursor: crosshair;
+  }
+  .controls {
+    background: #f8fafc;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+  }
+  .param { margin-bottom: 12px; }
+  .param label {
+    display: flex; justify-content: space-between;
+    font-size: 13px; font-weight: 600; color: #334155;
+    margin-bottom: 4px;
+  }
+  .param label span.val { color: #dc2626; font-family: monospace; }
+  .param input[type=range] { width: 100%; accent-color: #dc2626; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  button {
+    background: #dc2626; color: #fff; border: 0;
+    padding: 8px 14px; border-radius: 6px;
+    font-size: 13px; cursor: pointer; font-weight: 600;
+    transition: all 0.15s;
+  }
+  button:hover { background: #b91c1c; transform: translateY(-1px); }
+  button.ghost { background: #fff; color: #dc2626; border: 1px solid #dc2626; }
+  button.ghost:hover { background: #fef2f2; }
+  button.warn { background: #f97316; }
+  button.warn:hover { background: #ea580c; }
+  .status {
+    background: #1e293b; color: #fca5a5;
+    padding: 10px 14px; border-radius: 8px;
+    font-family: monospace; font-size: 12.5px;
+    margin-top: 10px;
+    min-height: 90px; max-height: 220px;
+    overflow-y: auto; line-height: 1.6;
+  }
+  .status .hi { color: #fbbf24; }
+  .status .ok { color: #34d399; }
+  .status .disk { color: #a5b4fc; }
+  .status .mem { color: #f9a8d4; }
+  .legend {
+    display: flex; flex-wrap: wrap;
+    gap: 10px; margin-top: 10px;
+    font-size: 12.5px; color: #475569;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  .legend .line { display: inline-block; width: 22px; height: 3px; border-radius: 2px; }
+  table.compare {
+    width: 100%; border-collapse: collapse;
+    margin: 10px 0; font-size: 13.5px;
+  }
+  table.compare th, table.compare td {
+    padding: 8px 10px; border: 1px solid #e2e8f0; text-align: left;
+  }
+  table.compare th { background: #fee2e2; color: #b91c1c; }
+  table.compare tr:nth-child(even) td { background: #f8fafc; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  .pill {
+    display: inline-block; background: #fee2e2; color: #b91c1c;
+    padding: 3px 8px; border-radius: 20px;
+    font-size: 12px; margin-right: 4px;
+  }
+  .storage-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .storage-box {
+    background: #fff;
+    border: 2px solid #e2e8f0;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 12.5px;
+  }
+  .storage-box.mem { border-color: #ec4899; }
+  .storage-box.disk { border-color: #6366f1; }
+  .storage-box h4 {
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  .storage-box.mem h4 { color: #ec4899; }
+  .storage-box.disk h4 { color: #6366f1; }
+  .storage-list {
+    font-family: monospace;
+    font-size: 11.5px;
+    max-height: 90px;
+    overflow-y: auto;
+    color: #64748b;
+  }
+  footer { text-align: center; color: #94a3b8; font-size: 13px; padding: 20px 0; }
+  .rule-box {
+    background: #fef3c7;
+    border: 2px dashed #f59e0b;
+    padding: 14px 18px;
+    border-radius: 10px;
+    margin: 10px 0;
+  }
+  .rule-box b { color: #d97706; }
+  .flash {
+    animation: flash 0.6s;
+  }
+  @keyframes flash {
+    0% { background: #fef2f2; }
+    50% { background: #fca5a5; }
+    100% { background: #fff; }
+  }
+  /* --- 教学增强样式 --- */
+  .prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+  .prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+  .glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+  .glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+  .glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+  .glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+  .new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+  .pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+  .pitfall h4 { color: #92400e; margin-top: 0; }
+  .next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+  .next-steps a { color: #047857; font-weight: 600; }
+  .intuition-box { background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+  .intuition-box h4 { color: #6d28d9; margin-top: 0; }
+  .symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+  .symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+  .symbol-table th { background: #f9fafb; color: #374151; }
+  .legend-guide { background: #f0fdf4; border-left: 3px solid #10b981; padding: 10px 14px; margin: 12px 0; border-radius: 4px; font-size: 0.9rem; }
+  .legend-guide .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<a href="../index.html" class="back-link">返回上级目录</a>
+
+<header>
+  <h1>DiskANN / Vamana - 微软的 SSD 图索引</h1>
+  <p>Microsoft Research 2019 提出 - "Fast Accurate Billion-point Nearest Neighbor Search on a Single Node" - 让 SSD 承载十亿级向量索引</p>
+</header>
+
+<!-- 前置阅读 -->
+<div class="prereq-bar">
+  <b>前置：</b>
+  <span class="pill"><a href="nsg.html" style="color:#1e40af;text-decoration:none">NSG（必读，理解 MRNG 单层图）</a></span>
+  <span class="pill">PQ（数据压缩到 SSD 前的量化）</span>
+  <br>
+  <b>建议顺序：</b> <a class="pill" href="hnsw.html">HNSW</a> → <a class="pill" href="nsg.html">NSG</a> → DiskANN <b>(当前)</b> → <a class="pill" href="spann.html">SPANN</a>
+</div>
+
+<!-- 关键术语速查 -->
+<details class="glossary" open>
+  <summary>关键术语速查（点击展开/折叠）</summary>
+  <dl>
+    <dt>Vamana</dt>
+    <dd>DiskANN 论文里用的图算法，本质是 NSG 的变种。Vamana 在梵语里是"航行者"。</dd>
+    <dt>robust prune</dt>
+    <dd>DiskANN 的选边规则。对候选池中的候选按距 p 升序，每选一个 p* 就把"被 p* 覆盖"的候选从池中剔除，直到选够 R 个。</dd>
+    <dt>alpha 参数（≥ 1）</dt>
+    <dd>Vamana 的松弛因子。alpha=1 时等价于 MRNG（严格剪枝）；alpha&gt;1（如 1.2）保留更多"长跳边"，图更密但搜索跳得远。</dd>
+    <dt>PQ 压缩</dt>
+    <dd>Product Quantization：把 128 维向量分段量化到 32~64 字节。内存里只存 PQ 码用于粗筛。</dd>
+    <dt>SSD IO / 4KB 扇区</dt>
+    <dd>一次读 4KB 是磁盘/文件系统的最小读单位，NVMe SSD 一次随机读延迟约 100μs。DiskANN 把每个节点的 <b>完整向量 + 邻居列表 + PQ code</b> 打包到 4KB 一个扇区，一次 IO 拿一整个节点包。</dd>
+    <dt>medoid</dt>
+    <dd>数据集里距离全体质心最近的实际数据点，用作图的入口。</dd>
+    <dt>R-regular 图</dt>
+    <dd>每节点度数恰好 R 的规则图。Vamana 构建从随机 R-regular 图开始迭代 refine。</dd>
+    <dt>beam width（beam 并发 IO）</dt>
+    <dd>beam search 宽度，也是 SSD 并发 IO 数量。beam=4 意味着一次并发发起 4 个 4KB 读。</dd>
+  </dl>
+</details>
+
+<!-- 新手引导 -->
+<div class="new-user-tip">
+  <b>新手引导（按顺序操作）：</b>
+  <ol style="margin:6px 0 0 22px">
+    <li>拖 alpha 滑块到 1.00，点【构建 Vamana】—— 得到严格剪枝的稀疏骨架</li>
+    <li>拖 alpha 到 1.20，再次【构建 Vamana】—— 图变密，多了长跳边</li>
+    <li>点【对比 alpha=1 vs 1.2】—— 紫色边就是"alpha 增加后新保留的长跳边"</li>
+    <li>点【查询模式】后再点画布任意位置，观察 IO 计数（右上角）与 SSD 加载节点</li>
+    <li>调 beam width（B）观察 IO 并发对总延迟的影响</li>
+  </ol>
+</div>
+
+<section class="card">
+  <h2>一、直观理解：为什么需要 DiskANN？</h2>
+  <p style="color:#64748b;font-size:13.5px;margin-bottom:8px">
+    <b>本方案解决了什么问题：</b> HNSW/NSG 都要求整图在内存里，10 亿 128 维向量 ≈ 500GB 内存，成本天花板极高。DiskANN 把图搬到 SSD，让单台机器承载十亿级索引。<br>
+    如果不知道 NSG / HNSW 是什么，请先看 <a href="hnsw.html" style="color:#dc2626">HNSW</a> 与 <a href="nsg.html" style="color:#dc2626">NSG 页面</a>。
+  </p>
+  <p>HNSW 精度极高，但有个致命瓶颈：<b>整图必须放内存</b>。10 亿 128 维向量约 500GB，单台机器根本装不下。</p>
+
+  <div class="analogy">
+    <b>类比："图存磁盘, 只在内存放导航图"</b><br>
+    - 想象一座巨大的图书馆(SSD)存放所有书。<br>
+    - 内存只放"目录卡片"(压缩向量 PQ)，用于快速筛选。<br>
+    - 每次查询时，才去 SSD 上拉几十本"真正的书"(完整向量 + 邻居列表)。<br>
+    - 关键：图必须构建得"每一跳都跳得远"，才能只用几十次 IO 就找到答案。
+  </div>
+
+  <div class="analogy">
+    <b>Vamana = DiskANN 的图算法</b><br>
+    "Vamana" 是梵语"航行者"。Vamana 的核心是 <b>alpha 参数控制的 robust prune</b>——比 NSG/HNSW 多一个"松弛因子"，允许保留一些"长跳边"，让搜索能大步前进。
+  </div>
+
+  <div class="tip">
+    <b>三大关键设计:</b><br>
+    1. <b>Vamana 图</b>: 类似 NSG，但用 <code>alpha ≥ 1</code> 松弛剪枝<br>
+    2. <b>PQ 压缩存内存</b>: 每个向量压缩到 32 字节, 内存中做粗筛<br>
+    3. <b>邻居 + 全精度向量共存 SSD</b>: 一次 4KB IO 拿到整个"节点包"
+  </div>
+</section>
+
+<section class="card">
+  <h2>二、算法原理</h2>
+
+  <h3>2.1 Vamana 图构建 (两趟)</h3>
+  <ol>
+    <li>初始化: 随机 R-regular 图 (每节点随机 R 个邻居)</li>
+    <li>第一趟: 遍历所有节点, 用 <b>alpha=1.0</b> 剪枝</li>
+    <li>第二趟: 再遍历一次, 用 <b>alpha=1.2 (>1)</b> 剪枝, 允许更多长跳边</li>
+    <li>入口点: 全体数据的 medoid (类似 NSG 的 navigating point)</li>
+  </ol>
+
+  <h3>2.2 Robust Prune (核心)</h3>
+  <div class="rule-box">
+    <b>Robust Prune (p, V, alpha, R):</b><br>
+    <code>V</code> = 候选池 (含所有已访问节点)<br>
+    <b>while</b> V 非空 且 |neighbors(p)| &lt; R:<br>
+    &emsp;<code>p*</code> = V 中距 p 最近的节点<br>
+    &emsp;把 p* 加入 p 的邻居<br>
+    &emsp;<b>for each</b> v ∈ V:<br>
+    &emsp;&emsp;<b>if</b> <code>alpha · d(p*, v) ≤ d(p, v)</code>: 从 V 移除 v
+  </div>
+  <p>对比 MRNG (alpha=1.0): "如果 p* 到 v 更近, 则 v 被 p* 覆盖"<br>
+  Vamana (alpha=1.2): "只有当 p* 到 v <b>明显</b>更近 (差 20%以上) 才覆盖"</p>
+  <p>后果: 保留了更多"逃逸边"——从局部聚类跳到远处的边, 让 beam search 早期能大步前进, 减少 SSD IO。</p>
+
+  <div class="intuition-box">
+    <h4>直觉：alpha 越大 → 图越密 → 跳得越远</h4>
+    <p><b>alpha=1.0</b>：严格剪枝（等价 MRNG / NSG）。只保留三角不等式意义上"不冗余"的边——如果绕 p* 走比直达 v 更近，那 <code>p→v</code> 就被剪掉。图很稀疏。</p>
+    <p><b>alpha=1.2</b>：放松。"仅当 <b>1.2·d(p*, v) ≤ d(p, v)</b>（也就是绕 p* 走要比直达短 20% 以上）才剪掉"。保留了更多长跳边，图更密。</p>
+    <p><b>为什么更密反而更快？</b> 长跳边让 beam search 早期能"一步跨很远"，快速到达查询点附近；避免了 alpha=1 时必须走一大串短边才能跨越簇的浪费。<br>付出的代价：每节点邻居更多（内存/SSD 扇区略大），但换来的 IO 减少（更少跳数）远大于代价。</p>
+  </div>
+
+  <div class="intuition-box">
+    <h4>直觉：SSD IO 与 4KB 扇区</h4>
+    <p>NVMe SSD 一次<b>随机读取</b>延迟约 100μs，一次读 4KB 是硬件 + 文件系统的最小单位——读 100 字节和读 4KB 花的时间几乎相同。</p>
+    <p>DiskANN 的关键设计：把每个节点的 <b>完整向量（约 512B）+ 邻居列表（R × 4B ≈ 256B）+ 少量元数据</b> 一起塞进一个 4KB 扇区。<b>一次 IO = 拿到一整个节点包</b>，可以立即扩展它的所有邻居。</p>
+    <p>再乘上 beam=4 的并发：单查询做 50 次 IO ≈ 5000μs = 5ms，与内存 HNSW 的量级已经很接近。</p>
+  </div>
+
+  <div class="intuition-box">
+    <h4>直觉：为什么要两趟构建？</h4>
+    <p>第一趟用 <b>alpha=1.0</b> 建"基础骨架"——严格剪枝，图稀疏但可导航；此时的图相当于一个高质量 MRNG，是良好的初始化。</p>
+    <p>第二趟用 <b>alpha&gt;1</b>（如 1.2）在骨架上补充"长跳边"——这一趟找到的候选池更靠谱（因为骨架图已经能引导贪心到达合理区域），所以选出的长跳边质量更高。</p>
+    <p>不能只做一趟 alpha=1.2：起始的随机 R-regular 图太差，贪心找到的候选也差，选出来的长跳边可能只是"运气好"的随机边。</p>
+  </div>
+
+  <h3>2.3 磁盘布局</h3>
+  <pre>SSD 上每个节点占用一个"扇区"(4KB 对齐):
+  +--------+---------------------------+--------+
+  | vec_id | full_vector (128 * 4B)    | neigh  |
+  |  4 B   |         512 B             | R * 4B |
+  +--------+---------------------------+--------+
+一次 4KB IO 就能读取一个节点的:
+  - 完整向量(用于最终精确排序)
+  - 邻居列表(用于扩展)
+
+内存: 每个向量的 PQ 压缩 (32-64 字节) + 图入口</pre>
+
+  <h3>2.4 查询流程</h3>
+  <pre>function DISK_SEARCH(q, k, L):
+    C = beam of size L, init with medoid
+    while C has unvisited:
+        b = beam of B unvisited nearest in C
+        # 并行发起 B 个 SSD IO
+        SSD_READ nodes in b        # 得到 full vector + neighbors
+        for n in b:
+            update PQ_dist for neighbors of n (in memory)
+            add neighbors to C, keep top L by PQ_dist
+    # 最后, 对 C 中所有节点用 full vector 重排
+    return top-k of C by exact dist</pre>
+</section>
+
+<section class="card">
+  <h2>三、交互式演示: alpha 剪枝 + 磁盘/内存 访问</h2>
+  <p>点击画布空白处添加节点; 构建后可点击查询模式发起查询, 观察 SSD IO 次数。</p>
+
+  <div class="legend-guide">
+    <b>三态可视化图例：</b>
+    <span><i class="dot" style="background:#94a3b8"></i> 已访问节点（灰色实心）</span>&nbsp;·&nbsp;
+    <span><i class="dot" style="background:#fde047;border:1px solid #eab308"></i> 候选队列 W（黄色空心）</span>&nbsp;·&nbsp;
+    <span><i class="dot" style="background:#ef4444;box-shadow:0 0 6px #ef4444"></i> 当前扩展节点（红色发光）</span>
+    <br>本页面中：<b>粉色</b> = 已 IO 到 SSD 的节点，<b>蓝色</b> = 本轮 beam 中的节点，<b>橙色</b> = medoid 入口。红色边 = alpha=1.0 时已存在；<b>紫色边</b> = alpha 提升后新增的长跳边。
+  </div>
+
+  <div class="demo-area">
+    <div>
+      <div class="canvas-wrap">
+        <canvas id="cv" width="820" height="500"></canvas>
+      </div>
+      <div class="legend">
+        <span><i class="dot" style="background:#334155"></i> 节点(SSD)</span>
+        <span><i class="dot" style="background:#f97316"></i> Medoid 入口</span>
+        <span><i class="dot" style="background:#0ea5e9"></i> Beam</span>
+        <span><i class="dot" style="background:#ec4899"></i> 已加载到内存</span>
+        <span><i class="dot" style="background:#22c55e"></i> 结果</span>
+        <span><i class="line" style="background:#dc2626"></i> alpha=1.0 边</span>
+        <span><i class="line" style="background:#6366f1"></i> alpha 增加保留的长跳边</span>
+      </div>
+      <div class="storage-panel">
+        <div class="storage-box mem" id="memBox">
+          <h4>内存 (PQ 压缩)</h4>
+          <div class="storage-list" id="memList">全部节点的 PQ 码 (32B/vec)</div>
+        </div>
+        <div class="storage-box disk" id="diskBox">
+          <h4>SSD (完整向量 + 图)</h4>
+          <div class="storage-list" id="diskList">尚未 IO</div>
+        </div>
+      </div>
+      <div class="status" id="log"></div>
+    </div>
+
+    <div class="controls">
+      <h3 style="margin-top:0;color:#dc2626;">参数控制</h3>
+
+      <div class="param">
+        <label>alpha (剪枝松弛因子) <span class="val" id="alphaV">1.20</span></label>
+        <input type="range" id="alpha" min="100" max="180" value="120">
+      </div>
+
+      <div class="param">
+        <label>R (每节点最大邻居) <span class="val" id="Rv">10</span></label>
+        <input type="range" id="R" min="3" max="20" value="10">
+      </div>
+
+      <div class="param">
+        <label>L (构建/查询候选池) <span class="val" id="Lv">40</span></label>
+        <input type="range" id="L" min="10" max="120" value="40">
+      </div>
+
+      <div class="param">
+        <label>Beam (并发 IO) <span class="val" id="Bv">4</span></label>
+        <input type="range" id="B" min="1" max="12" value="4">
+      </div>
+
+      <div class="param">
+        <label>节点数 N <span class="val" id="Nv">100</span></label>
+        <input type="range" id="N" min="30" max="220" value="100">
+      </div>
+
+      <div class="btn-row">
+        <button id="regen">重生成点</button>
+        <button id="build">构建 Vamana</button>
+      </div>
+      <div class="btn-row">
+        <button class="ghost" id="compare">对比 alpha=1 vs 1.2</button>
+      </div>
+      <div class="btn-row">
+        <button class="warn" id="query">查询模式</button>
+        <button class="ghost" id="autoQ">随机查询</button>
+      </div>
+
+      <div class="param" style="margin-top:12px">
+        <label>动画速度 <span class="val" id="spdv">380 ms</span></label>
+        <input type="range" id="spd" min="80" max="1200" value="380">
+      </div>
+
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:12.5px;color:#64748b">
+        <b>IO 计数:</b> <span id="ioCount" style="color:#6366f1;font-weight:700">0</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>四、参数解释</h2>
+  <table class="compare">
+    <tr><th>参数</th><th>作用</th><th>典型值</th><th>调大后果</th></tr>
+    <tr><td><code>alpha</code></td><td>剪枝松弛因子, ≥ 1</td><td>1.0 ~ 1.4</td><td>图更密, 长跳边更多, 查询快但内存↑</td></tr>
+    <tr><td><code>R</code></td><td>最大出度</td><td>32 ~ 128</td><td>SSD 扇区大, IO 单次拿更多邻居</td></tr>
+    <tr><td><code>L</code></td><td>候选队列</td><td>75 ~ 200</td><td>召回↑, IO 次数↑</td></tr>
+    <tr><td><code>Beam</code></td><td>并发 IO 数</td><td>4 ~ 8</td><td>SSD 带宽利用率↑, 延迟↓</td></tr>
+  </table>
+  <div class="tip">
+    <b>关键洞察:</b> 单次 SSD 随机读延迟约 100μs, 大约做 100 次 IO 就 10ms。DiskANN 靠 <code>alpha>1</code> 让查询只需 40-80 次 IO, 加上 beam 并发, 单次查询 &lt; 10ms。
+  </div>
+
+  <h3>符号速查表</h3>
+  <table class="symbol-table">
+    <tr><th>符号</th><th>含义</th><th>默认量级</th></tr>
+    <tr><td><code>R</code></td><td>每节点最大出度（决定 SSD 扇区中邻居列表大小）</td><td>32 ~ 128</td></tr>
+    <tr><td><code>L</code></td><td>候选队列大小（对应 HNSW efSearch / NSG L）</td><td>75 ~ 200</td></tr>
+    <tr><td><code>alpha</code></td><td>Robust Prune 松弛因子（≥ 1）</td><td>1.0 ~ 1.4</td></tr>
+    <tr><td><code>beamwidth</code></td><td>beam search 宽度 = 并发 SSD IO 数</td><td>2 ~ 8</td></tr>
+    <tr><td>medoid</td><td>图入口，距全体质心最近的实际点</td><td>—</td></tr>
+    <tr><td>PQ dim / bits</td><td>PQ 分段数与每段位数，决定压缩率</td><td>d/2 段 × 8 bit</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>五、复杂度 与 内存 vs 磁盘</h2>
+  <table class="compare">
+    <tr><th>指标</th><th>值</th><th>说明</th></tr>
+    <tr><td>构建时间</td><td>O(N · L · R)</td><td>两趟遍历</td></tr>
+    <tr><td>查询 IO 次数</td><td>50 ~ 100</td><td>取决于 L 和 alpha</td></tr>
+    <tr><td>内存占用</td><td>N · 32 字节</td><td>只存 PQ 压缩码</td></tr>
+    <tr><td>SSD 占用</td><td>N · (向量 + R·4B)</td><td>10亿 128维向量约 600GB</td></tr>
+    <tr><td>QPS</td><td>~ 1000-3000</td><td>单节点单查询线程, NVMe SSD</td></tr>
+  </table>
+  <div class="tip">
+    对比: 10 亿点 HNSW 需 500GB 内存 (数十台机器), DiskANN 只需 32GB 内存 + 600GB SSD (单台服务器可承载)。
+  </div>
+</section>
+
+<section class="card">
+  <h2>六、优缺点 &amp; 适用场景</h2>
+  <div class="grid2">
+    <div>
+      <h3>优点</h3>
+      <ul>
+        <li><span class="pill">大规模</span>单机十亿级</li>
+        <li><span class="pill">省钱</span>成本比 HNSW 分布式方案低 5-10 倍</li>
+        <li><span class="pill">高召回</span>无损精度设计</li>
+        <li><span class="pill">Streaming</span>FreshDiskANN 支持在线插入删除</li>
+      </ul>
+    </div>
+    <div>
+      <h3>缺点</h3>
+      <ul>
+        <li><span class="pill">延迟</span>受 SSD 限制, ~5-10ms</li>
+        <li><span class="pill">硬件</span>依赖 NVMe SSD (不适合 HDD)</li>
+        <li><span class="pill">构建慢</span>大数据集 3-10 小时</li>
+        <li><span class="pill">写放大</span>更新时需重写 SSD 扇区</li>
+      </ul>
+    </div>
+  </div>
+  <h3>适用场景</h3>
+  <ul>
+    <li>数据规模: 亿级 ~ 百亿级</li>
+    <li>内存受限的成本敏感场景 (RAG 语料库, 图片搜索)</li>
+    <li>召回要求 &gt; 95% 且延迟可接受 10ms 内</li>
+    <li>典型用户: Bing 搜索, Azure 认知搜索, Milvus, Weaviate 后端</li>
+  </ul>
+</section>
+
+<section class="pitfall">
+  <h4>常见误区</h4>
+  <ol>
+    <li><b>"单机十亿"有前提</b>：需要 NVMe SSD（延迟 100μs 级）+ 可接受 PQ 带来的少量精度损失。SATA SSD/HDD 延迟高一到两个数量级，效果直接打回原形。</li>
+    <li><b>beam width 越大不一定越快</b>：并发 IO 打满 SSD 队列深度后延迟不降反升；实际调参一般 beam=4~8。</li>
+    <li><b>构建极慢</b>：几十亿点数十小时是常态。生产上通常离线构建，索引产物直接分发到查询节点。</li>
+    <li><b>alpha 太大反而降精度</b>：alpha≥1.5 会保留大量"跨社区"跳跃边，让贪心在早期漂到错误的簇里，返回时来不及精修，反而丢召回。</li>
+    <li><b>PQ 精度损失</b>：内存粗筛用的是 PQ 距离，可能漏掉真正的近邻；DiskANN 靠 SSD 加载全精度向量最终重排来补偿，但设置太激进（大 nprobe，小 beam）会让漏检失控。</li>
+  </ol>
+</section>
+
+<section class="next-steps">
+  <h4>下一步学什么</h4>
+  <ul>
+    <li>→ <a href="spann.html">SPANN</a>：把 IVF 思想推到极致的另一种磁盘方案，用顺序 IO 换随机 IO</li>
+    <li>→ FreshDiskANN：DiskANN 的可更新扩展，支持在线插入 / 删除</li>
+  </ul>
+</section>
+
+<footer>DiskANN/Vamana 交互式演示 · Subramanya et al. NeurIPS 2019</footer>
+
+</div>
+
+<script>
+"use strict";
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const logEl = document.getElementById('log');
+const memListEl = document.getElementById('memList');
+const diskListEl = document.getElementById('diskList');
+const ioCountEl = document.getElementById('ioCount');
+
+function log(msg, cls='') {
+  const line = document.createElement('div');
+  line.innerHTML = cls ? `<span class="${cls}">${msg}</span>` : msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() { logEl.innerHTML = ''; }
+function d(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+// 状态
+let nodes = [];
+let graph = [];
+let graphAlpha1 = [];   // 对比: alpha=1 版本
+let medoid = 0;
+let R = 10, L = 40, alpha = 1.2, beam = 4, N = 100;
+let animSpeed = 380;
+let queryMode = false;
+let queryPoint = null;
+let anim = null;
+let ioCount = 0;
+let memory = new Set();   // 已加载到 内存 buffer 的节点 (模拟)
+let ssdLoaded = new Set(); // 本次查询已 IO 过的节点
+
+function generatePoints(n) {
+  nodes = [];
+  const clusters = 3 + Math.floor(Math.random()*2);
+  const cs = [];
+  for (let i = 0; i < clusters; i++) {
+    cs.push({ x: 150 + Math.random() * (cv.width - 300),
+              y: 100 + Math.random() * (cv.height - 200) });
+  }
+  for (let i = 0; i < n; i++) {
+    const c = cs[i % clusters];
+    let x = c.x + (Math.random() - 0.5) * 200;
+    let y = c.y + (Math.random() - 0.5) * 150;
+    x = Math.max(30, Math.min(cv.width - 30, x));
+    y = Math.max(30, Math.min(cv.height - 30, y));
+    nodes.push({ id: i, x, y });
+  }
+  graph = nodes.map(() => []);
+  graphAlpha1 = nodes.map(() => []);
+  medoid = 0;
+  ssdLoaded.clear();
+  memory.clear();
+}
+
+// ---------- Robust Prune ----------
+function robustPrune(pIdx, V, alphaVal, maxR) {
+  // V: 候选 [{id, d}]
+  const remaining = V.slice();
+  remaining.sort((a,b) => a.d - b.d);
+  const neighbors = [];
+  while (remaining.length > 0 && neighbors.length < maxR) {
+    const pStar = remaining.shift();
+    neighbors.push(pStar);
+    // 移除被 pStar 覆盖的节点
+    for (let i = remaining.length - 1; i >= 0; i--) {
+      const v = remaining[i];
+      const dpv = v.d;
+      const dpsv = d(nodes[pStar.id], nodes[v.id]);
+      if (alphaVal * dpsv <= dpv) {
+        remaining.splice(i, 1);
+      }
+    }
+  }
+  return neighbors;
+}
+
+function findMedoid() {
+  let cx = 0, cy = 0;
+  for (const n of nodes) { cx += n.x; cy += n.y; }
+  cx /= nodes.length; cy /= nodes.length;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < nodes.length; i++) {
+    const dd = d({x:cx,y:cy}, nodes[i]);
+    if (dd < bd) { bd = dd; best = i; }
+  }
+  return best;
+}
+
+// 用当前 graph 做贪心搜索得到候选池 V
+function greedyForCand(q, ep, Lval, curGraph) {
+  const visited = new Set([ep]);
+  const heap = [{ id: ep, d: d(nodes[ep], q) }];
+  const allVisited = [{id: ep, d: heap[0].d}];
+  while (true) {
+    heap.sort((a,b) => a.d - b.d);
+    const next = heap.find(x => !x.done);
+    if (!next) break;
+    next.done = true;
+    let expanded = false;
+    for (const nb of curGraph[next.id]) {
+      if (visited.has(nb)) continue;
+      visited.add(nb);
+      const dd = d(q, nodes[nb]);
+      heap.push({ id: nb, d: dd });
+      allVisited.push({ id: nb, d: dd });
+      expanded = true;
+    }
+    heap.sort((a,b) => a.d - b.d);
+    if (heap.length > Lval) heap.length = Lval;
+    if (!expanded && heap.every(x => x.done)) break;
+  }
+  return allVisited;
+}
+
+function buildVamana(alphaVal) {
+  log('<span class="hi">构建 Vamana 图 alpha=' + alphaVal.toFixed(2) + '</span>');
+  medoid = findMedoid();
+  log('Medoid = 节点 ' + medoid, 'ok');
+  // Step 1: 随机 R-regular 初始图
+  const g = nodes.map(() => []);
+  for (let i = 0; i < nodes.length; i++) {
+    const set = new Set();
+    while (set.size < Math.min(R, nodes.length - 1)) {
+      const j = Math.floor(Math.random() * nodes.length);
+      if (j !== i) set.add(j);
+    }
+    g[i] = [...set];
+  }
+  // 两趟, 第一趟 alpha=1, 第二趟 alpha=alphaVal
+  const order = [...Array(nodes.length).keys()];
+  for (let pass = 0; pass < 2; pass++) {
+    const aVal = pass === 0 ? 1.0 : alphaVal;
+    // 随机顺序
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i+1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    for (const p of order) {
+      const V = greedyForCand(nodes[p], medoid, L, g);
+      // 排除 p 本身
+      const filtered = V.filter(v => v.id !== p);
+      const pruned = robustPrune(p, filtered, aVal, R);
+      g[p] = pruned.map(x => x.id);
+      // 反向边
+      for (const nb of g[p]) {
+        if (!g[nb].includes(p)) g[nb].push(p);
+        if (g[nb].length > R) {
+          // 剪枝反向邻居
+          const rev = g[nb].map(id => ({ id, d: d(nodes[nb], nodes[id]) }));
+          const rp = robustPrune(nb, rev, aVal, R);
+          g[nb] = rp.map(x => x.id);
+        }
+      }
+    }
+  }
+  return g;
+}
+
+document.getElementById('build').onclick = () => {
+  clearLog();
+  graph = buildVamana(alpha);
+  // 同时构建 alpha=1 版本用于对比
+  graphAlpha1 = buildVamana(1.0);
+  const avgDeg = graph.reduce((a,x)=>a+x.length,0)/graph.length;
+  log('平均出度 = ' + avgDeg.toFixed(2), 'ok');
+  countLongEdges();
+  ioCount = 0; ssdLoaded.clear(); memory.clear();
+  refreshStorage();
+  draw();
+};
+
+function countLongEdges() {
+  // 长跳边: 长度大于 median 的边比例
+  const dists = [];
+  for (let i = 0; i < graph.length; i++) {
+    for (const j of graph[i]) {
+      dists.push(d(nodes[i], nodes[j]));
+    }
+  }
+  dists.sort((a,b) => a-b);
+  const median = dists[Math.floor(dists.length/2)];
+  const long = dists.filter(x => x > median * 2).length;
+  log(`长跳边(> 2×中位) 数量: ${long} / ${dists.length}`, 'disk');
+}
+
+// ---------- 对比模式 ----------
+document.getElementById('compare').onclick = () => {
+  clearLog();
+  log('<span class="hi">对比 alpha=1.0 vs alpha=1.2</span>');
+  const savedAlpha = alpha;
+  alpha = 1.0;
+  const g1 = buildVamana(1.0);
+  log(`alpha=1.0: 平均出度=${(g1.reduce((a,x)=>a+x.length,0)/g1.length).toFixed(2)}`, 'mem');
+  alpha = 1.2;
+  const g12 = buildVamana(1.2);
+  log(`alpha=1.2: 平均出度=${(g12.reduce((a,x)=>a+x.length,0)/g12.length).toFixed(2)}`, 'disk');
+  // 显示两个图叠加
+  graph = g12;
+  graphAlpha1 = g1;
+  alpha = savedAlpha;
+  document.getElementById('alpha').value = Math.round(alpha * 100);
+  document.getElementById('alphaV').textContent = alpha.toFixed(2);
+  draw();
+};
+
+// ---------- 查询 ----------
+document.getElementById('query').onclick = () => {
+  queryMode = !queryMode;
+  document.getElementById('query').textContent = queryMode ? '(点画布)' : '查询模式';
+  log('查询模式: ' + (queryMode ? '开' : '关'), 'hi');
+};
+
+document.getElementById('autoQ').onclick = () => {
+  const qx = 60 + Math.random() * (cv.width - 120);
+  const qy = 60 + Math.random() * (cv.height - 120);
+  startQuery(qx, qy);
+};
+
+cv.addEventListener('click', (e) => {
+  const rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (cv.width / rect.width);
+  const y = (e.clientY - rect.top) * (cv.height / rect.height);
+  if (queryMode) {
+    startQuery(x, y);
+  } else {
+    nodes.push({ id: nodes.length, x, y });
+    graph.push([]); graphAlpha1.push([]);
+    log(`加点 ${nodes.length-1} at (${x.toFixed(0)},${y.toFixed(0)})`);
+    draw();
+  }
+});
+
+function startQuery(x, y) {
+  if (graph.length === 0) { log('请先构建 Vamana 图', 'rej'); return; }
+  queryPoint = { x, y };
+  clearLog();
+  log(`<span class="hi">SSD 查询 q=(${x.toFixed(0)},${y.toFixed(0)}), L=${L}, beam=${beam}</span>`);
+  log(`(alpha=${alpha.toFixed(2)}, R=${R})`);
+  ioCount = 0;
+  ssdLoaded.clear();
+  memory.clear();
+
+  // 内存中所有节点的 PQ 距离(此处用真实距离模拟, 现实中是近似)
+  const pqDist = nodes.map((n, i) => ({ id: i, d: d(n, queryPoint) + (Math.random() - 0.5) * 30 }));
+
+  anim = {
+    kind: 'search',
+    beamNodes: [medoid],
+    heap: [{ id: medoid, d: pqDist[medoid].d, visited: false, exact: false }],
+    step: 0,
+    pqDist,
+    done: false
+  };
+  refreshStorage();
+  draw();
+  runQueryStep();
+}
+
+function runQueryStep() {
+  if (!anim || anim.done) return;
+  const heap = anim.heap;
+  heap.sort((a,b) => a.d - b.d);
+  const unvisited = heap.filter(x => !x.visited);
+  if (unvisited.length === 0 || anim.step > 50) {
+    // 结束: 用精确距离重排
+    heap.sort((a,b) => (a.exact ? a.d : Infinity) - (b.exact ? b.d : Infinity));
+    const topK = heap.slice(0, 5);
+    log(`<span class="ok">完成: IO=${ioCount} 次, top-5 (精确)=${topK.map(x=>x.id).join(',')}</span>`, 'ok');
+    anim.done = true;
+    draw();
+    return;
+  }
+  // 取 beam 个未访问最近节点, 并发 IO
+  const batch = unvisited.slice(0, beam);
+  log(`步骤 ${anim.step+1}: 并发 IO ${batch.length} 个节点: [${batch.map(x=>x.id).join(',')}]`, 'disk');
+  for (const b of batch) {
+    b.visited = true;
+    ssdLoaded.add(b.id);
+    ioCount++;
+    // 拿到精确距离
+    b.d = d(nodes[b.id], queryPoint);
+    b.exact = true;
+    // 加载邻居到 memory
+    for (const nb of graph[b.id]) {
+      memory.add(nb);
+      if (!heap.find(h => h.id === nb)) {
+        heap.push({ id: nb, d: anim.pqDist[nb].d, visited: false, exact: false });
+      }
+    }
+  }
+  heap.sort((a,b) => a.d - b.d);
+  if (heap.length > L) heap.length = L;
+  anim.step++;
+  anim.beamNodes = batch.map(x => x.id);
+  ioCountEl.textContent = ioCount;
+  refreshStorage();
+  draw();
+  setTimeout(runQueryStep, animSpeed);
+}
+
+// ---------- 绘制 ----------
+function draw() {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  // 边: graph 里存在但 graphAlpha1 没有的 -> 长跳边(紫), 都存在的 -> 红
+  const edgesInAlpha1 = new Set();
+  for (let i = 0; i < graphAlpha1.length; i++) {
+    for (const j of graphAlpha1[i]) {
+      edgesInAlpha1.add(Math.min(i,j) + '_' + Math.max(i,j));
+    }
+  }
+  for (let i = 0; i < graph.length; i++) {
+    for (const j of graph[i]) {
+      if (j < i) continue;
+      const key = i + '_' + j;
+      if (edgesInAlpha1.size > 0 && !edgesInAlpha1.has(key)) {
+        ctx.strokeStyle = 'rgba(99,102,241,0.55)';
+        ctx.lineWidth = 1.6;
+      } else {
+        ctx.strokeStyle = 'rgba(220,38,38,0.22)';
+        ctx.lineWidth = 1;
+      }
+      ctx.beginPath();
+      ctx.moveTo(nodes[i].x, nodes[i].y);
+      ctx.lineTo(nodes[j].x, nodes[j].y);
+      ctx.stroke();
+    }
+  }
+
+  // 高亮 SSD 已加载节点的邻居边
+  if (anim && anim.kind === 'search') {
+    ctx.strokeStyle = 'rgba(236,72,153,0.5)';
+    ctx.lineWidth = 1.4;
+    for (const s of ssdLoaded) {
+      for (const nb of graph[s]) {
+        ctx.beginPath();
+        ctx.moveTo(nodes[s].x, nodes[s].y);
+        ctx.lineTo(nodes[nb].x, nodes[nb].y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // 节点
+  for (const n of nodes) {
+    let col = '#334155', r = 3.5;
+    if (memory.has(n.id)) { col = '#f9a8d4'; r = 4.5; }
+    if (ssdLoaded.has(n.id)) { col = '#ec4899'; r = 5.5; }
+    if (anim && anim.beamNodes && anim.beamNodes.includes(n.id)) { col = '#0ea5e9'; r = 7; }
+    if (n.id === medoid) { col = '#f97316'; r = 8; }
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // 最后的 top-k
+  if (anim && anim.done && anim.heap) {
+    const topK = anim.heap.slice(0, 5);
+    for (const t of topK) {
+      const n = nodes[t.id];
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, 10, 0, Math.PI*2);
+      ctx.stroke();
+    }
+  }
+
+  // 查询点
+  if (queryPoint) {
+    ctx.fillStyle = '#eab308';
+    ctx.beginPath();
+    ctx.arc(queryPoint.x, queryPoint.y, 8, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = '#eab308'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(queryPoint.x-13, queryPoint.y);
+    ctx.lineTo(queryPoint.x+13, queryPoint.y);
+    ctx.moveTo(queryPoint.x, queryPoint.y-13);
+    ctx.lineTo(queryPoint.x, queryPoint.y+13);
+    ctx.stroke();
+  }
+
+  // Medoid 标记
+  if (medoid >= 0 && nodes[medoid]) {
+    const mp = nodes[medoid];
+    ctx.strokeStyle = '#f97316';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(mp.x, mp.y, 13, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.fillStyle = '#f97316';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('Medoid', mp.x+14, mp.y-9);
+  }
+
+  // 信息
+  ctx.fillStyle = '#64748b';
+  ctx.font = '11px monospace';
+  const info = `N=${nodes.length}  alpha=${alpha.toFixed(2)}  R=${R}  L=${L}  IO=${ioCount}`;
+  ctx.fillText(info, 10, 16);
+}
+
+function refreshStorage() {
+  // 内存: 所有节点 (PQ 是恒定驻留)
+  memListEl.innerHTML = `全部 ${nodes.length} 节点 · PQ 32B/vec = ${(nodes.length*32/1024).toFixed(1)} KB<br>当前查询已加载邻居: <span style="color:#ec4899">${memory.size}</span> 个`;
+  // SSD: 本次 IO 拉取的节点列表
+  const list = [...ssdLoaded].slice(-15);
+  diskListEl.innerHTML = `扇区 (4KB/node) 总 ${(nodes.length*4).toFixed(0)} KB<br>本次 IO: ${ioCount} 次<br>最近: [${list.join(', ')}]`;
+}
+
+// ---------- 绑定 ----------
+function bindSlider(id, valId, transform, cb) {
+  const s = document.getElementById(id);
+  const v = document.getElementById(valId);
+  s.oninput = () => {
+    v.textContent = transform ? transform(s.value) : s.value;
+    if (cb) cb(s.value);
+  };
+}
+
+bindSlider('alpha', 'alphaV', v => (v/100).toFixed(2), v => { alpha = v/100; });
+bindSlider('R', 'Rv', null, v => { R = parseInt(v); });
+bindSlider('L', 'Lv', null, v => { L = parseInt(v); });
+bindSlider('B', 'Bv', null, v => { beam = parseInt(v); });
+bindSlider('N', 'Nv');
+bindSlider('spd', 'spdv', v => v + ' ms', v => { animSpeed = parseInt(v); });
+document.getElementById('spdv').textContent = '380 ms';
+document.getElementById('alphaV').textContent = '1.20';
+
+document.getElementById('regen').onclick = () => {
+  N = parseInt(document.getElementById('N').value);
+  generatePoints(N);
+  clearLog();
+  log(`生成 ${N} 个点`);
+  ioCount = 0; ioCountEl.textContent = 0;
+  refreshStorage();
+  draw();
+};
+
+// 初始化
+generatePoints(100);
+refreshStorage();
+draw();
+log('提示: 点"构建 Vamana"生成图, 再点"对比 alpha=1 vs 1.2"看长跳边差异', 'hi');
+
+</script>
+</body>
+</html>

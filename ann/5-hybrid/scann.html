@@ -1,0 +1,1738 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ScaNN (各向异性量化) - 交互式可视化</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #f6f8fb;
+  color: #1f2937;
+  line-height: 1.7;
+  padding: 24px;
+}
+.wrap { max-width: 1200px; margin: 0 auto; }
+.nav { margin-bottom: 20px; }
+.nav a {
+  color: #7c3aed;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 6px 12px;
+  background: #ede9fe;
+  border-radius: 6px;
+  border: 1px solid #c4b5fd;
+}
+.nav a:hover { background: #ddd6fe; }
+h1 {
+  font-size: 30px;
+  margin-bottom: 8px;
+  color: #0f172a;
+  letter-spacing: 0.3px;
+}
+.subtitle { color: #64748b; margin-bottom: 24px; font-size: 15px; }
+.card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 22px 26px;
+  margin-bottom: 22px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+.card h2 {
+  font-size: 20px;
+  color: #0f172a;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e2e8f0;
+}
+.card h3 {
+  font-size: 16px;
+  color: #6d28d9;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+.card p { margin-bottom: 12px; color: #334155; font-size: 15px; }
+.card ul, .card ol { margin-left: 24px; margin-bottom: 12px; }
+.card li { margin-bottom: 6px; color: #334155; }
+.hlbox {
+  background: #faf5ff;
+  border-left: 4px solid #a855f7;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin: 12px 0;
+  font-size: 14px;
+  color: #4c1d95;
+}
+.tipbox {
+  background: #fefce8;
+  border-left: 4px solid #eab308;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin: 12px 0;
+  font-size: 14px;
+  color: #713f12;
+}
+.mathbox {
+  background: #ecfeff;
+  border-left: 4px solid #06b6d4;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin: 12px 0;
+  font-size: 14px;
+  color: #164e63;
+  font-family: "SF Mono", monospace;
+}
+pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 16px 20px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: "SF Mono", Consolas, Monaco, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 12px 0;
+}
+code.inline {
+  background: #f1f5f9;
+  color: #be185d;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SF Mono", monospace;
+  font-size: 13px;
+}
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 20px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.ctrl { display: flex; flex-direction: column; }
+.ctrl label {
+  font-size: 13px;
+  color: #334155;
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+}
+.ctrl label .val { color: #7c3aed; font-weight: 600; }
+.ctrl input[type=range] { width: 100%; }
+.buttons { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+button {
+  background: #7c3aed;
+  color: white;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 500;
+}
+button:hover { background: #6d28d9; }
+button.ghost {
+  background: white;
+  color: #7c3aed;
+  border: 1px solid #c4b5fd;
+}
+button.ghost:hover { background: #f5f3ff; }
+button.warn { background: #dc2626; }
+button.warn:hover { background: #b91c1c; }
+canvas {
+  display: block;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.canvas-wrap {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.canvas-wrap > div { flex: 1; min-width: 400px; }
+.legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #475569;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  display: inline-block;
+}
+.stat {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.stat > div {
+  background: #f1f5f9;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border-left: 3px solid #a855f7;
+}
+.stat .k { font-size: 12px; color: #64748b; }
+.stat .v { font-size: 18px; font-weight: 700; color: #0f172a; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 14px;
+}
+table th, table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+table th { background: #f1f5f9; color: #0f172a; font-weight: 600; }
+.flow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 14px;
+  background: #f8fafc;
+  border-radius: 8px;
+  margin: 12px 0;
+}
+.flow .step {
+  background: white;
+  border: 2px solid #c4b5fd;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #6d28d9;
+  font-weight: 500;
+}
+.flow .arrow { color: #c4b5fd; font-size: 20px; }
+.log-panel {
+  background: #0f172a;
+  color: #7dd3fc;
+  padding: 12px;
+  border-radius: 6px;
+  height: 160px;
+  overflow-y: auto;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.log-panel .l1 { color: #a5f3fc; }
+.log-panel .l2 { color: #fbbf24; }
+.log-panel .l3 { color: #86efac; }
+.log-panel .l4 { color: #f472b6; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+.pill {
+  display: inline-block;
+  background: #ede9fe;
+  color: #6d28d9;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  margin-right: 6px;
+}
+.formula {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-family: "SF Mono", monospace;
+  font-size: 14px;
+  color: #0f172a;
+  margin: 10px 0;
+}
+.prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+.prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+.glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+.glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+.glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+.glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+.new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.pitfall h4 { color: #92400e; margin-top: 0; }
+.next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.next-steps a { color: #047857; font-weight: 600; }
+.intuition-box { background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.intuition-box h4 { color: #6d28d9; margin-top: 0; }
+.symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+.symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+.symbol-table th { background: #f9fafb; color: #374151; }
+.critical-warning { background: #fef2f2; border: 2px solid #dc2626; padding: 14px 18px; margin: 20px 0; border-radius: 6px; }
+.critical-warning h4 { color: #991b1b; margin-top: 0; font-size: 1rem; }
+.four-step-intro { background: #fafaf9; border-left: 4px solid #64748b; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.four-step-intro h4 { color: #334155; margin-top: 0; margin-bottom: 8px; }
+.four-step-intro dt { font-weight: 600; color: #1f2937; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="nav"><a href="../index.html">← 返回上级目录</a></div>
+  <h1>ScaNN — 各向异性量化 (Anisotropic Quantization)</h1>
+  <p class="subtitle">Google Research 2020 提出，在 Ann-Benchmarks 多个数据集上称霸多年的召回引擎。核心思想：量化误差沿"内积敏感方向"投影分解，优先降低会显著影响 top-k 结果的误差分量。</p>
+
+  <div class="prereq-bar">
+    <b>前置（必读）：</b>
+    <a class="pill" href="../3-quantization/pq.html">PQ</a>
+    <a class="pill" href="../3-quantization/opq.html">OPQ</a>
+    <a class="pill" href="../3-quantization/ivf-pq.html">IVF-PQ</a>
+    <span class="pill" style="border-style:dashed;">MIPS（最大内积搜索）</span>
+    <br>
+    <b style="margin-top:6px; display:inline-block;">前置（推荐）：</b>
+    <a class="pill" href="../4-graph-based/hnsw.html">HNSW</a>
+    <a class="pill" href="../2-lsh/classic-lsh.html">Classic LSH</a>
+  </div>
+
+  <details class="glossary">
+    <summary>关键术语速查（点击展开）</summary>
+    <dl>
+      <dt>AH（Asymmetric Hashing，非对称哈希）</dt>
+      <dd>ScaNN 用的具体量化方案：实际上就是 <b>4-bit PQ</b>（K=16 每段），查询侧用浮点、数据侧用 4-bit 码字，通过 SIMD 一次批处理多个候选。</dd>
+      <dt>anisotropic loss（各向异性损失）</dt>
+      <dd><code class="inline">L_ani = η·‖r∥‖² + ‖r⊥‖²</code>。给沿数据方向的"平行误差" r∥ 加权 η，让码本训练时更在意这个方向的误差 —— 而这个方向恰好是最影响内积估计的方向。</dd>
+      <dt>MIPS（Maximum Inner Product Search，最大内积搜索）</dt>
+      <dd>目标：找 argmax_i ⟨q, x_i⟩，而不是最小欧氏距离。推荐系统、embedding 召回、语义检索都是 MIPS 场景。</dd>
+      <dt>Lloyd 迭代</dt>
+      <dd>K-Means 的经典训练算法（分配 → 更新中心 → 分配 → ...）。ScaNN 用它的<b>加权版本</b>训练各向异性码本。</dd>
+      <dt>leaf（叶子分区）</dt>
+      <dd>把整个数据集用 KMeans 分成若干个块，每个块就是一个"叶子"，类似 IVF 的桶。参数：<code class="inline">num_leaves</code>。</dd>
+      <dt>reordering 精排</dt>
+      <dd>AH scoring 给出的是近似分数；对 top-K 候选再用<b>原始 float 向量</b>重算一次内积并排序，可以显著提升召回率。</dd>
+      <dt>eccentricity 偏心度</dt>
+      <dd>数据分布的长宽比：如果所有点大致沿一根轴排布（偏心度大），各向异性收益就明显；如果是各向同性球状分布，anisotropic 与普通 PQ 差别不大。</dd>
+      <dt>partition + scoring 两阶段</dt>
+      <dd>ScaNN 查询过程：先在 leaf 中心里选 top-<code class="inline">num_leaves_to_search</code>（partition 阶段），再在这些 leaf 内部用 AH 表估算内积（scoring 阶段），可选加 reordering 精排。</dd>
+    </dl>
+  </details>
+
+  <div class="new-user-tip">
+    <b>新手引导 · 演示阅读顺序</b>：本页有 3 个交互演示 + 1 个扫描图 + 1 个横向对标，建议按 <b>A → B → C → 6 → 7</b> 顺序玩：
+    <ul style="margin-top:6px;">
+      <li><b>演示 A（几何直觉）</b>：拖动 x̃ 观察 r∥ 和 r⊥ 分解（第 3 节）。先理解"平行/垂直"是什么。</li>
+      <li><b>演示 B（iso vs aniso 对比）</b>：观察 L2 更差但 IP 更准的反直觉现象（第 4 节）。</li>
+      <li><b>演示 C（端到端流程）</b>：partition → scoring → reordering（第 5 节）。</li>
+      <li><b>第 6 节（η 扫描）</b>：定量看 η 从 1 到 30，召回率的变化曲线，找到饱和点。</li>
+      <li><b>第 7 节（性能对标）</b>：把 ScaNN 放到 Flat / Annoy / IVF-PQ / HNSW 一起比较。</li>
+    </ul>
+  </div>
+
+  <div class="four-step-intro">
+    <h4>本方案解决了什么问题</h4>
+    <dl>
+      <dt>痛点</dt>
+      <dd>IVF-PQ 已经很快（partition + 4-bit LUT），但<b>召回率上不去</b>：普通 PQ 的量化目标是最小化 L2 误差，跟真实业务目标（内积排序）并不一致。</dd>
+      <dt>别人的方案</dt>
+      <dd>加大 <code class="inline">nprobe</code>（多扫几个桶）或加大 <code class="inline">M</code>（子向量段数），能换来更高召回，但<b>延迟也线性劣化</b>；OPQ 用旋转让 PQ 更适合分布，但仍是 L2 目标。</dd>
+      <dt>本方案关键 idea</dt>
+      <dd><b>各向异性量化</b>：观察发现内积计算里，"平行方向误差"影响远大于"垂直方向"。<b>让码本主动往正确方向优化</b>：给平行误差乘 η 权重，Lloyd 迭代自然把中心拉到"消除平行误差"的位置。</dd>
+      <dt>代价</dt>
+      <dd>训练更复杂（加权 Lloyd 而非普通 KMeans）；多一个 η 超参需要调（经验值 1~50）；只在 MIPS/cosine 场景有明显收益，对纯 L2 距离场景收益小。</dd>
+    </dl>
+  </div>
+
+  <table class="symbol-table">
+    <thead><tr><th>符号</th><th>含义</th><th>典型取值 / 说明</th></tr></thead>
+    <tbody>
+      <tr><td>η</td><td>各向异性权重</td><td>1（退化到普通 PQ）~ 50（重度倾向平行方向）</td></tr>
+      <tr><td>d</td><td>向量维度</td><td>典型 embedding 是 100~1024</td></tr>
+      <tr><td>r∥</td><td>误差在数据方向 x 上的分量（平行误差）</td><td>= ((r · x̂) x̂)，1 维</td></tr>
+      <tr><td>r⊥</td><td>误差垂直于 x 的分量（垂直误差）</td><td>= r − r∥，(d−1) 维</td></tr>
+      <tr><td>L_ani</td><td>各向异性损失函数</td><td>η·‖r∥‖² + ‖r⊥‖²</td></tr>
+      <tr><td>K</td><td>每段 AH 码本大小</td><td>16（4 bit，SIMD 友好）</td></tr>
+      <tr><td>M（PQ 段数）</td><td>子向量段数</td><td>d/2 ~ d</td></tr>
+      <tr><td>num_leaves</td><td>数据分区数（叶子数）</td><td>√N 量级</td></tr>
+      <tr><td>num_leaves_to_search</td><td>每次查询扫描的叶子数</td><td>num_leaves 的 1% ~ 10%</td></tr>
+      <tr><td>reorder_top_k</td><td>精排候选数量</td><td>topK 的 5~20 倍</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ========== 直观理解 ========== -->
+  <div class="card">
+    <h2>1. 直观理解 —— 为什么 "各向异性"</h2>
+    <p>传统 KMeans / PQ 的量化目标是<b>各向同性</b>的：最小化 <code class="inline">||x - c||²</code>（欧氏距离），把每个方向的误差视为同等重要。ScaNN 说：<b>不对</b>！在最大内积搜索 (MIPS) 场景下，误差是否"要命"取决于它在<b>数据点方向</b>上的分量。</p>
+    <div class="hlbox">
+      <b>比喻</b>：假设你正在测量一根从桌子中心指向远方的箭头长度。<br>
+      • 如果箭头是"朝向摄像机"的方向（平行方向）：一点点长度误差就会让排序完全变化 —— 这个方向的误差<b>会被内积放大</b>。<br>
+      • 如果误差是"侧向偏移"（垂直方向）：内积对它<b>不敏感</b>（一阶投影为 0）。<br>
+      所以在 MIPS 里，我们应该像"先坐飞机到目标城市（粗筛 partition），再打精细化的车（重点校正平行方向）"。ScaNN 通过重新加权量化损失，让码本主动往"平行分量正确"的方向去优化。
+    </div>
+    <p>结果：相同码本大小下，Top-k 内积估计的排序错误率显著降低；相同召回率下，压缩比可以进一步提高。</p>
+  </div>
+
+  <!-- ========== 算法原理 ========== -->
+  <div class="card">
+    <h2>2. 算法原理</h2>
+
+    <h3>2.1 问题设置</h3>
+    <p>给定数据集 <code class="inline">X = {x_i}</code>（都归一化到单位球或非归一化），我们要为每个 <code class="inline">x</code> 找一个量化 <code class="inline">x̃</code>，使得对任意查询 <code class="inline">q</code>，估计 <code class="inline">⟨q, x̃⟩</code> 与真实 <code class="inline">⟨q, x⟩</code> 的排序基本一致。</p>
+
+    <h3>2.2 关键洞察：量化误差的方向分解</h3>
+    <p>记误差向量 <code class="inline">r = x - x̃</code>。相对数据向量 <code class="inline">x</code>，可以做正交分解：</p>
+    <div class="formula">
+      r = r_∥ + r_⊥<br>
+      r_∥ = ((r · x̂) x̂)  ← 沿 x 方向的分量（平行误差）<br>
+      r_⊥ = r - r_∥              ← 与 x 垂直的分量（垂直误差）
+    </div>
+    <p>对查询 q，内积估计误差为 <code class="inline">⟨q, r⟩</code>。假设查询 q 在球面上均匀分布，可以证明：</p>
+    <div class="mathbox">
+      期望[ ⟨q, r_∥⟩² ] : 期望[ ⟨q, r_⊥⟩² ] = d : 1 &nbsp;&nbsp;(d 是维度)
+      <br><br>
+      也就是说，平行误差对内积平方误差的贡献远大于垂直误差。
+    </div>
+
+    <div class="intuition-box">
+      <h4>直觉 · 为什么是 d : 1 的比例（最难的一段）</h4>
+      <p>想象数据向量 <code class="inline">x</code> 和它的量化误差 <code class="inline">r</code>。r 可以分解成两部分：</p>
+      <ul style="margin-top:6px;">
+        <li><code class="inline">r∥</code> = 平行于 x 的分量，是<b>1 维的</b>（只有一个方向：沿 x 的正/负）。</li>
+        <li><code class="inline">r⊥</code> = 垂直于 x 的分量，是<b>(d−1) 维的</b>（其他所有方向）。</li>
+      </ul>
+      <p>当查询 <code class="inline">q</code> 在球面均匀分布时，<code class="inline">⟨q, r⟩</code> 的方差主要贡献来自 <code class="inline">r∥</code> —— 因为 r∥ 每次都会对内积产生"同向影响"（它就是沿着 x 的方向，而查询在 top-k 场景下大概率也是"和 x 相近的方向"）。而 <code class="inline">r⊥</code> 的贡献在多个维度平均后趋近 0（有正有负相互抵消）。</p>
+      <p>粗略讲，<code class="inline">⟨q, r∥⟩²</code> 的期望大约是 <code class="inline">⟨q, r⊥⟩²</code> 期望的 <b>d 倍</b>。所以在 d=100 的场景下，1 单位的平行误差 ≈ 100 单位垂直误差的影响。</p>
+    </div>
+    <p>但这只是"如果 q 随机均匀"的情况。ScaNN 进一步注意到：<b>Top-k 时更容易 rank 出错的是"内积大"的那些 x</b>——它们代表 q 大概率是"和 x 接近同向"的方向。因此对 Top-k 场景，<b>平行误差比垂直误差的重要性甚至更悬殊</b>。</p>
+
+    <h3>2.3 各向异性损失函数</h3>
+    <div class="formula">
+      L_aniso(x, x̃; η) = η · ||r_∥||² + ||r_⊥||²
+    </div>
+    <p>其中 <code class="inline">η = h_parallel / h_perpendicular ≥ 1</code>：</p>
+    <ul>
+      <li><code class="inline">η = 1</code>：等价于普通欧氏距离 (isotropic)，退化成标准 PQ / KMeans</li>
+      <li><code class="inline">η → ∞</code>：只关心平行方向的误差</li>
+      <li>论文经验：<code class="inline">η</code> 取 1~50，具体依赖 Top-k、数据分布</li>
+    </ul>
+    <p>码本 <code class="inline">C = {c_j}</code> 通过最小化整体损失得到 —— 这仍然可以用类 Lloyd 算法迭代求解（每步是加权最小二乘）。</p>
+
+    <div class="intuition-box">
+      <h4>直觉 · L_ani = η·‖r∥‖² + ‖r⊥‖² 到底做了什么</h4>
+      <p>给平行方向误差加权 η（大于 1），意思是"<b>平行误差比垂直误差重要 η 倍</b>"。Lloyd 迭代重新算中心时会把中心往"消除平行误差"的方向拉：</p>
+      <ul style="margin-top:6px;">
+        <li>η 越大 → 中心越贴近"数据点方向的延长线"上 → 内积估计越准（因为 r∥ 更接近 0）。</li>
+        <li>副作用：中心不再是几何"平均位置"，L2 距离 <b>反而变差</b>（对 L2 场景不利，但 MIPS 场景恰好想要）。</li>
+      </ul>
+      <p>类比：普通 KMeans 是"找到一个位置让所有人到我这里的路程之和最小"；anisotropic 是"找到一个位置让所有人和我'投影到主方向上的偏差'加权最小"—— 后者会把中心往主轴的方向"拉紧"。</p>
+    </div>
+
+    <div class="intuition-box">
+      <h4>直觉 · AH 就是 4-bit PQ</h4>
+      <p>AH (Asymmetric Hashing) 听起来玄乎，实际上就是 <b>K = 16（4 bit）的 PQ</b>：每段子向量只有 16 个码字，一个字节能存两段。</p>
+      <p>为什么选 4 bit 而不是 PQ 常用的 8 bit（K = 256）？因为 <b>SIMD AVX2 的 <code class="inline">vpshufb</code> 指令</b>可以把一张 16 项的表塞进一个 128-bit 寄存器，然后一次性算 16 个候选的距离 —— 这是 4-bit 独有的硬件红利。ScaNN 的高 QPS 很大一部分靠这个。</p>
+    </div>
+
+    <h3>2.4 完整 ScaNN 索引流程</h3>
+    <pre>
+Build:
+  1. Partitioning：对 X 做球形 KMeans 得到 num_leaves 个分区（类似 IVF）
+  2. Scoring：对每个分区内的向量做 anisotropic quantization
+       - AH (Asymmetric Hashing): x → 4-bit code per subvector
+       - 训练码本时用 L_aniso 而非 L2
+  3. 可选 Reordering：保留少量原始 float 向量做二次精排
+
+Query(q, top_k):
+  1. Partition search:
+       对 num_leaves 个中心算 ⟨q, c_i⟩，取 top-num_leaves_to_search
+  2. Scoring:
+       对候选点用 AH 表估 ⟨q, x̃⟩（LUT 查表，加法即可）
+       取 top-reorder_candidates
+  3. Reorder (optional):
+       用原始 float 向量对候选精排，取 top-k
+    </pre>
+
+    <h3>2.5 与其它方案的对比</h3>
+    <div class="mathbox">
+      • IVF-PQ  →  partitioning + isotropic quantization<br>
+      • ScaNN    →  partitioning + <b>anisotropic</b> quantization + reordering<br>
+      • FAISS-HNSW  →  graph traversal，不做 quantization
+    </div>
+    <p>ScaNN 的杀手锏是"用同样的字节数得到更精确的内积估计"。在 GloVe100 (100 万点) 上，同等 recall 下比传统 IVF-PQ 快 2~4×。</p>
+  </div>
+
+  <!-- ========== 交互演示 1: 各向异性损失几何 ========== -->
+  <div class="card">
+    <h2>3. 交互演示 A —— 各向异性损失函数的几何意义</h2>
+    <p><em style="color:#64748b;">目的：拖动 x̃ 观察平行/垂直误差分解。</em></p>
+    <p>下面的画布展示：给定一个数据点 <code class="inline">x</code>（紫色）和一个量化候选 <code class="inline">x̃</code>（红色可拖动），
+    误差向量 <code class="inline">r = x - x̃</code> 会被分解成沿 x 方向的 <code class="inline">r_∥</code> 与垂直方向的 <code class="inline">r_⊥</code>。改变 η 可以看到<b>等损失曲线</b>如何从正圆变成沿 x 方向压扁的椭圆——量化中心倾向于分布在 x 后方的<b>细长带状区域</b>。</p>
+
+    <div class="controls">
+      <div class="ctrl">
+        <label>η (anisotropic 权重)<span class="val" id="v-eta">4.0</span></label>
+        <input type="range" id="s-eta" min="1" max="30" value="4" step="0.5">
+      </div>
+      <div class="ctrl">
+        <label>数据点 x 角度<span class="val" id="v-xangle">30°</span></label>
+        <input type="range" id="s-xangle" min="0" max="360" value="30" step="5">
+      </div>
+      <div class="ctrl">
+        <label>数据点 x 长度<span class="val" id="v-xlen">120</span></label>
+        <input type="range" id="s-xlen" min="30" max="180" value="120" step="5">
+      </div>
+      <div class="ctrl">
+        <label>等损失曲线数量<span class="val" id="v-ncontour">6</span></label>
+        <input type="range" id="s-ncontour" min="3" max="12" value="6" step="1">
+      </div>
+    </div>
+    <div class="buttons">
+      <button id="btn-aniso-reset">重置 x̃</button>
+      <button class="ghost" id="btn-aniso-auto">自动示例</button>
+    </div>
+
+    <div class="canvas-wrap" style="margin-top:16px;">
+      <div>
+        <b style="color:#334155;">损失景观 (拖动红点 x̃)</b>
+        <canvas id="cv-aniso" width="540" height="440"></canvas>
+        <div class="legend">
+          <span><span class="dot" style="background:#a78bfa;"></span>数据点 x</span>
+          <span><span class="dot" style="background:#ef4444;"></span>量化候选 x̃</span>
+          <span><span class="dot" style="background:#22c55e;"></span>r_∥ 分量</span>
+          <span><span class="dot" style="background:#f59e0b;"></span>r_⊥ 分量</span>
+        </div>
+      </div>
+      <div>
+        <b style="color:#334155;">损失分解数值</b>
+        <canvas id="cv-loss" width="540" height="440"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 交互演示 2: 各向异性 vs 各向同性码本 ========== -->
+  <div class="card">
+    <h2>4. 交互演示 B —— 各向异性 vs 各向同性 KMeans 码本</h2>
+    <p><em style="color:#64748b;">目的：对比 iso vs aniso 的码本 —— L2 更差但 IP 更准（反直觉！）</em></p>
+    <p>对同一份数据训练两种码本：左侧是普通 KMeans（各向同性，η=1），右侧是各向异性版本（当前 η）。可以观察到当 η 较大时，右侧的量化中心倾向于沿数据主方向排布，而不是均匀覆盖整个 blob —— 这样在计算 <code class="inline">⟨q, x̃⟩</code> 时误差更小。</p>
+
+    <div class="controls">
+      <div class="ctrl">
+        <label>数据点数<span class="val" id="v-npoints">400</span></label>
+        <input type="range" id="s-npoints" min="100" max="800" value="400" step="50">
+      </div>
+      <div class="ctrl">
+        <label>码本大小 k<span class="val" id="v-kbook">16</span></label>
+        <input type="range" id="s-kbook" min="4" max="48" value="16" step="2">
+      </div>
+      <div class="ctrl">
+        <label>η<span class="val" id="v-eta2">6</span></label>
+        <input type="range" id="s-eta2" min="1" max="30" value="6" step="0.5">
+      </div>
+      <div class="ctrl">
+        <label>数据主方向偏心度<span class="val" id="v-ecc">3.0</span></label>
+        <input type="range" id="s-ecc" min="1" max="5" value="3" step="0.2">
+      </div>
+    </div>
+    <div class="buttons">
+      <button id="btn-retrain">重新训练码本</button>
+      <button class="ghost" id="btn-gen-data">重新生成数据</button>
+    </div>
+
+    <div class="canvas-wrap" style="margin-top:16px;">
+      <div>
+        <b style="color:#334155;">各向同性 KMeans (η=1)</b>
+        <canvas id="cv-iso" width="540" height="440"></canvas>
+        <div class="stat" style="margin-top:8px;">
+          <div><div class="k">平均 L2 误差</div><div class="v" id="stat-iso-l2">-</div></div>
+          <div><div class="k">平均内积误差</div><div class="v" id="stat-iso-ip">-</div></div>
+        </div>
+      </div>
+      <div>
+        <b style="color:#334155;">各向异性 KMeans</b>
+        <canvas id="cv-aniso2" width="540" height="440"></canvas>
+        <div class="stat" style="margin-top:8px;">
+          <div><div class="k">平均 L2 误差</div><div class="v" id="stat-aniso-l2">-</div></div>
+          <div><div class="k">平均内积误差</div><div class="v" id="stat-aniso-ip">-</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="tipbox">
+      <b>观察要点</b>：右侧的各向异性码本，L2 误差可能<b>比左侧更大</b>（因为它不再是 L2 最优），但<b>内积误差反而更小</b>——这正是 ScaNN 追求的效果。
+    </div>
+  </div>
+
+  <!-- ========== 交互演示 3: 完整流程 ========== -->
+  <div class="card">
+    <h2>5. 交互演示 C —— 完整两阶段流程 (Partitioning + Scoring + Reordering)</h2>
+    <p><em style="color:#64748b;">目的：端到端两阶段流程 partition → scoring → reordering。</em></p>
+    <p>2D 平面上有 800 个点，划分为 <code class="inline">num_leaves</code> 个 partition（KMeans）。查询 q 时先在 partition 中心里找 top-<code class="inline">num_leaves_to_search</code>；然后在这些叶子里用 anisotropic AH 快速估内积；最后（可选）用原始向量做 reordering。</p>
+
+    <div class="controls">
+      <div class="ctrl">
+        <label>num_leaves<span class="val" id="v-leaves">16</span></label>
+        <input type="range" id="s-leaves" min="4" max="40" value="16" step="2">
+      </div>
+      <div class="ctrl">
+        <label>num_leaves_to_search<span class="val" id="v-l2s">3</span></label>
+        <input type="range" id="s-l2s" min="1" max="10" value="3" step="1">
+      </div>
+      <div class="ctrl">
+        <label>η (scoring)<span class="val" id="v-eta3">4</span></label>
+        <input type="range" id="s-eta3" min="1" max="30" value="4" step="0.5">
+      </div>
+      <div class="ctrl">
+        <label>reorder_top_k<span class="val" id="v-reorder">10</span></label>
+        <input type="range" id="s-reorder" min="0" max="30" value="10" step="1">
+      </div>
+      <div class="ctrl">
+        <label>top_k (最终)<span class="val" id="v-topk">5</span></label>
+        <input type="range" id="s-topk" min="1" max="15" value="5" step="1">
+      </div>
+    </div>
+    <div class="buttons">
+      <button id="btn-e2e-run">发起查询（也可以点画布）</button>
+      <button class="ghost" id="btn-e2e-random">随机查询</button>
+      <button class="warn" id="btn-e2e-reset">清空</button>
+    </div>
+
+    <div class="flow" style="margin-top:12px;">
+      <div class="step">1. 数据分区 (球形 KMeans)</div>
+      <div class="arrow">→</div>
+      <div class="step">2. 每个 partition 独立 anisotropic AH 训练</div>
+      <div class="arrow">→</div>
+      <div class="step">3. 查询: partition 内积排序</div>
+      <div class="arrow">→</div>
+      <div class="step">4. 候选 AH 表估 IP</div>
+      <div class="arrow">→</div>
+      <div class="step">5. Reorder 精排</div>
+    </div>
+
+    <div style="margin-top:16px;">
+      <canvas id="cv-e2e" width="1100" height="520"></canvas>
+    </div>
+
+    <div class="stat">
+      <div><div class="k">粗筛访问 partition</div><div class="v" id="e2e-nprobe">-</div></div>
+      <div><div class="k">AH scoring 候选</div><div class="v" id="e2e-cand">-</div></div>
+      <div><div class="k">Recall vs 真实 top-k</div><div class="v" id="e2e-recall">-</div></div>
+      <div><div class="k">加速比 (vs 全量)</div><div class="v" id="e2e-speedup">-</div></div>
+    </div>
+    <div class="log-panel" id="log-e2e" style="margin-top:10px;"></div>
+  </div>
+
+  <!-- ========== η 对召回的影响 ========== -->
+  <div class="card">
+    <h2>6. η 对 Top-k 召回率的影响 (扫描)</h2>
+    <p><em style="color:#64748b;">目的：定量看 η 从 1 变到 30，召回率的变化曲线。</em></p>
+    <p>下图对当前 partitioning 固定的情况下，扫描 η ∈ [1, 30]，展示 recall@k 的变化。可以看到当 η > 1 后，相同 partition 访问数下 recall 通常提升，直到达到饱和。</p>
+    <canvas id="cv-eta-scan" width="1000" height="400"></canvas>
+    <div class="legend">
+      <span><span class="dot" style="background:#a855f7;"></span>recall@k (anisotropic scoring)</span>
+      <span><span class="dot" style="background:#94a3b8;"></span>recall@k (η=1, 各向同性 baseline)</span>
+    </div>
+    <div class="buttons"><button id="btn-scan-eta">扫描 η</button></div>
+  </div>
+
+  <!-- ========== 性能对比 ========== -->
+  <div class="card">
+    <h2>7. 性能对比示意 (GloVe100)</h2>
+    <p>ScaNN 在多个 Ann-Benchmarks 数据集上（GloVe、Sift1M、DEEP、Amazon）都长期占据 Pareto 前沿。下图给出 GloVe100 上 recall vs QPS 曲线（<b>示意值，非直测；实际请参考 ann-benchmarks</b>）。</p>
+    <canvas id="cv-perf" width="1000" height="400"></canvas>
+    <div class="legend">
+      <span><span class="dot" style="background:#a855f7;"></span>ScaNN</span>
+      <span><span class="dot" style="background:#2563eb;"></span>Faiss-IVFPQ</span>
+      <span><span class="dot" style="background:#22c55e;"></span>HNSW</span>
+      <span><span class="dot" style="background:#f59e0b;"></span>Annoy</span>
+      <span><span class="dot" style="background:#ef4444;"></span>Flat (精确)</span>
+    </div>
+    <table style="margin-top:14px;">
+      <thead><tr><th>方案</th><th>Recall@10=0.9 时 QPS</th><th>索引内存</th><th>关键特性</th></tr></thead>
+      <tbody>
+        <tr><td>Flat</td><td>~150（示意值，非直测；实际请参考 ann-benchmarks）</td><td>1×</td><td>精确</td></tr>
+        <tr><td>Annoy</td><td>~1.5k（示意值，非直测；实际请参考 ann-benchmarks）</td><td>~1.5×</td><td>随机投影树森林</td></tr>
+        <tr><td>Faiss-IVFPQ</td><td>~4k（示意值，非直测；实际请参考 ann-benchmarks）</td><td>~1/8×</td><td>各向同性 PQ</td></tr>
+        <tr><td>HNSW</td><td>~10k（示意值，非直测；实际请参考 ann-benchmarks）</td><td>~1.2×</td><td>纯图</td></tr>
+        <tr><td><b>ScaNN</b></td><td><b>~15k+（示意值，非直测；实际请参考 ann-benchmarks）</b></td><td>~1/8×</td><td><b>各向异性 AH + partitioning</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== 优缺点 ========== -->
+  <div class="card">
+    <h2>8. 优缺点 & 适用场景</h2>
+    <div class="grid2">
+      <div>
+        <h3>优势</h3>
+        <ul>
+          <li><b>相同码本大小下更高召回</b>：anisotropic 损失明确对齐 MIPS 目标</li>
+          <li><b>SIMD 友好</b>：4-bit AH 表 + AVX2/AVX512 打表指令，单机 QPS 极高</li>
+          <li><b>灵活</b>：η 可调，可退化到普通 PQ 作为消融基线</li>
+          <li>开源 <code class="inline">google-research/scann</code>，支持 GPU 与 TF 集成</li>
+        </ul>
+      </div>
+      <div>
+        <h3>劣势</h3>
+        <ul>
+          <li><b>参数复杂</b>：η、num_leaves、num_leaves_to_search、reorder_k、AH bits 都要调</li>
+          <li><b>更适合 MIPS/余弦</b>：欧氏距离下优势相对不明显</li>
+          <li>训练比 Faiss 慢（anisotropic Lloyd 需加权求解），大规模建索引时间 x2 常见</li>
+          <li>动态更新不友好（同 IVF 类方法）</li>
+        </ul>
+      </div>
+    </div>
+    <h3 style="margin-top:14px;">适用场景</h3>
+    <ul>
+      <li>大规模 embedding 检索（推荐/广告召回、语义搜索）</li>
+      <li>MIPS / 余弦相似度为主要度量的场景</li>
+      <li>对 QPS 有严苛要求，且能接受 recall 0.9~0.98 之间</li>
+      <li>能忍受较长离线索引构建时间的批量服务</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>9. 常见误区 & 下一步学什么</h2>
+
+    <div class="pitfall">
+      <h4>常见误区</h4>
+      <ol style="margin-top:6px;">
+        <li><b>anisotropic ≠ "更精确的 PQ"</b>：它优化的是内积估计，<b>L2 误差可能反而增大</b>。别拿 L2 指标去看 aniso 码本，会被误导。</li>
+        <li><b>η 不是越大越好</b>：超过某个阈值（依数据分布，常见 20~50 之间）后，中心过度贴向数据方向，反而使召回下降。看第 6 节的扫描曲线找拐点。</li>
+        <li><b>只在 MIPS / cosine 场景有明显收益</b>：如果你的相似度是 L2 欧氏距离，收益微弱，甚至不如 OPQ。</li>
+        <li><b>需要配合 reordering 才能达到最佳召回</b>：AH 只保证 top-K 候选大概率包含真答案，最终排序还要用原始向量精排一次。</li>
+      </ol>
+    </div>
+
+    <div class="next-steps">
+      <h4 style="color:#065f46; margin-top:0;">下一步学什么</h4>
+      <ul style="margin-top:6px;">
+        <li>想了解 Google 内部对这套技术的进一步演化：SOAR（NeurIPS 2023）、以及 <code class="inline">google-research/scann</code> 仓库里的 TF/GPU 集成。</li>
+        <li>横向对标另一个工业界方案：<a href="./ivf-hnsw.html">IVF-HNSW（本目录）</a> —— 同样是 partition + PQ 但用 HNSW 加速粗量化、用 residual + 8-bit PQ 而非 4-bit AH，可以对比两者选型时的取舍。</li>
+        <li>回顾底层组件：<a href="../3-quantization/pq.html">PQ 单页详解</a> · <a href="../3-quantization/opq.html">OPQ 单页详解</a> · <a href="../3-quantization/ivf-pq.html">IVF-PQ 单页详解</a>。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>10. 相关阅读</h2>
+    <ul>
+      <li>Guo et al., <i>Accelerating Large-Scale Inference with Anisotropic Vector Quantization</i>, ICML 2020 (核心论文)</li>
+      <li>Google Research Blog: <i>Announcing ScaNN: Efficient Vector Similarity Search</i>, 2020</li>
+      <li>Sun et al., <i>SOAR: Improved Indexing for Approximate Nearest Neighbor Search</i>, NeurIPS 2023 (ScaNN 后继工作)</li>
+      <li>项目：<code class="inline">github.com/google-research/google-research/tree/master/scann</code></li>
+    </ul>
+  </div>
+</div>
+
+<script>
+// ========== 工具 ==========
+const rand = (a, b) => a + Math.random() * (b - a);
+function seed(s) {
+  return function() {
+    s |= 0; s = s + 0x6D2B79F5 | 0;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function gauss(rng) {
+  const u = rng(), v = rng();
+  return Math.sqrt(-2 * Math.log(u + 1e-9)) * Math.cos(2 * Math.PI * v);
+}
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
+const scl = (a, s) => [a[0] * s, a[1] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+const norm = a => Math.sqrt(a[0]*a[0] + a[1]*a[1]);
+const dist = (a, b) => Math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2);
+
+function log(id, msg, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ========== 各向异性损失: 数据点 x 是原点相对固定的向量 ==========
+// r = xhat - x  (量化向量 - 数据点),  x̂ = x / ||x||
+// r_par = (r · x̂) x̂
+// r_perp = r - r_par
+// L = eta * ||r_par||^2 + ||r_perp||^2
+function anisoLoss(x, xhat, eta) {
+  const r = sub(xhat, x);
+  const nx = norm(x);
+  if (nx < 1e-6) return { L: dot(r, r), parLen: 0, perpLen: norm(r), r_par: [0,0], r_perp: r };
+  const xhat_dir = [x[0]/nx, x[1]/nx];
+  const rp = dot(r, xhat_dir);
+  const r_par = scl(xhat_dir, rp);
+  const r_perp = sub(r, r_par);
+  const L = eta * (rp * rp) + dot(r_perp, r_perp);
+  return { L, parLen: Math.abs(rp), perpLen: norm(r_perp), r_par, r_perp };
+}
+
+// ========== 演示 A: 损失景观 ==========
+const canvasA = () => document.getElementById('cv-aniso');
+const stateA = {
+  xhat: [350, 200], // 初始 x̂
+  dragging: false,
+};
+function drawAniso() {
+  const cv = canvasA();
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#fdfdfe';
+  ctx.fillRect(0, 0, W, H);
+  const eta = parseFloat(document.getElementById('s-eta').value);
+  const angle = parseFloat(document.getElementById('s-xangle').value) * Math.PI / 180;
+  const xlen = parseFloat(document.getElementById('s-xlen').value);
+  const nCont = parseInt(document.getElementById('s-ncontour').value);
+
+  // 坐标原点为画布中心
+  const cx = W / 2, cy = H / 2;
+  // x 从原点出发
+  const x = [Math.cos(angle) * xlen, -Math.sin(angle) * xlen];  // canvas y 反向
+
+  // 画坐标轴
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.beginPath();
+  ctx.moveTo(0, cy); ctx.lineTo(W, cy);
+  ctx.moveTo(cx, 0); ctx.lineTo(cx, H);
+  ctx.stroke();
+
+  // 计算并画等损失曲线：等损失 = c^2 => eta*(r_par)^2 + (r_perp)^2 = c^2
+  // 这是关于 x̂ 主方向的椭圆
+  // 主轴：沿 x̂ 方向，半径 = c/sqrt(eta)
+  // 副轴：垂直 x̂，半径 = c
+  // 中心：x（因为 r = xhat - x）
+  const nCanvas = norm(x);
+  const xhat_dir = nCanvas > 1e-6 ? [x[0]/nCanvas, x[1]/nCanvas] : [1, 0];
+  const ellipseAngle = Math.atan2(xhat_dir[1], xhat_dir[0]);
+
+  const maxC = Math.max(W, H) * 0.9;
+  for (let i = 1; i <= nCont; i++) {
+    const c = (maxC / nCont) * i * 0.35;
+    // 半径
+    const rMajor = c / Math.sqrt(eta);
+    const rMinor = c;
+    ctx.strokeStyle = `rgba(168,85,247,${0.15 + i * 0.05})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(cx + x[0], cy + x[1], rMajor, rMinor, ellipseAngle + Math.PI/2, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // 从原点画 x 向量
+  ctx.strokeStyle = '#a78bfa';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + x[0], cy + x[1]);
+  ctx.stroke();
+  // 箭头
+  drawArrow(ctx, cx + x[0], cy + x[1], ellipseAngle, '#a78bfa');
+  ctx.fillStyle = '#a78bfa';
+  ctx.font = '13px sans-serif';
+  ctx.fillText('x', cx + x[0] + 8, cy + x[1] - 5);
+
+  // 数据点 x
+  ctx.beginPath();
+  ctx.arc(cx + x[0], cy + x[1], 6, 0, Math.PI * 2);
+  ctx.fillStyle = '#a78bfa';
+  ctx.fill();
+  ctx.strokeStyle = '#5b21b6';
+  ctx.stroke();
+
+  // 量化候选 x̂ 位置（canvas 坐标）
+  const xhatCanvas = stateA.xhat;
+  // 转成"以原点为准"的坐标
+  const xhat = [xhatCanvas[0] - cx, xhatCanvas[1] - cy];
+  // 计算损失
+  const info = anisoLoss(x, xhat, eta);
+
+  // 画 r_par 和 r_perp 从 x 出发
+  const rParEnd = add([cx + x[0], cy + x[1]], info.r_par);
+  ctx.strokeStyle = '#22c55e';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(cx + x[0], cy + x[1]);
+  ctx.lineTo(rParEnd[0], rParEnd[1]);
+  ctx.stroke();
+  ctx.fillStyle = '#22c55e';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('r∥', (cx + x[0] + rParEnd[0])/2 + 6, (cy + x[1] + rParEnd[1])/2);
+
+  const rPerpEnd = add(rParEnd, info.r_perp);
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(rParEnd[0], rParEnd[1]);
+  ctx.lineTo(rPerpEnd[0], rPerpEnd[1]);
+  ctx.stroke();
+  ctx.fillStyle = '#f59e0b';
+  ctx.fillText('r⊥', (rParEnd[0] + rPerpEnd[0])/2 + 6, (rParEnd[1] + rPerpEnd[1])/2);
+
+  // 画 x̂
+  ctx.beginPath();
+  ctx.arc(xhatCanvas[0], xhatCanvas[1], 8, 0, Math.PI * 2);
+  ctx.fillStyle = '#ef4444';
+  ctx.fill();
+  ctx.strokeStyle = '#7f1d1d';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#7f1d1d';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('x̃', xhatCanvas[0] + 10, xhatCanvas[1] - 8);
+
+  // 更新数值面板
+  drawLossPanel(info, eta);
+}
+
+function drawArrow(ctx, x, y, angle, color) {
+  ctx.fillStyle = color;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-10, -5);
+  ctx.lineTo(-10, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawLossPanel(info, eta) {
+  const cv = document.getElementById('cv-loss');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText('损失分解 (当前配置)', 20, 30);
+  ctx.font = '13px monospace';
+
+  const lines = [
+    `η                  = ${eta.toFixed(2)}`,
+    `‖r∥‖ (平行误差)     = ${info.parLen.toFixed(2)}`,
+    `‖r⊥‖ (垂直误差)     = ${info.perpLen.toFixed(2)}`,
+    ``,
+    `L_iso  = ‖r∥‖² + ‖r⊥‖²          = ${(info.parLen**2 + info.perpLen**2).toFixed(1)}`,
+    `L_ani  = η·‖r∥‖² + ‖r⊥‖²        = ${(eta * info.parLen**2 + info.perpLen**2).toFixed(1)}`,
+    ``,
+    `平行分量占比 = ${(100 * info.parLen**2 / (info.parLen**2 + info.perpLen**2 + 1e-9)).toFixed(1)}%`,
+    `各向异性损失中平行贡献 = ${(100 * eta * info.parLen**2 / (eta * info.parLen**2 + info.perpLen**2 + 1e-9)).toFixed(1)}%`,
+  ];
+  ctx.fillStyle = '#334155';
+  lines.forEach((l, i) => ctx.fillText(l, 20, 60 + i * 22));
+
+  // 画一个"损失来源"的堆积柱
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText('损失来源比例：', 20, 300);
+  const barX = 20, barY = 315, barW = 480, barH = 30;
+  const parShare = eta * info.parLen**2 / (eta * info.parLen**2 + info.perpLen**2 + 1e-9);
+  ctx.fillStyle = '#22c55e';
+  ctx.fillRect(barX, barY, barW * parShare, barH);
+  ctx.fillStyle = '#f59e0b';
+  ctx.fillRect(barX + barW * parShare, barY, barW * (1 - parShare), barH);
+  ctx.strokeStyle = '#334155';
+  ctx.strokeRect(barX, barY, barW, barH);
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 12px sans-serif';
+  if (parShare > 0.08) ctx.fillText(`平行 ${(parShare*100).toFixed(0)}%`, barX + 8, barY + 19);
+  if ((1-parShare) > 0.08) ctx.fillText(`垂直 ${((1-parShare)*100).toFixed(0)}%`, barX + barW * parShare + 8, barY + 19);
+
+  ctx.fillStyle = '#64748b';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('结论：η 越大，平行误差在损失中比重越高', 20, 380);
+  ctx.fillText('码本训练时会主动"逃离"这个方向 → 沿 x 拉长的椭圆等损失线', 20, 400);
+}
+
+// ========== 演示 B: 各向异性 vs 各向同性 KMeans ==========
+const stateB = {
+  points: [],
+  isoBook: [],
+  anisoBook: [],
+  isoAssign: [],
+  anisoAssign: [],
+};
+
+function genDataB() {
+  const n = parseInt(document.getElementById('s-npoints').value);
+  const ecc = parseFloat(document.getElementById('s-ecc').value);
+  const rng = seed(31);
+  const cx = 270, cy = 220;
+  const angle = Math.PI / 6;  // 主方向
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    // 各向异性椭圆分布，主轴长
+    const s = gauss(rng) * 90;    // 主轴
+    const t = gauss(rng) * (90 / ecc);  // 副轴
+    const x = cx + s * Math.cos(angle) + t * Math.cos(angle + Math.PI/2);
+    const y = cy + s * Math.sin(angle) + t * Math.sin(angle + Math.PI/2);
+    pts.push([x, y]);
+  }
+  stateB.points = pts;
+}
+
+// 各向同性 Lloyd
+function isoKMeans(points, k, iters, rng) {
+  rng = rng || Math.random;
+  const centers = [];
+  const used = new Set();
+  while (centers.length < k) {
+    const i = Math.floor(rng() * points.length);
+    if (!used.has(i)) { used.add(i); centers.push(points[i].slice()); }
+  }
+  const assign = new Array(points.length).fill(0);
+  for (let it = 0; it < iters; it++) {
+    points.forEach((p, i) => {
+      let bi = 0, bd = Infinity;
+      for (let j = 0; j < k; j++) {
+        const d = dist(p, centers[j]);
+        if (d < bd) { bd = d; bi = j; }
+      }
+      assign[i] = bi;
+    });
+    const cnt = new Array(k).fill(0);
+    const sum = Array.from({length: k}, () => [0, 0]);
+    points.forEach((p, i) => {
+      const a = assign[i];
+      cnt[a]++;
+      sum[a][0] += p[0]; sum[a][1] += p[1];
+    });
+    for (let j = 0; j < k; j++) if (cnt[j] > 0) centers[j] = [sum[j][0] / cnt[j], sum[j][1] / cnt[j]];
+  }
+  return { centers, assign };
+}
+
+// 各向异性 Lloyd：最小化 sum eta*(r_par)^2 + (r_perp)^2
+// 对于给定分配，每个中心 c_j 的最优解是加权最小二乘：
+// c_j = (sum_i W_i x_i) / (sum_i W_i)  其中 W_i = eta * x̂_i x̂_i^T + (I - x̂_i x̂_i^T)
+// 这里 x̂_i 用原点作参考（假设是内积搜索，向量本身方向重要）
+function anisoKMeans(points, k, iters, eta, rng) {
+  rng = rng || Math.random;
+  // 计算每个点的"归一化方向"（相对图像中心的方向作为示意）
+  const cx = 270, cy = 220;
+  const dirs = points.map(p => {
+    const v = [p[0] - cx, p[1] - cy];
+    const n = norm(v) + 1e-6;
+    return [v[0]/n, v[1]/n];
+  });
+
+  const centers = [];
+  const used = new Set();
+  while (centers.length < k) {
+    const i = Math.floor(rng() * points.length);
+    if (!used.has(i)) { used.add(i); centers.push(points[i].slice()); }
+  }
+  const assign = new Array(points.length).fill(0);
+  for (let it = 0; it < iters; it++) {
+    // 分配：使 aniso loss 最小
+    points.forEach((p, i) => {
+      let bi = 0, bd = Infinity;
+      for (let j = 0; j < k; j++) {
+        const r = sub(centers[j], p);  // 从数据点到中心
+        // r 需相对以 dirs[i] 分解
+        const rp = dot(r, dirs[i]);
+        const r_par = scl(dirs[i], rp);
+        const r_perp = sub(r, r_par);
+        const L = eta * rp * rp + dot(r_perp, r_perp);
+        if (L < bd) { bd = L; bi = j; }
+      }
+      assign[i] = bi;
+    });
+
+    // 更新：加权最小二乘
+    // 对每个中心 j：
+    //   c_j 使 sum_i in cluster_j (eta * (c_j - p_i) . d_i)^2 * ... 最小
+    // 用矩阵 M_i = eta * d_i d_i^T + (I - d_i d_i^T)
+    // c_j = (sum M_i)^{-1} (sum M_i p_i)
+    for (let j = 0; j < k; j++) {
+      let M11 = 0, M12 = 0, M22 = 0;
+      let b1 = 0, b2 = 0;
+      let cnt = 0;
+      points.forEach((p, i) => {
+        if (assign[i] !== j) return;
+        cnt++;
+        const d = dirs[i];
+        // 二维 M = eta * d d^T + (I - d d^T)
+        // = I + (eta - 1) d d^T
+        const dxdx = d[0]*d[0], dxdy = d[0]*d[1], dydy = d[1]*d[1];
+        const m11 = 1 + (eta - 1) * dxdx;
+        const m12 = (eta - 1) * dxdy;
+        const m22 = 1 + (eta - 1) * dydy;
+        M11 += m11; M12 += m12; M22 += m22;
+        // b += M * p_i
+        b1 += m11 * p[0] + m12 * p[1];
+        b2 += m12 * p[0] + m22 * p[1];
+      });
+      if (cnt === 0) continue;
+      // 求 M c = b
+      const det = M11 * M22 - M12 * M12;
+      if (Math.abs(det) < 1e-6) continue;
+      const c1 = (M22 * b1 - M12 * b2) / det;
+      const c2 = (M11 * b2 - M12 * b1) / det;
+      centers[j] = [c1, c2];
+    }
+  }
+  return { centers, assign };
+}
+
+function trainBooks() {
+  const k = parseInt(document.getElementById('s-kbook').value);
+  const eta = parseFloat(document.getElementById('s-eta2').value);
+  const rng = seed(101);
+  const rng2 = seed(101);
+  const iso = isoKMeans(stateB.points, k, 15, rng);
+  const ani = anisoKMeans(stateB.points, k, 15, eta, rng2);
+  stateB.isoBook = iso.centers;
+  stateB.isoAssign = iso.assign;
+  stateB.anisoBook = ani.centers;
+  stateB.anisoAssign = ani.assign;
+  drawIsoAniso();
+  updateStatsB();
+}
+
+function drawEllipseData(cv) {
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#fdfdfe';
+  ctx.fillRect(0, 0, W, H);
+  // 数据
+  ctx.fillStyle = 'rgba(139,92,246,0.5)';
+  stateB.points.forEach(p => {
+    ctx.beginPath(); ctx.arc(p[0], p[1], 2, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
+function drawIsoAniso() {
+  const cvIso = document.getElementById('cv-iso');
+  const cvAni = document.getElementById('cv-aniso2');
+  drawEllipseData(cvIso);
+  drawEllipseData(cvAni);
+
+  const ctxI = cvIso.getContext('2d');
+  const ctxA = cvAni.getContext('2d');
+
+  // 连线到中心
+  stateB.points.forEach((p, i) => {
+    const c = stateB.isoBook[stateB.isoAssign[i]];
+    if (!c) return;
+    ctxI.strokeStyle = 'rgba(148,163,184,0.2)';
+    ctxI.beginPath(); ctxI.moveTo(p[0], p[1]); ctxI.lineTo(c[0], c[1]); ctxI.stroke();
+  });
+  stateB.points.forEach((p, i) => {
+    const c = stateB.anisoBook[stateB.anisoAssign[i]];
+    if (!c) return;
+    ctxA.strokeStyle = 'rgba(167,139,250,0.25)';
+    ctxA.beginPath(); ctxA.moveTo(p[0], p[1]); ctxA.lineTo(c[0], c[1]); ctxA.stroke();
+  });
+
+  // 中心
+  stateB.isoBook.forEach(c => {
+    ctxI.beginPath();
+    ctxI.arc(c[0], c[1], 7, 0, Math.PI * 2);
+    ctxI.fillStyle = '#0ea5e9';
+    ctxI.fill();
+    ctxI.strokeStyle = '#075985'; ctxI.lineWidth = 1.5; ctxI.stroke();
+  });
+  stateB.anisoBook.forEach(c => {
+    ctxA.beginPath();
+    ctxA.arc(c[0], c[1], 7, 0, Math.PI * 2);
+    ctxA.fillStyle = '#a855f7';
+    ctxA.fill();
+    ctxA.strokeStyle = '#5b21b6'; ctxA.lineWidth = 1.5; ctxA.stroke();
+  });
+
+  // 数据"起点"方向指示（画一条从画布中心到最远点的线，说明所谓"原点"）
+  const cxo = 270, cyo = 220;
+  [ctxI, ctxA].forEach(ctx => {
+    ctx.beginPath();
+    ctx.arc(cxo, cyo, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#0f172a';
+    ctx.fill();
+    ctx.fillStyle = '#334155';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('原点 (内积基准)', cxo + 8, cyo - 8);
+  });
+}
+
+function updateStatsB() {
+  // 模拟 1000 个随机查询算平均 L2 & IP 误差
+  const rng = seed(999);
+  let l2i = 0, l2a = 0, ipi = 0, ipa = 0;
+  const nQ = 400;
+  for (let q = 0; q < nQ; q++) {
+    // 查询：随机单位方向 + 一个模长
+    const th = rng() * Math.PI * 2;
+    const qv = [Math.cos(th) * 200 + 270, Math.sin(th) * 200 + 220];
+    // 挑一个数据点
+    const idx = Math.floor(rng() * stateB.points.length);
+    const x = stateB.points[idx];
+    const xi = stateB.isoBook[stateB.isoAssign[idx]];
+    const xa = stateB.anisoBook[stateB.anisoAssign[idx]];
+    if (!xi || !xa) continue;
+    l2i += dist(x, xi);
+    l2a += dist(x, xa);
+    // 内积估计误差
+    const trueIP = dot(qv, x);
+    ipi += Math.abs(trueIP - dot(qv, xi));
+    ipa += Math.abs(trueIP - dot(qv, xa));
+  }
+  l2i /= nQ; l2a /= nQ; ipi /= nQ; ipa /= nQ;
+  document.getElementById('stat-iso-l2').textContent = l2i.toFixed(2);
+  document.getElementById('stat-iso-ip').textContent = ipi.toFixed(0);
+  document.getElementById('stat-aniso-l2').textContent = l2a.toFixed(2);
+  document.getElementById('stat-aniso-ip').textContent = ipa.toFixed(0);
+}
+
+// ========== 演示 C: 完整两阶段流程 ==========
+const stateC = {
+  points: [],
+  leafBook: [],       // partition 中心
+  leafAssign: [],     // 每点属于哪个 leaf
+  perLeafBooks: [],   // 每 leaf 内的 anisotropic scoring 码本 (为演示简化)
+  perLeafCodes: [],   // 每点在其 leaf 内 codebook 的 code
+  W: 1100, H: 520,
+  query: null,
+  ans: null,          // 存储查询结果
+};
+
+function genDataC() {
+  const rng = seed(2026);
+  const pts = [];
+  // 6 大簇 + 噪声
+  const ccs = [];
+  for (let i = 0; i < 6; i++) ccs.push([rand(120, stateC.W - 120), rand(80, stateC.H - 80)]);
+  for (let i = 0; i < 700; i++) {
+    const cc = ccs[i % 6];
+    pts.push([cc[0] + gauss(rng) * 45, cc[1] + gauss(rng) * 45]);
+  }
+  for (let i = 0; i < 100; i++) pts.push([rand(60, stateC.W - 60), rand(50, stateC.H - 50)]);
+  stateC.points = pts;
+}
+
+function buildIndexC() {
+  const nL = parseInt(document.getElementById('s-leaves').value);
+  const eta = parseFloat(document.getElementById('s-eta3').value);
+  const rng = seed(77);
+  const iso = isoKMeans(stateC.points, nL, 12, rng);
+  stateC.leafBook = iso.centers;
+  stateC.leafAssign = iso.assign;
+
+  // 对每 leaf 内部再做 anisotropic 码本（这里我们只做 8 中心的示意）
+  stateC.perLeafBooks = [];
+  stateC.perLeafCodes = new Array(stateC.points.length).fill(0);
+  for (let l = 0; l < nL; l++) {
+    const idxs = [];
+    stateC.leafAssign.forEach((a, i) => { if (a === l) idxs.push(i); });
+    const sub = idxs.map(i => stateC.points[i]);
+    if (sub.length < 3) { stateC.perLeafBooks.push(sub); continue; }
+    const rng2 = seed(500 + l);
+    const kInner = Math.min(8, sub.length);
+    const ani = anisoKMeans(sub, kInner, 10, eta, rng2);
+    stateC.perLeafBooks.push(ani.centers);
+    idxs.forEach((gi, li) => { stateC.perLeafCodes[gi] = ani.assign[li]; });
+  }
+}
+
+function queryC(qx, qy, animate) {
+  const nL2S = parseInt(document.getElementById('s-l2s').value);
+  const reorderK = parseInt(document.getElementById('s-reorder').value);
+  const topK = parseInt(document.getElementById('s-topk').value);
+  const q = [qx, qy];
+  stateC.query = q;
+
+  document.getElementById('log-e2e').innerHTML = '';
+  log('log-e2e', `[Phase 1] Partition search 中`, 'l1');
+  // 1. partition 排序（用 L2；实际 ScaNN 是内积）
+  const pScored = stateC.leafBook.map((c, i) => ({id: i, d: dist(q, c)})).sort((a, b) => a.d - b.d);
+  const pTop = pScored.slice(0, nL2S);
+  log('log-e2e', `  访问 ${nL2S}/${stateC.leafBook.length} partitions, 选中 leaf ids=[${pTop.map(x=>x.id).join(', ')}]`, 'l2');
+
+  // 2. scoring
+  log('log-e2e', `[Phase 2] Anisotropic AH scoring 中...`, 'l1');
+  const cand = [];
+  for (const p of pTop) {
+    stateC.leafAssign.forEach((a, i) => {
+      if (a !== p.id) return;
+      const code = stateC.perLeafCodes[i];
+      const bookC = stateC.perLeafBooks[p.id][code];
+      if (!bookC) return;
+      // 用码本中心的距离当"近似距离"
+      cand.push({id: i, dApprox: dist(q, bookC), leaf: p.id});
+    });
+  }
+  cand.sort((a, b) => a.dApprox - b.dApprox);
+  const candTop = cand.slice(0, Math.max(reorderK, topK));
+  log('log-e2e', `  scoring 候选 ${cand.length} 个 → 保留 top-${candTop.length}`, 'l3');
+
+  // 3. reorder（若 reorderK>0）
+  let final = candTop;
+  if (reorderK > 0) {
+    log('log-e2e', `[Phase 3] Reordering (原始距离精排)`, 'l1');
+    const reAll = candTop.map(c => ({id: c.id, d: dist(q, stateC.points[c.id]), leaf: c.leaf}));
+    reAll.sort((a, b) => a.d - b.d);
+    final = reAll.slice(0, topK);
+    log('log-e2e', `  取 top-${topK} 作为最终答案`, 'l4');
+  } else {
+    final = candTop.slice(0, topK);
+  }
+
+  // 真实 top-k
+  const gt = stateC.points.map((p, i) => ({id: i, d: dist(q, p)})).sort((a, b) => a.d - b.d).slice(0, topK);
+  const gtSet = new Set(gt.map(x => x.id));
+  const hit = final.filter(f => gtSet.has(f.id)).length;
+
+  stateC.ans = { pTop, cand, candTop, final, gt, hit };
+  document.getElementById('e2e-nprobe').textContent = nL2S;
+  document.getElementById('e2e-cand').textContent = cand.length;
+  document.getElementById('e2e-recall').textContent = `${hit}/${topK}`;
+  document.getElementById('e2e-speedup').textContent = (stateC.points.length / (cand.length + stateC.leafBook.length)).toFixed(2) + '×';
+  drawE2E();
+}
+
+function drawE2E() {
+  const cv = document.getElementById('cv-e2e');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#fdfdfe';
+  ctx.fillRect(0, 0, W, H);
+
+  const ans = stateC.ans;
+  const q = stateC.query;
+  const selLeaves = new Set(ans ? ans.pTop.map(x => x.id) : []);
+  const gtSet = new Set(ans ? ans.gt.map(x => x.id) : []);
+  const finalSet = new Set(ans ? ans.final.map(x => x.id) : []);
+  const candSet = new Set(ans ? ans.candTop.map(x => x.id) : []);
+
+  // 画 Voronoi (稀疏点采样填色)
+  const nl = stateC.leafBook.length;
+  const palette = [];
+  for (let i = 0; i < nl; i++) {
+    const h = (i * 137.5 + 30) % 360;
+    palette.push(`hsl(${h}, 55%, ${selLeaves.has(i) ? 82 : 95}%)`);
+  }
+  for (let y = 0; y < H; y += 8) {
+    for (let x = 0; x < W; x += 8) {
+      let bi = 0, bd = Infinity;
+      for (let i = 0; i < nl; i++) {
+        const c = stateC.leafBook[i];
+        const d = (x - c[0])**2 + (y - c[1])**2;
+        if (d < bd) { bd = d; bi = i; }
+      }
+      ctx.fillStyle = palette[bi];
+      ctx.fillRect(x, y, 8, 8);
+    }
+  }
+
+  // 数据点
+  stateC.points.forEach((p, i) => {
+    const inCand = candSet.has(i);
+    const isGt = gtSet.has(i);
+    const isFinal = finalSet.has(i);
+    let r = 2, color = 'rgba(139,92,246,0.5)';
+    if (inCand) { r = 3.2; color = 'rgba(59,130,246,0.85)'; }
+    if (isGt) { r = 4; color = 'rgba(34,197,94,0.9)'; }
+    if (isFinal) { r = 5; color = '#dc2626'; }
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  });
+
+  // partition 中心 & 码本中心
+  stateC.leafBook.forEach((c, i) => {
+    ctx.beginPath();
+    ctx.arc(c[0], c[1], 6, 0, Math.PI * 2);
+    ctx.fillStyle = selLeaves.has(i) ? '#7c3aed' : '#94a3b8';
+    ctx.fill();
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+  // 在选中 leaf 里画码本中心（三角形）
+  if (ans) {
+    ans.pTop.forEach(p => {
+      const book = stateC.perLeafBooks[p.id];
+      if (!book) return;
+      book.forEach(bc => {
+        ctx.beginPath();
+        ctx.moveTo(bc[0], bc[1] - 5);
+        ctx.lineTo(bc[0] - 4, bc[1] + 3);
+        ctx.lineTo(bc[0] + 4, bc[1] + 3);
+        ctx.closePath();
+        ctx.fillStyle = '#f59e0b';
+        ctx.fill();
+      });
+    });
+  }
+
+  // 查询点
+  if (q) {
+    ctx.beginPath();
+    ctx.moveTo(q[0], q[1] - 12);
+    ctx.lineTo(q[0] - 10, q[1] + 8);
+    ctx.lineTo(q[0] + 10, q[1] + 8);
+    ctx.closePath();
+    ctx.fillStyle = '#dc2626';
+    ctx.fill();
+    ctx.strokeStyle = '#7f1d1d';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#7f1d1d';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('q', q[0] + 12, q[1] + 4);
+  }
+
+  // 图例
+  ctx.fillStyle = 'white';
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.fillRect(10, 10, 320, 90);
+  ctx.strokeRect(10, 10, 320, 90);
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('图例', 20, 28);
+  const items = [
+    ['#94a3b8', 'partition 中心 (未选)'],
+    ['#7c3aed', 'partition 中心 (被 probe)'],
+    ['#f59e0b', 'AH 码本中心 (三角)'],
+    ['#3b82f6', 'AH scoring 候选'],
+    ['#22c55e', '真实 top-k'],
+    ['#dc2626', 'ScaNN 最终 top-k'],
+  ];
+  ctx.font = '11px sans-serif';
+  items.forEach((it, i) => {
+    const col = Math.floor(i / 3);
+    const row = i % 3;
+    const x0 = 20 + col * 155;
+    const y0 = 48 + row * 16;
+    ctx.fillStyle = it[0];
+    ctx.beginPath();
+    ctx.arc(x0, y0 - 3, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#334155';
+    ctx.fillText(it[1], x0 + 10, y0);
+  });
+}
+
+// ========== 演示：扫描 η 得到 recall 曲线 ==========
+function scanEta() {
+  const cv = document.getElementById('cv-eta-scan');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#fdfdfe';
+  ctx.fillRect(0, 0, W, H);
+
+  const pad = { l: 60, r: 40, t: 30, b: 50 };
+  ctx.strokeStyle = '#94a3b8';
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, H - pad.b); ctx.lineTo(W - pad.r, H - pad.b);
+  ctx.stroke();
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('η vs recall@k (num_leaves_to_search 固定)', pad.l, 20);
+  ctx.fillStyle = '#64748b';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('η', W - pad.r - 20, H - pad.b + 24);
+  ctx.fillText('recall', pad.l - 40, pad.t + 10);
+
+  const etaList = [];
+  for (let e = 1; e <= 30; e += 1) etaList.push(e);
+  const x2px = e => pad.l + (Math.log10(e) / Math.log10(30)) * (W - pad.l - pad.r);
+  const y2py = r => H - pad.b - (r) * (H - pad.t - pad.b);
+
+  // 网格
+  ctx.strokeStyle = '#e2e8f0';
+  [1, 2, 5, 10, 20, 30].forEach(e => {
+    const x = x2px(e);
+    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, H - pad.b); ctx.stroke();
+    ctx.fillStyle = '#64748b';
+    ctx.font = '11px monospace';
+    ctx.fillText(e.toString(), x - 6, H - pad.b + 14);
+  });
+  for (let r = 0; r <= 1; r += 0.2) {
+    const y = y2py(r);
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(r.toFixed(1), pad.l - 34, y + 3);
+  }
+
+  // 生成一批查询，测每个 eta 的 recall
+  const rng = seed(555);
+  const nQ = 40;
+  const queries = [];
+  for (let i = 0; i < nQ; i++) queries.push([rand(60, stateC.W - 60), rand(50, stateC.H - 50)]);
+  const topK = parseInt(document.getElementById('s-topk').value);
+  const nL2S = parseInt(document.getElementById('s-l2s').value);
+
+  // baseline: eta=1
+  // 需要重训 leaf 内部码本，成本高，我们简化：改变 assignment 策略而不重训
+  // 演示用一个"距离修饰" trick：对每个 assignment，把 dist 换成 aniso_loss(x, cbook_center)
+  function measure(eta) {
+    // 重新用 eta 训练 leaf 内 books（仅一次，节省时间用 5 次迭代）
+    const stateBooks = [];
+    for (let l = 0; l < stateC.leafBook.length; l++) {
+      const idxs = [];
+      stateC.leafAssign.forEach((a, i) => { if (a === l) idxs.push(i); });
+      const sub = idxs.map(i => stateC.points[i]);
+      if (sub.length < 3) { stateBooks.push({centers: sub, assign: []}); continue; }
+      const rng2 = seed(500 + l);
+      const kInner = Math.min(8, sub.length);
+      const ani = anisoKMeans(sub, kInner, 6, eta, rng2);
+      stateBooks.push({centers: ani.centers, assign: ani.assign, idxs});
+    }
+    let hits = 0;
+    for (const q of queries) {
+      // partition
+      const pScored = stateC.leafBook.map((c, i) => ({id: i, d: dist(q, c)})).sort((a, b) => a.d - b.d).slice(0, nL2S);
+      const cand = [];
+      for (const p of pScored) {
+        const b = stateBooks[p.id];
+        if (!b || !b.idxs) continue;
+        b.idxs.forEach((gi, li) => {
+          const c = b.centers[b.assign[li]];
+          if (!c) return;
+          cand.push({id: gi, d: dist(q, c)});
+        });
+      }
+      cand.sort((a, b) => a.d - b.d);
+      const top = cand.slice(0, topK).map(x => x.id);
+      const gt = stateC.points.map((p, i) => ({id: i, d: dist(q, p)})).sort((a, b) => a.d - b.d).slice(0, topK).map(x => x.id);
+      const gtSet = new Set(gt);
+      hits += top.filter(x => gtSet.has(x)).length;
+    }
+    return hits / (nQ * topK);
+  }
+
+  // 计算 baseline (eta=1) 和 aniso 曲线
+  const baseR = measure(1);
+  const ptsBase = etaList.map(e => ({x: e, y: baseR}));
+  const ptsAni = etaList.map(e => ({x: e, y: measure(e)}));
+
+  // 画 baseline
+  ctx.strokeStyle = '#94a3b8';
+  ctx.setLineDash([5, 4]);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ptsBase.forEach((p, i) => {
+    const x = x2px(p.x), y = y2py(p.y);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 画 anisotropic
+  ctx.strokeStyle = '#a855f7';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ptsAni.forEach((p, i) => {
+    const x = x2px(p.x), y = y2py(p.y);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ptsAni.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(x2px(p.x), y2py(p.y), 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#a855f7';
+    ctx.fill();
+  });
+
+  ctx.fillStyle = '#7c3aed';
+  ctx.font = '12px sans-serif';
+  ctx.fillText(`baseline (η=1) recall = ${baseR.toFixed(3)}`, W - pad.r - 220, pad.t + 20);
+  const bestEta = ptsAni.reduce((b, p) => p.y > b.y ? p : b, ptsAni[0]);
+  ctx.fillText(`最佳 η ≈ ${bestEta.x.toFixed(0)}  → recall = ${bestEta.y.toFixed(3)}`, W - pad.r - 220, pad.t + 40);
+}
+
+// ========== 性能对比示意 ==========
+function drawPerf() {
+  const cv = document.getElementById('cv-perf');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#fdfdfe'; ctx.fillRect(0, 0, W, H);
+  const pad = { l: 60, r: 40, t: 30, b: 50 };
+  ctx.strokeStyle = '#94a3b8';
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, H - pad.b); ctx.lineTo(W - pad.r, H - pad.b);
+  ctx.stroke();
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('Recall@10 vs QPS (GloVe100 示意)', pad.l, 20);
+  ctx.fillStyle = '#64748b';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('Recall', pad.l - 40, pad.t + 10);
+  ctx.fillText('QPS (log)', W - pad.r - 60, H - pad.b + 24);
+
+  const x2px = qps => pad.l + (Math.log10(qps) - 2) / (5 - 2) * (W - pad.l - pad.r);
+  const y2py = rec => H - pad.b - (rec - 0.6) / (1 - 0.6) * (H - pad.t - pad.b);
+  ctx.strokeStyle = '#e2e8f0';
+  for (let p = 2; p <= 5; p++) {
+    const x = x2px(Math.pow(10, p));
+    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, H - pad.b); ctx.stroke();
+    ctx.fillStyle = '#64748b';
+    ctx.font = '11px monospace';
+    ctx.fillText('10^' + p, x - 12, H - pad.b + 14);
+  }
+  for (let r = 0.6; r <= 1.0; r += 0.1) {
+    const y = y2py(r);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(r.toFixed(2), pad.l - 32, y + 3);
+  }
+  const curves = [
+    { name: 'Flat', color: '#ef4444', pts: [[150, 1.0]] },
+    { name: 'Annoy', color: '#f59e0b', pts: [[500, 0.7], [1000, 0.82], [1500, 0.9], [3000, 0.97]] },
+    { name: 'Faiss-IVFPQ', color: '#2563eb', pts: [[2000, 0.75], [4000, 0.9], [7000, 0.94], [12000, 0.97]] },
+    { name: 'HNSW', color: '#22c55e', pts: [[5000, 0.83], [10000, 0.93], [16000, 0.97], [25000, 0.99]] },
+    { name: 'ScaNN', color: '#a855f7', pts: [[8000, 0.83], [15000, 0.93], [25000, 0.97], [50000, 0.99]] },
+  ];
+  curves.forEach(c => {
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    c.pts.forEach((p, i) => {
+      const x = x2px(p[0]), y = y2py(p[1]);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    c.pts.forEach(p => {
+      const x = x2px(p[0]), y = y2py(p[1]);
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = c.color;
+      ctx.fill();
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+    if (c.pts.length > 0) {
+      const last = c.pts[c.pts.length - 1];
+      ctx.fillStyle = c.color;
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillText(c.name, x2px(last[0]) + 8, y2py(last[1]) + 4);
+    }
+  });
+}
+
+// ========== 事件绑定 ==========
+function bindEvents() {
+  const bind = (sid, vid, cb, suffix) => {
+    const s = document.getElementById(sid);
+    const v = document.getElementById(vid);
+    s.addEventListener('input', () => { v.textContent = s.value + (suffix || ''); if (cb) cb(); });
+  };
+  bind('s-eta', 'v-eta', drawAniso);
+  bind('s-xangle', 'v-xangle', drawAniso, '°');
+  bind('s-xlen', 'v-xlen', drawAniso);
+  bind('s-ncontour', 'v-ncontour', drawAniso);
+
+  bind('s-npoints', 'v-npoints', () => { genDataB(); trainBooks(); });
+  bind('s-kbook', 'v-kbook', trainBooks);
+  bind('s-eta2', 'v-eta2', trainBooks);
+  bind('s-ecc', 'v-ecc', () => { genDataB(); trainBooks(); });
+
+  bind('s-leaves', 'v-leaves', () => { buildIndexC(); drawE2E(); });
+  bind('s-l2s', 'v-l2s');
+  bind('s-eta3', 'v-eta3', () => { buildIndexC(); if (stateC.query) queryC(stateC.query[0], stateC.query[1]); else drawE2E(); });
+  bind('s-reorder', 'v-reorder');
+  bind('s-topk', 'v-topk');
+
+  // 拖动 x̃
+  const cv = canvasA();
+  cv.addEventListener('mousedown', e => {
+    const rect = cv.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (Math.hypot(x - stateA.xhat[0], y - stateA.xhat[1]) < 15) stateA.dragging = true;
+  });
+  cv.addEventListener('mousemove', e => {
+    if (!stateA.dragging) return;
+    const rect = cv.getBoundingClientRect();
+    stateA.xhat = [e.clientX - rect.left, e.clientY - rect.top];
+    drawAniso();
+  });
+  window.addEventListener('mouseup', () => { stateA.dragging = false; });
+  document.getElementById('btn-aniso-reset').addEventListener('click', () => {
+    stateA.xhat = [350, 200];
+    drawAniso();
+  });
+  document.getElementById('btn-aniso-auto').addEventListener('click', () => {
+    // 演示：让 x̃ 沿等损失曲线转
+    let t = 0;
+    const anim = setInterval(() => {
+      t += 0.05;
+      if (t > Math.PI * 2) { clearInterval(anim); return; }
+      const eta = parseFloat(document.getElementById('s-eta').value);
+      const angle = parseFloat(document.getElementById('s-xangle').value) * Math.PI / 180;
+      const xlen = parseFloat(document.getElementById('s-xlen').value);
+      const cx = canvasA().width / 2, cy = canvasA().height / 2;
+      const x = [Math.cos(angle) * xlen, -Math.sin(angle) * xlen];
+      const rMinor = 80, rMajor = rMinor / Math.sqrt(eta);
+      // 等损失曲线上的点
+      const localX = rMajor * Math.cos(t);
+      const localY = rMinor * Math.sin(t);
+      // 旋转到 x 方向坐标系
+      const cosA = Math.cos(angle), sinA = -Math.sin(angle);
+      // 主轴沿 x 方向：对应旋转 angle
+      const dx = localX * cosA - localY * sinA;
+      const dy = localX * sinA + localY * cosA;
+      stateA.xhat = [cx + x[0] + dx, cy + x[1] + dy];
+      drawAniso();
+    }, 40);
+  });
+
+  document.getElementById('btn-retrain').addEventListener('click', trainBooks);
+  document.getElementById('btn-gen-data').addEventListener('click', () => { genDataB(); trainBooks(); });
+
+  document.getElementById('btn-e2e-run').addEventListener('click', () => {
+    if (!stateC.query) stateC.query = [stateC.W / 2, stateC.H / 2];
+    queryC(stateC.query[0], stateC.query[1]);
+  });
+  document.getElementById('btn-e2e-random').addEventListener('click', () => {
+    queryC(rand(80, stateC.W - 80), rand(50, stateC.H - 50));
+  });
+  document.getElementById('btn-e2e-reset').addEventListener('click', () => {
+    stateC.query = null;
+    stateC.ans = null;
+    document.getElementById('log-e2e').innerHTML = '';
+    drawE2E();
+  });
+  document.getElementById('cv-e2e').addEventListener('click', e => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    // Canvas 的 CSS 尺寸可能与内部 pixel 不同，需要缩放
+    const sx = e.currentTarget.width / rect.width;
+    const sy = e.currentTarget.height / rect.height;
+    queryC((e.clientX - rect.left) * sx, (e.clientY - rect.top) * sy);
+  });
+  document.getElementById('btn-scan-eta').addEventListener('click', scanEta);
+}
+
+// ========== 初始化 ==========
+window.addEventListener('load', () => {
+  bindEvents();
+  drawAniso();
+  genDataB();
+  trainBooks();
+  genDataC();
+  buildIndexC();
+  drawE2E();
+  drawPerf();
+  // 默认发起一次查询
+  setTimeout(() => {
+    queryC(stateC.W / 2 + 80, stateC.H / 2);
+    scanEta();
+  }, 300);
+});
+</script>
+</body>
+</html>

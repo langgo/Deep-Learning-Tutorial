@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>IVF-PQ - 倒排索引 + 乘积量化</title>
+<style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --border: #e3e6ee;
+  --text: #1f2933;
+  --muted: #6b7280;
+  --primary: #4f46e5;
+  --primary-light: #eef2ff;
+  --accent: #059669;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --code-bg: #f3f4f6;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.7;
+}
+.top-nav {
+  background: var(--card); border-bottom: 1px solid var(--border);
+  padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.top-nav a { color: var(--primary); text-decoration: none; font-weight: 500; }
+.top-nav a:hover { text-decoration: underline; }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+h1 { font-size: 28px; margin: 0 0 8px 0; }
+h2 { font-size: 22px; margin: 32px 0 12px 0; padding-left: 12px; border-left: 4px solid var(--primary); }
+h3 { font-size: 18px; margin: 20px 0 10px 0; color: var(--primary); }
+p, li { font-size: 15px; color: var(--text); }
+.subtitle { color: var(--muted); font-size: 15px; margin-bottom: 20px; }
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px; margin: 16px 0; box-shadow: var(--shadow);
+}
+.card.blue { background: #f0f7ff; border-color: #bfdbfe; }
+.card.green { background: #ecfdf5; border-color: #a7f3d0; }
+.card.yellow { background: #fffbeb; border-color: #fcd34d; }
+.formula {
+  background: var(--code-bg); padding: 12px 16px; border-radius: 6px;
+  font-family: "SF Mono", Consolas, monospace; font-size: 14px; overflow-x: auto;
+  margin: 8px 0; border-left: 3px solid var(--primary);
+}
+code {
+  background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
+  font-family: "SF Mono", Consolas, monospace; font-size: 13px;
+}
+pre {
+  background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: 6px;
+  overflow-x: auto; font-size: 13px; line-height: 1.5;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+.controls {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px; margin: 16px 0;
+}
+.control { display: flex; flex-direction: column; gap: 6px; }
+.control label { font-size: 13px; color: var(--muted); font-weight: 500; }
+.control .val { color: var(--primary); font-weight: 600; font-family: "SF Mono", Consolas, monospace; }
+.control input[type="range"] { width: 100%; }
+.btn {
+  background: var(--primary); color: white; border: none; padding: 8px 16px;
+  border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;
+}
+.btn:hover { background: #4338ca; }
+.btn.secondary { background: white; color: var(--primary); border: 1px solid var(--primary); }
+.btn.secondary:hover { background: var(--primary-light); }
+.btn.warn { background: var(--warn); color: white; }
+.btn.warn:hover { background: #b45309; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+canvas { background: white; border: 1px solid var(--border); border-radius: 4px; display: block; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 14px; }
+th, td { padding: 8px 12px; border: 1px solid var(--border); text-align: left; }
+th { background: #f9fafb; font-weight: 600; }
+tr:nth-child(even) td { background: #fafbfc; }
+.pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.pros-cons ul { padding-left: 20px; }
+.pros-cons .pros li { color: var(--accent); }
+.pros-cons .cons li { color: var(--danger); }
+.step-box {
+  padding: 12px 16px; background: var(--primary-light); border-radius: 6px;
+  min-height: 60px; margin: 12px 0; font-size: 14px;
+}
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.hl { background: #fff59d; padding: 1px 4px; border-radius: 3px; }
+.viz-container { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin: 16px 0; }
+.viz-block { border: 1px solid var(--border); border-radius: 6px; padding: 8px; background: #fafbfc; }
+.viz-block h4 { margin: 0 0 6px 0; font-size: 13px; color: var(--muted); text-align: center; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; margin: 8px 0; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.metric-row { display: flex; gap: 12px; margin: 8px 0; font-size: 13px; flex-wrap: wrap; }
+.metric {
+  background: #f1f5f9; padding: 8px 12px; border-radius: 6px;
+  display: flex; flex-direction: column;
+}
+.metric b { color: var(--primary); font-size: 16px; font-family: "SF Mono", Consolas, monospace; }
+.list-table { font-size: 12px; }
+.list-table td { padding: 3px 6px; }
+.prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+.prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+.glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+.glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+.glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+.glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+.new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.pitfall h4 { color: #92400e; margin-top: 0; }
+.next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.next-steps a { color: #047857; font-weight: 600; }
+.intuition-box { background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.intuition-box h4 { color: #6d28d9; margin-top: 0; }
+.symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+.symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+.symbol-table th { background: #f9fafb; color: #374151; }
+</style>
+</head>
+<body>
+
+<div class="top-nav">
+  <div><strong>ANN 算法可视化</strong> · IVF-PQ (IVFADC)</div>
+  <a href="../index.html">← 返回目录</a>
+</div>
+
+<div class="container">
+
+<h1>IVF-PQ · 倒排索引 + 乘积量化</h1>
+<p class="subtitle">先用粗聚类"分区"，只对少数分区做 PQ 精排 —— 十亿向量级检索的工业事实标准。</p>
+
+<div class="prereq-bar">
+  <b>前置阅读：</b>
+  <span class="pill">前置：<a href="pq.html" style="color:inherit;text-decoration:none">PQ（必读）</a> · K-Means · Voronoi 概念</span>
+  <span class="pill">建议顺序：<a href="sq.html" style="color:inherit;text-decoration:none">SQ</a> → <a href="pq.html" style="color:inherit;text-decoration:none">PQ</a> → IVF-PQ (当前) → <a href="opq.html" style="color:inherit;text-decoration:none">OPQ</a></span>
+</div>
+
+<details class="glossary">
+<summary>关键术语速查（点击展开）</summary>
+<dl>
+  <dt>倒排索引 IVF (Inverted File)</dt>
+  <dd>先对全库做一次<b>粗聚类</b>把向量分到 nlist 个桶，查询时只看跟自己最近的几个桶。是从"文本检索的倒排链表"演化来的思路。</dd>
+  <dt>Voronoi 单元</dt>
+  <dd>每个粗中心 μ 的<b>势力范围</b>：平面上任意点属于最近的那个 μ。想象一张地图分成 nlist 个区域，每个区域有一个"首都" μ。</dd>
+  <dt>残差 residual</dt>
+  <dd><code>r = x − μ<sub>b(x)</sub></code>，即向量减去它所属桶的质心。物理含义 = 该向量相对本桶中心的偏移量。同桶内残差分布集中、方差小，PQ 训练误差更低。</dd>
+  <dt>nlist</dt>
+  <dd><b>number of inverted lists</b>，桶数。经验：nlist ≈ √N 到 8√N。</dd>
+  <dt>nprobe</dt>
+  <dd><b>number of probes</b>，查询时探测几个桶。是<b>召回率 vs 速度</b>的核心旋钮：nprobe 越大越准越慢。</dd>
+  <dt>posting list</dt>
+  <dd>每个桶对应的<b>向量 ID 列表</b>（存的是编码后的 PQ 码字，不是原向量）。</dd>
+  <dt>IVFADC</dt>
+  <dd>IVF + Asymmetric Distance Computation，即 IVF-PQ 的完整名字。</dd>
+</dl>
+</details>
+
+<div class="new-user-tip">
+<b>新手引导 · 建议按顺序体验：</b>
+<ol style="margin:6px 0 0 20px">
+  <li>先看主图的 <b>Voronoi 分区着色</b>：不同色块 = 不同粗中心 μ 的势力范围。</li>
+  <li>拉动 <b>nprobe 从 1 到 8</b>，观察被"高亮"（不透明）的桶数量变化，以及 <b>召回率</b>和<b>扫描比例</b>指标变化。</li>
+  <li>拉动 <b>nlist 从 4 到 48</b>，观察 Voronoi 单元变多变小，桶大小直方图更细。</li>
+  <li>点击画布任意位置换查询点，或拉动 <b>N（数据点数）</b>看不同规模下召回稳定性。</li>
+</ol>
+</div>
+
+<h2>一、直观理解</h2>
+<div class="card blue">
+<h3>类比：图书馆分区找书</h3>
+<p>假设你在一个 100 万本书的图书馆找一本相似题材的书：</p>
+<ul>
+  <li><b>暴力搜</b>：把每本书翻一遍 → 太慢</li>
+  <li><b>IVF (Inverted File 倒排文件)</b>：先根据"题材"分成 1000 个书架 (Voronoi 单元)，你只去<b>最相关的 8 个书架</b>找 (nprobe=8)。</li>
+  <li>每个书架里书还是很多 → 每本书用 <b>PQ 编码</b>压缩到 8 字节，然后用 LUT 快速比距离。</li>
+</ul>
+<p>IVF 负责<b>剪枝</b>，PQ 负责<b>精细压缩+快速距离</b>，两者组合覆盖"大范围粗过滤 + 局部精排"两个层次。</p>
+<p><b>关于 Voronoi 单元：</b>= 每个粗中心 μ 的势力范围，平面上任意点属于离它最近的那个中心。想象一张地图分成 1000 个区域，每个区域有一个"首都" μ，每本书自动归属离它最近的首都。</p>
+</div>
+
+<div class="card green">
+<h3>为什么 IVF 和 PQ 是绝配？</h3>
+<ul>
+  <li>纯 PQ：即使查询快，仍要扫描全部 N 条编码 → O(N) 加法。N=10⁹ 时 10 亿次加法太慢。</li>
+  <li>纯 IVF：内存里塞不下 10⁹ 个 float32 向量。</li>
+  <li>IVF-PQ：内存只存 <b>N × M 字节 PQ 码</b> (10 亿×8B = 8GB)，查询只扫 <b>nprobe/nlist</b> 部分向量 (比如 1/128) → 8000 万条 * 8 次加法 ≈ 微秒-毫秒级。</li>
+</ul>
+</div>
+
+<h2>二、算法原理</h2>
+
+<h3>符号速查表</h3>
+<table class="symbol-table">
+  <tr><th>符号</th><th>含义</th><th>典型取值</th></tr>
+  <tr><td>D</td><td>向量维度</td><td>128</td></tr>
+  <tr><td>N</td><td>数据库向量数</td><td>10<sup>6</sup>（本页基线）/ 10<sup>9</sup></td></tr>
+  <tr><td>nlist</td><td>粗中心数（桶数，number of inverted lists）</td><td>√N ~ 8√N → 1024 / 4096</td></tr>
+  <tr><td>nprobe</td><td>查询探测桶数（number of probes）</td><td>nlist 的 1%~10%</td></tr>
+  <tr><td>μ<sub>j</sub></td><td>第 j 个粗中心 (coarse centroid)</td><td>D 维</td></tr>
+  <tr><td>b(x)</td><td>x 归属的桶编号 = argmin<sub>j</sub> ‖x − μ<sub>j</sub>‖</td><td>0 ~ nlist−1</td></tr>
+  <tr><td>r = x − μ<sub>b(x)</sub></td><td>残差 (residual)，同桶内更集中</td><td>D 维</td></tr>
+  <tr><td>M, K</td><td>PQ 段数、每段码本大小</td><td>M=8/16, K=256</td></tr>
+</table>
+
+<p><b>本页统一基线：</b>下文分析以 <code>D=128, N=100 万</code> 为例；节末讨论亿级扩展。</p>
+
+<h3>2.1 两级结构</h3>
+<div class="card">
+<b>粗量化 (IVF)：</b>对训练集做 K-Means 得到 <code>nlist</code> 个粗中心 <b>{μ<sub>1</sub>, ..., μ<sub>nlist</sub>}</b>。每个中心 μ<sub>i</sub> 对应一个"桶" (posting list)。<br>
+<b>残差 PQ：</b>对每个向量 x，先找最近粗中心 μ<sub>i</sub>，计算<b>残差</b> r = x − μ<sub>i</sub>，再对残差做 PQ 编码。<br>
+<b>为什么用残差而不是原向量？</b>因为同一桶内向量的残差分布更集中、方差更小，量化误差显著降低。
+</div>
+
+<div class="intuition-box">
+<h4>直觉：残差为什么能降误差？</h4>
+<p>把"整本书的绝对坐标"换成"这本书在书架里的相对偏移量"。</p>
+<ul style="margin:4px 0">
+  <li><b>原向量 x</b>：分布覆盖整个空间，方差大 → PQ 一次要覆盖所有区域，K=256 中心分散到很稀。</li>
+  <li><b>残差 r = x − μ</b>：以桶中心为原点，同一书架里的书偏移量普遍很小、集中在原点附近，方差小几倍。</li>
+</ul>
+<p style="margin-bottom:0">同样是 K=256 的 PQ 码本，训练残差比训练原向量，<b>每个中心能覆盖更精细的区域</b>，误差往往降到 1/2~1/3。</p>
+</div>
+
+<h3>2.2 索引构建流程</h3>
+<pre><code>def build_ivfpq(X, nlist, M, K_pq):
+    # 1) 粗聚类 K-Means (常用: nlist = √N)
+    coarse_centers = kmeans(X, nlist)
+    # 2) 分桶 + 残差
+    residuals = []
+    postings = defaultdict(list)      # bucket_id -> [(xid, code)]
+    for i, x in enumerate(X):
+        b = argmin_j ||x - coarse_centers[j]||
+        r = x - coarse_centers[b]
+        residuals.append(r)
+        # 记 bucket, 稍后编码
+    # 3) 用所有残差训练 PQ (共享码本)
+    pq_codebooks = train_pq(np.array(residuals), M, K_pq)
+    # 4) 编码残差
+    for i, x in enumerate(X):
+        b = argmin_j ||x - coarse_centers[j]||
+        r = x - coarse_centers[b]
+        code = pq_encode(r, pq_codebooks)
+        postings[b].append((i, code))
+    return coarse_centers, pq_codebooks, postings</code></pre>
+
+<h3>2.3 查询流程 (IVFADC = IVF + Asymmetric Distance)</h3>
+<pre><code>def search(y, nprobe, topk):
+    # 1) 找 y 最近的 nprobe 个粗中心
+    coarse_dists = [(j, ||y - coarse_centers[j]||^2) for j in range(nlist)]
+    coarse_dists.sort(key=lambda t: t[1])
+    probe_buckets = [j for j, _ in coarse_dists[:nprobe]]
+
+    # 2) 每个 probe 桶单独算 LUT
+    candidates = []
+    for j in probe_buckets:
+        r_query = y - coarse_centers[j]         # 桶内比较用残差
+        LUT = precompute_lut(r_query, pq_codebooks)   # (M, K)
+        for xid, code in postings[j]:
+            d_approx = sum(LUT[m, code[m]] for m in range(M))
+            candidates.append((xid, d_approx))
+    # 3) 取 top-k
+    return heapq.nsmallest(topk, candidates, key=lambda t: t[1])</code></pre>
+
+<h3>2.4 参数与内存分析</h3>
+<p>先看统一基线 D=128, N=10<sup>6</sup>：</p>
+<ul>
+  <li><b>暴力 float32</b>：128 × 4 × 10<sup>6</sup> = <b>512 MB</b>，扫描 10<sup>6</sup> 条。</li>
+  <li><b>IVF-PQ (nlist=1024, nprobe=16, M=8, K=256)</b>：粗中心 1024×128×4B = 512KB + PQ 码 10<sup>6</sup>×8B = <b>8 MB</b>；每次扫描 ≈ 10<sup>6</sup> × 16 / 1024 ≈ 16000 条。</li>
+</ul>
+<p>再看亿级扩展 D=128, N=10<sup>9</sup>：</p>
+<ul>
+  <li><b>nlist</b> = 4096 (≈ √N 的一半到全值)：粗中心存储 4096 × 128 × 4B = 2 MB</li>
+  <li><b>nprobe</b> = 32：每次查询遍历 N × nprobe/nlist ≈ 8 × 10⁶ 条编码</li>
+  <li><b>PQ M=16, K=256</b>：每条 16 字节，总计 16 GB</li>
+  <li><b>加速比</b>相比暴力 float32 (128×4×N = 512 GB, 全扫)：内存 32×、扫描 128×</li>
+</ul>
+
+<h3>2.5 关键公式</h3>
+<div class="formula">
+  近似距离 (residual-based, IVFADC):
+  d̂(y, x)² = ‖y − (μ<sub>b(x)</sub> + q(x − μ<sub>b(x)</sub>))‖²
+</div>
+<p>展开可得 (y' = y − μ<sub>b</sub>, r = x − μ<sub>b</sub>, q(r) 为 PQ 重构):</p>
+<div class="formula">
+  d̂² = ‖y' − q(r)‖² = Σ<sub>m</sub> ‖y'<sub>m</sub> − c<sub>m,q<sub>m</sub>(r)</sub>‖²
+</div>
+<p>关键：<b>y 对每个 probe 桶重新算残差和 LUT</b>。所以 <code>nprobe</code> 越大，LUT 计算越多，但候选也越多、召回越高。</p>
+
+<h2>三、交互式演示 · 2D IVF-PQ</h2>
+
+<div class="card">
+<p>下方展示 2D 数据的 IVF 分区 (Voronoi 图)，查询时只对 <code>nprobe</code> 个候选桶做 PQ 精排。可看到：nprobe 越大，扫描区域越广，召回越高，但速度越慢。</p>
+
+<div class="controls">
+  <div class="control">
+    <label>nlist · 粗中心数 <span class="val" id="ivf-nlist-val">16</span></label>
+    <input type="range" id="ivf-nlist" min="4" max="48" step="1" value="16">
+  </div>
+  <div class="control">
+    <label>nprobe · 探测桶数 <span class="val" id="ivf-nprobe-val">3</span></label>
+    <input type="range" id="ivf-nprobe" min="1" max="16" step="1" value="3">
+  </div>
+  <div class="control">
+    <label>PQ M · 段数 <span class="val" id="ivf-M-val">2</span></label>
+    <input type="range" id="ivf-M" min="1" max="2" step="1" value="2">
+    <small style="color:var(--muted)">2D 数据最多 M=2 段</small>
+  </div>
+  <div class="control">
+    <label>PQ K · 每段簇数 <span class="val" id="ivf-K-val">4</span></label>
+    <input type="range" id="ivf-K" min="2" max="12" step="1" value="4">
+  </div>
+  <div class="control">
+    <label>topk 返回数 <span class="val" id="ivf-topk-val">10</span></label>
+    <input type="range" id="ivf-topk" min="1" max="30" step="1" value="10">
+  </div>
+  <div class="control">
+    <label>N · 数据点 <span class="val" id="ivf-N-val">800</span></label>
+    <input type="range" id="ivf-N" min="200" max="3000" step="100" value="800">
+  </div>
+</div>
+
+<div class="btn-row">
+  <button class="btn" id="ivf-btn-regen">重新采样</button>
+  <button class="btn secondary" id="ivf-btn-newquery">新查询点</button>
+  <button class="btn warn" id="ivf-btn-toggle-recall">显示暴力真值对比</button>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><span class="legend-dot" style="background:#94a3b8"></span>数据点</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#dc2626"></span>粗中心 μ</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#a3e635"></span>被探测桶 (nprobe)</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#4f46e5"></span>查询点 y</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>IVF-PQ 返回 top-k</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#059669"></span>暴力真实 top-k</div>
+</div>
+
+<div class="viz-container">
+  <div class="viz-block">
+    <h4>IVF Voronoi + PQ 精排</h4>
+    <canvas id="ivf-canvas-main" width="700" height="520"></canvas>
+    <div class="metric-row">
+      <div class="metric"><span style="color:var(--muted)">候选桶</span><b id="ivf-metric-buckets">-</b></div>
+      <div class="metric"><span style="color:var(--muted)">候选点数</span><b id="ivf-metric-cand">-</b></div>
+      <div class="metric"><span style="color:var(--muted)">召回率 @topk</span><b id="ivf-metric-recall">-</b></div>
+      <div class="metric"><span style="color:var(--muted)">扫描比例</span><b id="ivf-metric-scan">-</b></div>
+    </div>
+  </div>
+</div>
+
+<h3>桶大小分布 (Posting Lists)</h3>
+<div class="viz-block" style="width:100%">
+  <canvas id="ivf-canvas-hist" width="1000" height="150"></canvas>
+</div>
+
+<h3>案例逐步讲解</h3>
+<div class="btn-row">
+  <button class="btn secondary" id="ivf-btn-prev">上一步</button>
+  <button class="btn" id="ivf-btn-next">下一步 →</button>
+  <button class="btn secondary" id="ivf-btn-reset">重置</button>
+</div>
+<div class="step-box" id="ivf-step-box">点击"下一步"开始 IVF-PQ 查询流程演示。</div>
+</div>
+
+<h2>四、参数选择经验</h2>
+<div class="card">
+<table>
+  <tr><th>参数</th><th>建议</th><th>调整方向</th></tr>
+  <tr><td>nlist</td><td>√N ~ 8√N (10⁶ 数据 → 1024~4096)</td><td>大: 精 (桶变小) 但训练慢；小: 快但召回差</td></tr>
+  <tr><td>nprobe</td><td>1% ~ 10% 的 nlist</td><td>大: 高召回但慢；线性权衡</td></tr>
+  <tr><td>M</td><td>4 / 8 / 16</td><td>大: 精但字节多</td></tr>
+  <tr><td>K (PQ)</td><td>256 (正好 1 字节)</td><td>不常改</td></tr>
+</table>
+<p style="margin-top:8px;color:var(--muted)">经验：召回率 90% 时通常 nprobe/nlist ≈ 1%~5%；追求 99% 时可能要 10%。</p>
+</div>
+
+<h2>五、优缺点 & 适用场景</h2>
+<div class="pros-cons">
+  <div>
+    <h3 style="color:var(--accent)">优点</h3>
+    <ul class="pros">
+      <li>亿级向量的最强量化方案之一 (低内存 + 快)</li>
+      <li>参数可调，召回-延迟折衷灵活</li>
+      <li>支持 GPU 批量加速 (Faiss GPU)</li>
+      <li>可叠加 OPQ (IVF-OPQ-PQ), HNSW (作为 quantizer)</li>
+    </ul>
+  </div>
+  <div>
+    <h3 style="color:var(--danger)">缺点</h3>
+    <ul class="cons">
+      <li>需训练两次聚类 (IVF + PQ)</li>
+      <li>桶分布不均时长尾桶变慢</li>
+      <li>不支持增量更新友好 (新数据只能追加)</li>
+      <li>召回上限低于图索引 (HNSW)</li>
+    </ul>
+  </div>
+</div>
+<div class="card yellow">
+<b>工业实践：</b>Faiss <code>IndexIVFPQ</code>, Milvus <code>IVF_PQ</code>, ElasticSearch <code>ivfpq</code>。搭配 GPU 时 QPS 可达 10 万+/秒 (10 亿库)。
+</div>
+
+<div class="pitfall">
+<h4>常见误区</h4>
+<ul style="margin:0;padding-left:20px">
+  <li><b>nlist 太大 → 每个桶变小、召回崩塌</b>：每桶只有几十个点时，nprobe 需要开很大（20%+）才能维持召回，反而失去 IVF 剪枝的意义。经验：每个桶至少 100~1000 个点。</li>
+  <li><b>nprobe 太小召回低，太大速度慢</b>：这是<b>速度-召回率的核心旋钮</b>。生产上先固定召回目标（如 95%），二分找最小 nprobe。</li>
+  <li><b>桶分布不均衡（幂律分布）</b>：K-Means 对不均衡数据敏感，可能出现少数超大桶。<b>桶大小直方图必看</b>——如果最大桶 / 最小桶 > 100，需要考虑重训练或加正则化。</li>
+  <li><b>训练数据必须有代表性</b>：训练集分布偏离在线数据时，粗中心 μ 落在错误位置，召回直接掉。经验：训练集至少 30 × nlist 条，且从线上真实数据抽样。</li>
+</ul>
+</div>
+
+<div class="next-steps">
+<b>下一步学什么？</b>
+<ul style="margin:6px 0 0 20px">
+  <li>IVF 粗中心太多、粗查询本身也慢 → <a href="../4-graph/hnsw.html">HNSW</a> 或 <b>IVF-HNSW</b>（用 HNSW 加速 IVF 的最近粗中心查找）。</li>
+  <li>PQ 部分误差偏大 → 叠加 <a href="opq.html">OPQ</a> 变成 <b>IVF-OPQ-PQ</b>，Faiss 中即 <code>OPQMatrix + IndexIVFPQ</code>。</li>
+  <li>更前沿：<b>ScaNN</b>（各向异性量化）、<b>DiskANN</b>（大内存驻留 + SSD 精排）。</li>
+</ul>
+</div>
+
+</div>
+
+<script>
+/* ================== 工具 ================== */
+function randn() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function sampleGMM(n) {
+  const clusters = [];
+  const nCl = 8;
+  for (let i = 0; i < nCl; i++) {
+    clusters.push({
+      cx: 0.15 + 0.7 * Math.random(),
+      cy: 0.15 + 0.7 * Math.random(),
+      s: 0.04 + 0.06 * Math.random()
+    });
+  }
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const c = clusters[Math.floor(Math.random() * clusters.length)];
+    const x = Math.min(0.98, Math.max(0.02, c.cx + randn() * c.s));
+    const y = Math.min(0.98, Math.max(0.02, c.cy + randn() * c.s));
+    pts.push([x, y]);
+  }
+  return pts;
+}
+function kmeans2D(data, K, iter) {
+  let centers = [];
+  const shuf = data.slice().sort(() => Math.random() - 0.5);
+  for (let k = 0; k < K; k++) centers.push([shuf[k][0], shuf[k][1]]);
+  for (let it = 0; it < iter; it++) {
+    const s = Array.from({ length: K }, () => [0, 0]);
+    const c = new Array(K).fill(0);
+    for (const [x, y] of data) {
+      let bk = 0, bd = Infinity;
+      for (let k = 0; k < K; k++) {
+        const dx = x - centers[k][0], dy = y - centers[k][1];
+        const d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; bk = k; }
+      }
+      s[bk][0] += x; s[bk][1] += y; c[bk]++;
+    }
+    for (let k = 0; k < K; k++) {
+      if (c[k] > 0) {
+        centers[k][0] = s[k][0] / c[k];
+        centers[k][1] = s[k][1] / c[k];
+      }
+    }
+  }
+  return centers;
+}
+function kmeans1D(vals, K, iter) {
+  if (vals.length === 0) return new Array(K).fill(0);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  let centers = [];
+  for (let k = 0; k < K; k++) centers.push(min + (max - min) * (k + 0.5) / K);
+  for (let it = 0; it < iter; it++) {
+    const s = new Array(K).fill(0), c = new Array(K).fill(0);
+    for (const v of vals) {
+      let bk = 0, bd = Infinity;
+      for (let k = 0; k < K; k++) {
+        const d = Math.abs(v - centers[k]);
+        if (d < bd) { bd = d; bk = k; }
+      }
+      s[bk] += v; c[bk]++;
+    }
+    for (let k = 0; k < K; k++) if (c[k] > 0) centers[k] = s[k] / c[k];
+  }
+  centers.sort((a, b) => a - b);
+  return centers;
+}
+function argminIdx1D(centers, v) {
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < centers.length; i++) {
+    const d = Math.abs(centers[i] - v);
+    if (d < bd) { bd = d; bi = i; }
+  }
+  return bi;
+}
+function argmin2DIdx(centers, x, y) {
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < centers.length; i++) {
+    const dx = centers[i][0] - x, dy = centers[i][1] - y;
+    const d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; bi = i; }
+  }
+  return bi;
+}
+function heapTopK(arr, k) {
+  const s = arr.slice().sort((a, b) => a[1] - b[1]);
+  return s.slice(0, k);
+}
+
+/* ================== 状态 ================== */
+const S = {
+  N: 800, nlist: 16, nprobe: 3, M: 2, K: 4, topk: 10,
+  points: [], coarseCenters: [],
+  bucketOf: [],   // 每个点所属桶
+  residuals: [],
+  pqCentersX: [], pqCentersY: [],  // 用残差数据训练的 PQ 码本
+  codes: [],
+  query: [0.5, 0.5],
+  showRecall: true,
+  step: 0
+};
+
+const cvMain = document.getElementById('ivf-canvas-main');
+const cvHist = document.getElementById('ivf-canvas-hist');
+
+/* Voronoi 绘制 - 简单点栅格法 */
+function drawVoronoi(ctx, centers, W, H, probeBuckets) {
+  const cell = 4;   // 步长, 越小越精
+  const probeSet = new Set(probeBuckets);
+  for (let x = 0; x < W; x += cell) {
+    for (let y = 0; y < H; y += cell) {
+      const nx = x / W, ny = 1 - y / H;
+      const k = argmin2DIdx(centers, nx, ny);
+      const isProbe = probeSet.has(k);
+      const hue = (k * 41) % 360;
+      ctx.fillStyle = isProbe
+        ? `hsla(${hue}, 70%, 60%, 0.28)`
+        : `hsla(${hue}, 25%, 92%, 0.55)`;
+      ctx.fillRect(x, y, cell, cell);
+    }
+  }
+  // 画边界 (可选): 相邻栅格 k 不同时描边
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1;
+}
+
+/* ================== 索引 ================== */
+function buildIndex() {
+  // 1) 粗聚类
+  S.coarseCenters = kmeans2D(S.points, S.nlist, 15);
+  // 2) 分桶 + 残差
+  S.bucketOf = [];
+  S.residuals = [];
+  for (const [x, y] of S.points) {
+    const b = argmin2DIdx(S.coarseCenters, x, y);
+    S.bucketOf.push(b);
+    S.residuals.push([x - S.coarseCenters[b][0], y - S.coarseCenters[b][1]]);
+  }
+  // 3) 训练 PQ (在残差上)
+  const rx = S.residuals.map(r => r[0]);
+  const ry = S.residuals.map(r => r[1]);
+  if (S.M === 2) {
+    S.pqCentersX = kmeans1D(rx, S.K, 15);
+    S.pqCentersY = kmeans1D(ry, S.K, 15);
+  } else {
+    S.pqCentersX = kmeans1D(rx.concat(ry), S.K, 15);
+    S.pqCentersY = S.pqCentersX;
+  }
+  // 4) 编码
+  S.codes = S.residuals.map(r => {
+    if (S.M === 2) return [argminIdx1D(S.pqCentersX, r[0]), argminIdx1D(S.pqCentersY, r[1])];
+    // M=1: 用最近 2D 中心，这里简化为把 (rx,ry) 都投到 1D
+    return [argminIdx1D(S.pqCentersX, Math.sqrt(r[0]*r[0]+r[1]*r[1]))];
+  });
+}
+
+/* ================== 查询 ================== */
+function search() {
+  const [qx, qy] = S.query;
+  // 1) 粗中心排序找 nprobe
+  const coarseDists = S.coarseCenters.map((c, i) => {
+    const dx = c[0] - qx, dy = c[1] - qy;
+    return [i, dx * dx + dy * dy];
+  });
+  coarseDists.sort((a, b) => a[1] - b[1]);
+  const probeBuckets = coarseDists.slice(0, S.nprobe).map(t => t[0]);
+  const probeSet = new Set(probeBuckets);
+  // 2) 对每个桶算残差 LUT
+  const cand = [];
+  for (const b of probeBuckets) {
+    const rx = qx - S.coarseCenters[b][0];
+    const ry = qy - S.coarseCenters[b][1];
+    // LUT
+    const lutX = S.pqCentersX.map(c => (rx - c) ** 2);
+    const lutY = S.pqCentersY.map(c => (ry - c) ** 2);
+    for (let i = 0; i < S.points.length; i++) {
+      if (S.bucketOf[i] !== b) continue;
+      const code = S.codes[i];
+      const d = (S.M === 2) ? (lutX[code[0]] + lutY[code[1]]) : lutX[code[0]];
+      cand.push([i, d]);
+    }
+  }
+  const topk = heapTopK(cand, S.topk);
+  // 3) 暴力真值
+  const brute = S.points.map((p, i) => {
+    const dx = p[0] - qx, dy = p[1] - qy;
+    return [i, dx * dx + dy * dy];
+  });
+  const bruteTopk = heapTopK(brute, S.topk);
+  const recallSet = new Set(bruteTopk.map(t => t[0]));
+  const hits = topk.filter(t => recallSet.has(t[0])).length;
+  const recall = topk.length > 0 ? hits / bruteTopk.length : 0;
+  return { probeBuckets, probeSet, cand, topk, bruteTopk, recall };
+}
+
+/* ================== 绘制 ================== */
+function render() {
+  const ctx = cvMain.getContext('2d');
+  const W = cvMain.width, H = cvMain.height;
+  ctx.clearRect(0, 0, W, H);
+  const result = search();
+  // Voronoi 底色
+  drawVoronoi(ctx, S.coarseCenters, W, H, result.probeBuckets);
+  // 数据点
+  for (let i = 0; i < S.points.length; i++) {
+    const [x, y] = S.points[i];
+    const b = S.bucketOf[i];
+    const inProbe = result.probeSet.has(b);
+    ctx.fillStyle = inProbe ? '#334155' : '#94a3b8';
+    ctx.beginPath();
+    ctx.arc(x * W, (1 - y) * H, inProbe ? 2.5 : 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 粗中心
+  for (let i = 0; i < S.coarseCenters.length; i++) {
+    const [cx, cy] = S.coarseCenters[i];
+    ctx.fillStyle = '#dc2626';
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx * W, (1 - cy) * H, 6, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#7f1d1d';
+    ctx.font = '10px monospace';
+    ctx.fillText('μ' + i, cx * W + 8, (1 - cy) * H - 8);
+  }
+  // 暴力真值 top-k (绿圈)
+  if (S.showRecall) {
+    for (const [i, _] of result.bruteTopk) {
+      const [x, y] = S.points[i];
+      ctx.strokeStyle = '#059669';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x * W, (1 - y) * H, 6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  // IVF-PQ 返回的 top-k (橘色实心)
+  for (const [i, _] of result.topk) {
+    const [x, y] = S.points[i];
+    ctx.fillStyle = '#f59e0b';
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x * W, (1 - y) * H, 4.5, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+  }
+  // 查询点
+  const [qx, qy] = S.query;
+  ctx.fillStyle = '#4f46e5';
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(qx * W, (1 - qy) * H, 8, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+
+  // 指标
+  document.getElementById('ivf-metric-buckets').textContent = `${result.probeBuckets.length}/${S.nlist}`;
+  document.getElementById('ivf-metric-cand').textContent = result.cand.length;
+  document.getElementById('ivf-metric-recall').textContent = (result.recall * 100).toFixed(1) + '%';
+  document.getElementById('ivf-metric-scan').textContent = ((result.cand.length / S.points.length) * 100).toFixed(1) + '%';
+
+  drawHist();
+}
+
+function drawHist() {
+  const ctx = cvHist.getContext('2d');
+  const W = cvHist.width, H = cvHist.height;
+  ctx.clearRect(0, 0, W, H);
+  const counts = new Array(S.nlist).fill(0);
+  for (const b of S.bucketOf) counts[b]++;
+  const mx = Math.max(...counts);
+  const bw = (W - 40) / S.nlist;
+  ctx.strokeStyle = '#e5e7eb';
+  ctx.beginPath();
+  ctx.moveTo(30, H - 20); ctx.lineTo(W - 10, H - 20); ctx.stroke();
+  for (let i = 0; i < S.nlist; i++) {
+    const h = (counts[i] / mx) * (H - 40);
+    const hue = (i * 41) % 360;
+    ctx.fillStyle = `hsl(${hue}, 60%, 55%)`;
+    ctx.fillRect(30 + i * bw + 1, H - 20 - h, bw - 2, h);
+  }
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '11px sans-serif';
+  ctx.fillText(`桶数 = ${S.nlist} | 最大桶 = ${mx} | 最小桶 = ${Math.min(...counts)}`, 30, 15);
+}
+
+/* ================== 事件 ================== */
+function fullRebuild() {
+  buildIndex();
+  render();
+}
+function resample() {
+  S.points = sampleGMM(S.N);
+  fullRebuild();
+}
+document.getElementById('ivf-nlist').addEventListener('input', e => {
+  S.nlist = parseInt(e.target.value);
+  document.getElementById('ivf-nlist-val').textContent = S.nlist;
+  fullRebuild();
+});
+document.getElementById('ivf-nprobe').addEventListener('input', e => {
+  S.nprobe = parseInt(e.target.value);
+  document.getElementById('ivf-nprobe-val').textContent = S.nprobe;
+  render();
+});
+document.getElementById('ivf-M').addEventListener('input', e => {
+  S.M = parseInt(e.target.value);
+  document.getElementById('ivf-M-val').textContent = S.M;
+  fullRebuild();
+});
+document.getElementById('ivf-K').addEventListener('input', e => {
+  S.K = parseInt(e.target.value);
+  document.getElementById('ivf-K-val').textContent = S.K;
+  fullRebuild();
+});
+document.getElementById('ivf-topk').addEventListener('input', e => {
+  S.topk = parseInt(e.target.value);
+  document.getElementById('ivf-topk-val').textContent = S.topk;
+  render();
+});
+document.getElementById('ivf-N').addEventListener('input', e => {
+  S.N = parseInt(e.target.value);
+  document.getElementById('ivf-N-val').textContent = S.N;
+  resample();
+});
+document.getElementById('ivf-btn-regen').onclick = resample;
+document.getElementById('ivf-btn-newquery').onclick = () => {
+  S.query = [0.1 + Math.random() * 0.8, 0.1 + Math.random() * 0.8];
+  render();
+};
+document.getElementById('ivf-btn-toggle-recall').onclick = (e) => {
+  S.showRecall = !S.showRecall;
+  e.target.textContent = S.showRecall ? '隐藏暴力真值对比' : '显示暴力真值对比';
+  render();
+};
+cvMain.addEventListener('click', ev => {
+  const rect = cvMain.getBoundingClientRect();
+  S.query = [
+    (ev.clientX - rect.left) / cvMain.width,
+    1 - (ev.clientY - rect.top) / cvMain.height
+  ];
+  render();
+});
+
+/* ================== 分步 ================== */
+const stepBox = document.getElementById('ivf-step-box');
+const STEPS = [
+  { text: '<b>步骤 1</b>：训练阶段 · 对全库 K-Means 得到 <code>nlist</code> 个粗中心 μ (红色)。每个 μ 定义一个 Voronoi 单元 (彩色区域)。' },
+  { text: '<b>步骤 2</b>：每条向量 x 找到最近的 μ，加入对应桶 (posting list)。同时计算残差 r = x − μ。' },
+  { text: '<b>步骤 3</b>：用所有残差 r 一起训练 <b>共享 PQ 码本</b>。残差分布更集中 → K-Means 覆盖更好。' },
+  { text: '<b>步骤 4</b>：把每条 x 的残差 r 用 PQ 编码为 code = (k₁, ..., k_M)，存进它所在的桶。' },
+  { text: '<b>步骤 5</b>：查询到来 → y 与所有 μ 算距离，选最近的 <code>nprobe</code> 个桶 (被高亮成不透明色)。' },
+  { text: '<b>步骤 6</b>：对每个 probe 桶单独算 LUT：LUT[m][k] = (y − μ_b)_m 与 c_{m,k} 的距离²。<br>关键：<span class="hl">LUT 用 residual query</span>，每个桶都算一遍。' },
+  { text: '<b>步骤 7</b>：桶内每条编码用 LUT 累加 → 得到候选距离。' },
+  { text: '<b>步骤 8</b>：汇总所有 probe 桶的候选，取 top-k (橘色)。绿圈 = 暴力真值 top-k，重合度就是召回率。' },
+  { text: '<b>提示</b>：调大 nprobe → 更多绿圈被橘圈覆盖 → 召回率上升，但扫描比例变大。' }
+];
+function renderStep() { stepBox.innerHTML = STEPS[S.step].text; }
+document.getElementById('ivf-btn-next').onclick = () => { S.step = Math.min(STEPS.length - 1, S.step + 1); renderStep(); };
+document.getElementById('ivf-btn-prev').onclick = () => { S.step = Math.max(0, S.step - 1); renderStep(); };
+document.getElementById('ivf-btn-reset').onclick = () => { S.step = 0; renderStep(); };
+
+resample();
+renderStep();
+</script>
+
+</body>
+</html>

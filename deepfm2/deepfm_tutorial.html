@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeepFM 论文精读教程 | arXiv:1703.04247</title>
+  <style>
+    :root {
+      --ink: #17130f;
+      --muted: #695f55;
+      --paper: #f7efe1;
+      --paper-2: #fff9ec;
+      --line: #d9c7a5;
+      --brown: #7b451f;
+      --red: #b9322c;
+      --blue: #244c8a;
+      --green: #316c48;
+      --gold: #d69a2d;
+      --shadow: rgba(53, 34, 16, 0.18);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --serif: Georgia, "Times New Roman", "Noto Serif SC", "Songti SC", serif;
+      --sans: Avenir Next, "Gill Sans", "Noto Sans SC", "PingFang SC", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 10%, rgba(214,154,45,.20), transparent 26rem),
+        radial-gradient(circle at 92% 0%, rgba(36,76,138,.13), transparent 32rem),
+        linear-gradient(135deg, rgba(123,69,31,.08) 0 1px, transparent 1px 18px),
+        var(--paper);
+      font-family: var(--sans);
+      line-height: 1.72;
+    }
+
+    a { color: var(--blue); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+    code, pre { font-family: var(--mono); }
+    .page {
+      display: grid;
+      grid-template-columns: 17rem minmax(0, 1fr);
+      gap: 2rem;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 1.25rem;
+    }
+
+    .rail {
+      position: sticky;
+      top: 1.25rem;
+      align-self: start;
+      height: calc(100vh - 2.5rem);
+      padding: 1.25rem;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,249,236,.78);
+      box-shadow: 0 18px 55px var(--shadow);
+      backdrop-filter: blur(12px);
+      overflow: auto;
+    }
+    .rail .mark {
+      font-family: var(--serif);
+      font-weight: 800;
+      font-size: 1.55rem;
+      line-height: 1.1;
+      margin-bottom: .6rem;
+    }
+    .rail .meta { color: var(--muted); font-size: .88rem; }
+    .rail nav { display: grid; gap: .35rem; margin-top: 1.2rem; }
+    .rail a {
+      display: block;
+      padding: .48rem .65rem;
+      border-radius: 12px;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: .93rem;
+    }
+    .rail a:hover { background: #ecdcbc; color: var(--brown); }
+    .download {
+      margin-top: 1rem;
+      padding: .8rem;
+      border: 1px dashed var(--line);
+      border-radius: 16px;
+      color: var(--muted);
+      font-size: .88rem;
+      background: rgba(247,239,225,.7);
+    }
+
+    main { min-width: 0; }
+    .hero {
+      min-height: 86vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1.04fr) minmax(20rem, .96fr);
+      gap: 1.5rem;
+      align-items: stretch;
+      padding: 1.3rem 0 2.4rem;
+    }
+    .hero-card, .panel, section {
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: rgba(255,249,236,.84);
+      box-shadow: 0 22px 70px var(--shadow);
+    }
+    .hero-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: clamp(1.4rem, 4vw, 3.6rem);
+      overflow: hidden;
+      position: relative;
+    }
+    .hero-card:before {
+      content: "";
+      position: absolute;
+      width: 19rem; height: 19rem;
+      border: 1px solid rgba(185,50,44,.25);
+      border-radius: 50%;
+      right: -7rem; top: -7rem;
+    }
+    .kicker {
+      display: inline-flex;
+      gap: .5rem;
+      align-items: center;
+      width: fit-content;
+      padding: .35rem .75rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--brown);
+      background: rgba(236,220,188,.55);
+      font-size: .88rem;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+    h1, h2, h3 { font-family: var(--serif); line-height: 1.12; }
+    h1 {
+      margin: 1.3rem 0 1rem;
+      font-size: clamp(3rem, 8vw, 7.6rem);
+      letter-spacing: -.065em;
+    }
+    h2 {
+      margin: 0 0 1rem;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      letter-spacing: -.035em;
+    }
+    h3 { margin: 1.2rem 0 .5rem; font-size: 1.45rem; }
+    .subtitle {
+      max-width: 62ch;
+      color: var(--muted);
+      font-size: 1.15rem;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: .75rem;
+      margin-top: 2rem;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: .9rem;
+      background: rgba(247,239,225,.66);
+    }
+    .stat strong { display: block; font-size: 1.35rem; color: var(--red); }
+    .stat span { color: var(--muted); font-size: .86rem; }
+
+    .panel { padding: 1.3rem; overflow: hidden; }
+    .chalk {
+      min-height: 100%;
+      border-radius: 22px;
+      padding: 1.2rem;
+      color: #f6ead2;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.06), transparent 45%),
+        #17352a;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
+    }
+    .chalk-title { color: #ffd98e; font-family: var(--mono); font-size: .92rem; }
+    .formula {
+      margin: 1rem 0;
+      padding: 1rem;
+      border-radius: 16px;
+      background: rgba(0,0,0,.22);
+      font-family: var(--mono);
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .note {
+      border-left: 5px solid var(--gold);
+      padding: .85rem 1rem;
+      background: rgba(214,154,45,.12);
+      border-radius: 0 14px 14px 0;
+    }
+
+    section { margin: 1.2rem 0; padding: clamp(1.25rem, 3vw, 2.25rem); }
+    .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+    .card {
+      padding: 1.05rem;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(247,239,225,.62);
+    }
+    .card h3 { margin-top: 0; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .22rem .55rem;
+      border-radius: 999px;
+      background: #ead6aa;
+      color: var(--brown);
+      font-size: .78rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .danger { background: rgba(185,50,44,.1); border-color: rgba(185,50,44,.25); }
+    .success { background: rgba(49,108,72,.1); border-color: rgba(49,108,72,.24); }
+    .blue { background: rgba(36,76,138,.1); border-color: rgba(36,76,138,.24); }
+
+    .architecture {
+      position: relative;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: #fff5df;
+      overflow: hidden;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr .18fr 1fr .18fr 1fr;
+      gap: .65rem;
+      align-items: center;
+    }
+    .node {
+      min-height: 5rem;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: .85rem;
+      border: 2px solid var(--ink);
+      border-radius: 18px;
+      background: rgba(255,255,255,.65);
+      font-weight: 800;
+    }
+    .node small { display:block; color: var(--muted); font-weight: 500; }
+    .arrow { text-align: center; font-size: 2rem; color: var(--brown); }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .branch {
+      position: relative;
+      min-height: 18rem;
+      border: 2px solid var(--ink);
+      border-radius: 22px;
+      padding: 1rem;
+      background: rgba(255,255,255,.62);
+    }
+    .branch.fm { border-color: var(--red); }
+    .branch.dnn { border-color: var(--blue); }
+    .branch-title { font-family: var(--serif); font-size: 1.5rem; font-weight: 800; }
+    .mini-layer { margin: .7rem 0; padding: .62rem; border-radius: 12px; background: rgba(247,239,225,.9); border: 1px solid var(--line); }
+
+    .figure-caption {
+      margin: .65rem 0 0;
+      color: var(--muted);
+      font-size: .92rem;
+    }
+    .deepfm-map {
+      margin: 1.1rem 0;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      background:
+        radial-gradient(circle at 9% 20%, rgba(185,50,44,.12), transparent 18rem),
+        radial-gradient(circle at 91% 20%, rgba(36,76,138,.12), transparent 18rem),
+        #fff5df;
+      overflow-x: auto;
+    }
+    .deepfm-map svg {
+      display: block;
+      width: 100%;
+      min-width: 1040px;
+      height: auto;
+      font-family: var(--sans);
+    }
+    .svg-title { font: 800 22px var(--serif); fill: var(--ink); }
+    .svg-small { font: 500 14px var(--sans); fill: #6b5d50; }
+    .svg-tiny { font: 700 12px var(--mono); fill: #6b5d50; }
+    .svg-label { font: 900 13px var(--mono); letter-spacing: .04em; fill: #fff9ec; }
+    .svg-box { fill: rgba(255,249,236,.96); stroke: #17130f; stroke-width: 2; }
+    .svg-box-red { stroke: var(--red); }
+    .svg-box-blue { stroke: var(--blue); }
+    .svg-box-green { stroke: var(--green); }
+    .svg-chip-red { fill: var(--red); }
+    .svg-chip-blue { fill: var(--blue); }
+    .svg-chip-green { fill: var(--green); }
+    .svg-chip-brown { fill: var(--brown); }
+    .svg-band { fill: rgba(255,255,255,.48); stroke: rgba(216,195,157,.9); stroke-width: 1.4; }
+    .svg-arrow-red { stroke: var(--red); }
+    .svg-arrow-blue { stroke: var(--blue); }
+    .svg-arrow-brown { stroke: var(--brown); }
+    .svg-formula { font: 800 15px var(--mono); fill: var(--ink); }
+    .svg-note { font: 700 13px var(--sans); fill: #4d4135; }
+    .stack-row {
+      padding: .45rem .55rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,.58);
+      font-family: var(--mono);
+      font-size: .83rem;
+    }
+    .embedding-board {
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .field-table {
+      display: grid;
+      gap: .55rem;
+    }
+    .field-row {
+      display: grid;
+      grid-template-columns: 8rem 1fr 8rem;
+      gap: .55rem;
+      align-items: center;
+      padding: .55rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,.56);
+    }
+    .onehot {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: .18rem;
+    }
+    .bit {
+      height: 1.1rem;
+      border-radius: 4px;
+      background: #e7d4ad;
+      border: 1px solid rgba(123,69,31,.18);
+    }
+    .bit.on { background: var(--red); }
+    .vec {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: .22rem;
+    }
+    .vec span {
+      height: 1.35rem;
+      border-radius: 5px;
+      background: linear-gradient(180deg, rgba(36,76,138,.85), rgba(36,76,138,.32));
+    }
+    .equation-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .eq-card {
+      padding: 1rem;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(247,239,225,.66);
+    }
+    .eq-card .formula { margin: .7rem 0; white-space: normal; color:#f4ecd8; background:#1e1812; }
+    .pipeline-steps {
+      counter-reset: step;
+      display: grid;
+      gap: .75rem;
+      margin-top: 1rem;
+    }
+    .pipeline-step {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 2.6rem 1fr;
+      gap: .8rem;
+      align-items: start;
+      padding: .85rem;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,249,236,.7);
+    }
+    .pipeline-step:before {
+      content: counter(step);
+      display: grid;
+      place-items: center;
+      width: 2.2rem;
+      height: 2.2rem;
+      border-radius: 50%;
+      color: white;
+      background: var(--brown);
+      font-weight: 900;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; overflow: hidden; border-radius: 16px; }
+    th, td { padding: .72rem .8rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #ead6aa; color: var(--brown); font-weight: 900; }
+    tr:nth-child(even) td { background: rgba(247,239,225,.55); }
+    .win { font-weight: 900; color: var(--green); }
+
+    .tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0 1rem; }
+    .tab {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: .48rem .85rem;
+      background: #fff9ec;
+      color: var(--ink);
+      cursor: pointer;
+      font-weight: 800;
+    }
+    .tab[aria-selected="true"] { background: var(--ink); color: var(--paper-2); border-color: var(--ink); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .lab {
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+      gap: 1rem;
+    }
+    label { display: block; font-weight: 800; margin-top: .75rem; }
+    select, input[type="range"] { width: 100%; margin-top: .25rem; }
+    select {
+      padding: .65rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff9ec;
+      color: var(--ink);
+    }
+    .meter {
+      height: 1rem;
+      border-radius: 999px;
+      background: #e7d4ad;
+      overflow: hidden;
+      border: 1px solid var(--line);
+    }
+    .meter > div { height: 100%; width: 50%; background: linear-gradient(90deg, var(--gold), var(--red)); transition: width .3s ease; }
+    .chips { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .8rem; }
+    .chip { padding: .35rem .58rem; border-radius: 999px; border: 1px solid var(--line); background: #fff9ec; font-size: .86rem; }
+
+    pre {
+      margin: 1rem 0 0;
+      padding: 1rem;
+      overflow: auto;
+      color: #f4ecd8;
+      background: #1e1812;
+      border-radius: 18px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+      font-size: .88rem;
+      line-height: 1.55;
+    }
+    .callout {
+      display: grid;
+      grid-template-columns: 3.5rem 1fr;
+      gap: 1rem;
+      align-items: start;
+      padding: 1rem;
+      border-radius: 20px;
+      background: rgba(185,50,44,.09);
+      border: 1px solid rgba(185,50,44,.18);
+    }
+    .callout .icon {
+      display: grid;
+      place-items: center;
+      width: 3.5rem; height: 3.5rem;
+      border-radius: 50%;
+      color: white;
+      background: var(--red);
+      font-size: 1.4rem;
+      font-weight: 900;
+    }
+    footer { color: var(--muted); padding: 2rem 0 4rem; }
+
+    @media (max-width: 1020px) {
+      .page { grid-template-columns: 1fr; }
+      .rail { position: static; height: auto; }
+      .rail nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .hero { grid-template-columns: 1fr; min-height: auto; }
+    }
+    @media (max-width: 720px) {
+      .two, .three, .split, .lab, .flow, .embedding-board, .equation-grid { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); }
+      .hero-grid { grid-template-columns: 1fr; }
+      .rail nav { grid-template-columns: 1fr; }
+      .field-row { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <aside class="rail" aria-label="目录">
+      <div class="mark">DeepFM<br/>论文精读</div>
+      <div class="meta">arXiv:1703.04247 · Guo et al. · 2017</div>
+      <nav>
+        <a href="#overview">0. 论文一句话</a>
+        <a href="#ctr">1. CTR 问题</a>
+        <a href="#fm">2. FM 基础</a>
+        <a href="#deepfm">3. DeepFM 架构</a>
+        <a href="#relations">4. 与相关模型比较</a>
+        <a href="#experiments">5. 实验结果</a>
+        <a href="#hyper">6. 超参数结论</a>
+        <a href="#practice">7. 工程实现</a>
+        <a href="#lab">8. 交互理解</a>
+        <a href="#takeaways">9. 复盘</a>
+      </nav>
+      <div class="download">
+        已下载论文：<br/>
+        <a href="papers/1703.04247.pdf">papers/1703.04247.pdf</a><br/>
+        原文：<a href="https://arxiv.org/abs/1703.04247">arxiv.org/abs/1703.04247</a>
+      </div>
+    </aside>
+
+    <main>
+      <header class="hero" id="overview">
+        <div class="hero-card">
+          <div>
+            <div class="kicker">CTR Prediction · Feature Interaction · FM + DNN</div>
+            <h1>DeepFM</h1>
+            <p class="subtitle">
+              这篇论文的核心问题：在推荐和广告 CTR 预估中，既要记住低阶特征组合，也要自动发现高阶组合；DeepFM 用一个共享 embedding 的双塔结构，把 FM 和 DNN 端到端联合训练起来。
+            </p>
+          </div>
+          <div class="hero-grid" role="list" aria-label="论文要点">
+            <div class="stat" role="listitem"><strong>2 路</strong><span>FM 组件 + Deep 组件</span></div>
+            <div class="stat" role="listitem"><strong>共享</strong><span>同一份 raw input 与 embedding</span></div>
+            <div class="stat" role="listitem"><strong>无需</strong><span>FM 预训练与人工交叉特征</span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="chalk">
+            <div class="chalk-title">黑板版摘要</div>
+            <div class="formula">ŷ = sigmoid(y<sub>FM</sub> + y<sub>DNN</sub>)</div>
+            <p><b>y<sub>FM</sub></b> 学一阶和二阶交互：某个用户、某个广告、某个时间段本身是否重要，以及任意两个特征一起出现时的影响。</p>
+            <p><b>y<sub>DNN</sub></b> 学高阶交互：例如“男性 + 青少年 + 射击游戏 + 周末夜间”这类更复杂、非线性的组合。</p>
+            <div class="note">最关键的设计不是“FM + DNN”本身，而是：两者共享同一份特征 embedding，低阶和高阶学习会共同塑造同一套表示。</div>
+          </div>
+        </div>
+      </header>
+
+      <section id="ctr">
+        <h2>1. CTR 预估到底在学什么？</h2>
+        <div class="two">
+          <div class="card">
+            <span class="badge">目标</span>
+            <h3>估计点击概率</h3>
+            <p>训练数据由样本 <code>(χ, y)</code> 组成。<code>χ</code> 是一次曝光上下文，通常包含用户、物品、场景字段；<code>y ∈ {0,1}</code> 表示是否点击。模型输出 <code>ŷ ∈ (0,1)</code>，即预测 CTR。</p>
+            <p>推荐排序可直接按 CTR 排序；广告场景常用 <code>CTR × bid</code> 排序，因此 CTR 估计误差会直接影响收入。</p>
+          </div>
+          <div class="card danger">
+            <span class="badge">难点</span>
+            <h3>特征交互不是线性相加</h3>
+            <p>论文举了两个直观例子：用户在饭点更可能下载外卖应用，这是“应用类别 × 时间”的二阶交互；男性青少年更喜欢射击或 RPG 游戏，这是“应用类别 × 性别 × 年龄”的三阶交互。</p>
+            <p>很多交互无法靠专家枚举。字段多、稀疏、长尾时，人工交叉特征会漏掉大量有效模式。</p>
+          </div>
+        </div>
+        <div class="callout" style="margin-top:1rem">
+          <div class="icon">!</div>
+          <div>
+            <b>论文的出发点：</b>线性模型偏低阶且需要人工交叉；深度模型擅长高阶但容易忽视低阶；Wide & Deep 能两者兼顾，但 wide 部分依赖人工特征工程。DeepFM 试图把这三类问题一起解决。
+          </div>
+        </div>
+      </section>
+
+      <section id="fm">
+        <h2>2. 先掌握 FM：用向量内积建模二阶交互</h2>
+        <p>Factorization Machine 对稀疏场景特别有效。先统一记号：<code>x∈R^d</code> 是所有 field 拼接后的稀疏特征向量，<code>i,j∈{1,...,d}</code> 都是 feature 维度编号；<code>w_i∈R</code> 是第 <code>i</code> 个 feature 的一阶权重，<code>V_i∈R^k</code> 是第 <code>i</code> 个 feature 的 latent vector / embedding。FM 不为每一对特征单独学习交叉权重，而是用 <code>&lt;V_i,V_j&gt;</code> 表示两者交互强度。</p>
+        <div class="formula" style="color:#f4ecd8;background:#1e1812;white-space:normal">
+          y<sub>FM</sub> = Σ<sub>i=1..d</sub> w<sub>i</sub>x<sub>i</sub> + Σ<sub>i=1..d</sub>Σ<sub>j=i+1..d</sub> &lt;V<sub>i</sub>, V<sub>j</sub>&gt; · x<sub>i</sub> · x<sub>j</sub>
+        </div>
+        <div class="three">
+          <div class="card">
+            <h3>一阶项 <code>Σ w_i x_i</code></h3>
+            <p>表示单个 feature 本身的影响，例如“这个 app 类别整体 CTR 高”“这个城市点击率低”。整体参数 <code>w</code> 的 shape 是 <code>[d]</code>。</p>
+          </div>
+          <div class="card">
+            <h3>二阶项 <code>&lt;V_i,V_j&gt;</code></h3>
+            <p>表示两个 feature 共同出现的影响，例如“饭点 × 外卖”。整体 embedding 表 <code>V</code> 的 shape 是 <code>[d,k]</code>，单个 <code>V_i</code> 的 shape 是 <code>[k]</code>。</p>
+          </div>
+          <div class="card success">
+            <h3>为什么适合稀疏数据</h3>
+            <p>即使某一对特征很少共同出现，只要单个特征在其他样本中出现过，它们的 embedding 就能被更新，交互权重可泛化。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="deepfm">
+        <h2>3. DeepFM 架构：共享 embedding 的 FM + DNN</h2>
+        <p>下面按论文 Figure 1-4 的逻辑重画：DeepFM 不是简单把两个模型投票平均，而是让 FM 分支与 DNN 分支共用同一份输入特征和同一张 embedding 表 <code>V∈R^{d×k}</code>，最后在 logit 层相加。</p>
+
+        <div class="deepfm-map" aria-label="DeepFM 分层数据流架构图">
+          <svg viewBox="0 0 1180 720" role="img" aria-labelledby="deepfmSvgTitle deepfmSvgDesc">
+            <title id="deepfmSvgTitle">DeepFM 分层数据流</title>
+            <desc id="deepfmSvgDesc">输入特征先进入共享参数层，然后分成 FM 低阶交互分支和 DNN 高阶交互分支，最后两个 logit 相加并经过 sigmoid 输出 CTR。</desc>
+            <defs>
+              <marker id="arrowBrown" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M2,2 L10,6 L2,10 Z" fill="#7b451f"/></marker>
+              <marker id="arrowRed" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M2,2 L10,6 L2,10 Z" fill="#b9322c"/></marker>
+              <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M2,2 L10,6 L2,10 Z" fill="#244c8a"/></marker>
+              <filter id="softShadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#352210" flood-opacity="0.12"/></filter>
+            </defs>
+
+            <rect x="20" y="20" width="1140" height="95" rx="22" class="svg-band"/>
+            <rect x="20" y="138" width="1140" height="150" rx="22" class="svg-band"/>
+            <rect x="20" y="315" width="545" height="250" rx="24" fill="rgba(185,50,44,.07)" stroke="rgba(185,50,44,.32)" stroke-width="2"/>
+            <rect x="615" y="315" width="545" height="250" rx="24" fill="rgba(36,76,138,.07)" stroke="rgba(36,76,138,.32)" stroke-width="2"/>
+            <rect x="20" y="590" width="1140" height="105" rx="22" class="svg-band"/>
+
+            <rect x="42" y="38" width="122" height="30" rx="15" class="svg-chip-brown"/><text x="63" y="58" class="svg-label">LAYER 0</text>
+            <text x="185" y="61" class="svg-title">Raw sparse input x</text>
+            <text x="185" y="88" class="svg-small">m 个 field 拼成 x∈R^d；i=1..d 是拼接后的 feature 维度编号，不是 field 编号。</text>
+            <rect x="760" y="43" width="110" height="42" rx="10" class="svg-box"/><text x="779" y="69" class="svg-tiny">field 1</text>
+            <rect x="884" y="43" width="110" height="42" rx="10" class="svg-box"/><text x="903" y="69" class="svg-tiny">field 2</text>
+            <rect x="1008" y="43" width="110" height="42" rx="10" class="svg-box"/><text x="1027" y="69" class="svg-tiny">field m</text>
+
+            <line x1="590" y1="116" x2="590" y2="138" class="svg-arrow-brown" stroke-width="3" marker-end="url(#arrowBrown)"/>
+
+            <rect x="42" y="157" width="122" height="30" rx="15" class="svg-chip-brown"/><text x="63" y="177" class="svg-label">LAYER 1</text>
+            <text x="185" y="180" class="svg-title">FM parameters + shared embedding input</text>
+            <text x="185" y="207" class="svg-small">w_i 是 FM 一阶参数；V_i 是 FM 二阶 latent vector，同时作为 DNN 的 embedding 输入。DNN 自身参数是 W,b。</text>
+            <rect x="70" y="226" width="295" height="44" rx="12" class="svg-box" filter="url(#softShadow)"/><text x="92" y="253" class="svg-formula">FM only: w_i ∈ R</text>
+            <rect x="395" y="226" width="390" height="44" rx="12" class="svg-box svg-box-green" filter="url(#softShadow)"/><text x="417" y="253" class="svg-formula">shared: V_i ∈ R^k</text>
+            <rect x="815" y="226" width="275" height="44" rx="12" class="svg-box" filter="url(#softShadow)"/><text x="837" y="253" class="svg-formula">DNN input: a(0)</text>
+
+            <path d="M470 288 C360 315 300 335 255 365" fill="none" class="svg-arrow-red" stroke-width="4" marker-end="url(#arrowRed)"/>
+            <path d="M710 288 C815 315 880 335 928 365" fill="none" class="svg-arrow-blue" stroke-width="4" marker-end="url(#arrowBlue)"/>
+
+            <rect x="45" y="333" width="126" height="30" rx="15" class="svg-chip-red"/><text x="69" y="353" class="svg-label">FM PATH</text>
+            <text x="190" y="356" class="svg-title">Low-order interactions</text>
+            <text x="190" y="382" class="svg-small">负责 memorization：遍历被激活的 feature i、j，建模一阶与二阶影响。</text>
+            <rect x="76" y="410" width="205" height="58" rx="14" class="svg-box svg-box-red" filter="url(#softShadow)"/>
+            <text x="98" y="435" class="svg-formula">1st-order</text><text x="98" y="457" class="svg-small">Σ w_i x_i</text>
+            <rect x="315" y="410" width="205" height="58" rx="14" class="svg-box svg-box-red" filter="url(#softShadow)"/>
+            <text x="337" y="435" class="svg-formula">2nd-order</text><text x="337" y="457" class="svg-small">Σ&lt;V_i,V_j&gt;x_i x_j</text>
+            <line x1="281" y1="439" x2="315" y2="439" class="svg-arrow-red" stroke-width="3" marker-end="url(#arrowRed)"/>
+            <rect x="184" y="500" width="235" height="44" rx="14" class="svg-box svg-box-red"/>
+            <text x="236" y="528" class="svg-formula">output: y_FM</text>
+            <path d="M178 468 C190 485 215 493 255 500" fill="none" class="svg-arrow-red" stroke-width="3" marker-end="url(#arrowRed)"/>
+            <path d="M417 468 C405 485 380 493 341 500" fill="none" class="svg-arrow-red" stroke-width="3" marker-end="url(#arrowRed)"/>
+
+            <rect x="640" y="333" width="136" height="30" rx="15" class="svg-chip-blue"/><text x="664" y="353" class="svg-label">DNN PATH</text>
+            <text x="795" y="356" class="svg-title">High-order interactions</text>
+            <text x="795" y="382" class="svg-small">负责 generalization：从共享 V 表 lookup 出 e_t，拼成 a(0) 输入 MLP。</text>
+            <rect x="650" y="410" width="150" height="58" rx="14" class="svg-box svg-box-blue" filter="url(#softShadow)"/>
+            <text x="679" y="435" class="svg-formula">Concat</text><text x="672" y="457" class="svg-small">[e_1,...,e_m]</text>
+            <rect x="835" y="410" width="150" height="58" rx="14" class="svg-box svg-box-blue" filter="url(#softShadow)"/>
+            <text x="872" y="435" class="svg-formula">MLP</text><text x="858" y="457" class="svg-small">a(l+1)</text>
+            <rect x="1020" y="410" width="110" height="58" rx="14" class="svg-box svg-box-blue" filter="url(#softShadow)"/>
+            <text x="1050" y="435" class="svg-formula">Logit</text><text x="1046" y="457" class="svg-small">y_DNN</text>
+            <line x1="800" y1="439" x2="835" y2="439" class="svg-arrow-blue" stroke-width="3" marker-end="url(#arrowBlue)"/>
+            <line x1="985" y1="439" x2="1020" y2="439" class="svg-arrow-blue" stroke-width="3" marker-end="url(#arrowBlue)"/>
+
+            <path d="M302 566 C420 595 500 610 575 625" fill="none" class="svg-arrow-red" stroke-width="4" marker-end="url(#arrowRed)"/>
+            <path d="M1075 468 C1040 565 815 610 645 625" fill="none" class="svg-arrow-blue" stroke-width="4" marker-end="url(#arrowBlue)"/>
+
+            <rect x="42" y="612" width="122" height="30" rx="15" class="svg-chip-green"/><text x="63" y="632" class="svg-label">LAYER 3</text>
+            <rect x="420" y="612" width="340" height="56" rx="18" class="svg-box svg-box-green" filter="url(#softShadow)"/>
+            <text x="466" y="636" class="svg-formula">ŷ = sigmoid(y_FM + y_DNN)</text>
+            <text x="502" y="657" class="svg-small">最终输出点击概率 CTR</text>
+            <text x="790" y="634" class="svg-note">关键：共享的是 V / embedding；</text>
+            <text x="790" y="657" class="svg-note">w_i 属于 FM，W,b 属于 DNN。</text>
+          </svg>
+          <p class="figure-caption">图 1：DeepFM 分层数据流。记号说明：<code>i∈{1,...,d}</code> 是拼接后稀疏向量中的 feature 维度编号；<code>w_i∈R</code> 是 FM 一阶参数；<code>V_i∈R^k</code> 是 FM 的 latent vector，同时作为 DNN embedding lookup 的公共输入，整体 <code>V∈R^{d×k}</code>。DNN 自身参数是各层 <code>W,b</code>。红色是 FM 低阶交互，蓝色是 DNN 高阶交互，绿色强调共享的是 <code>V</code> / embedding。</p>
+        </div>
+
+        <h3>3.1 Embedding 层到底怎么把 sparse field 变成 dense vector？</h3>
+        <div class="embedding-board">
+          <div class="card">
+            <div class="field-table" aria-label="Embedding 层结构图">
+              <div class="field-row">
+                <b>user_id</b>
+                <div class="onehot"><span class="bit"></span><span class="bit on"></span><span class="bit"></span><span class="bit"></span><span class="bit"></span><span class="bit"></span><span class="bit"></span><span class="bit"></span></div>
+                <div class="vec"><span></span><span></span><span></span><span></span><span></span></div>
+              </div>
+              <div class="field-row">
+                <b>app_category</b>
+                <div class="onehot"><span class="bit"></span><span class="bit"></span><span class="bit"></span><span class="bit on"></span><span class="bit"></span><span class="bit"></span><span class="bit"></span><span class="bit"></span></div>
+                <div class="vec"><span></span><span></span><span></span><span></span><span></span></div>
+              </div>
+              <div class="field-row">
+                <b>time</b>
+                <div class="onehot"><span class="bit"></span><span class="bit"></span><span class="bit"></span><span class="bit"></span><span class="bit"></span><span class="bit on"></span><span class="bit"></span><span class="bit"></span></div>
+                <div class="vec"><span></span><span></span><span></span><span></span><span></span></div>
+              </div>
+            </div>
+            <p class="figure-caption">图 2：每个 field 的 one-hot 维度可以不同，但映射出来的 embedding 维度都固定为 <code>k</code>，因此可以拼接成 <code>a(0)</code>。</p>
+          </div>
+          <div class="card blue">
+            <h3>论文里这一层有两个细节</h3>
+            <ol>
+              <li><b>不同 field 原始长度不同，embedding 长度相同。</b> 例如 user_id 可能有十亿维，gender 只有几维，但每个被激活的 feature 都查表得到一个 <code>k</code> 维 <code>V_i</code>。</li>
+              <li><b>FM 的 latent vectors 复用为 DNN 的 embedding 输入。</b> 整体是同一张表 <code>V∈R^{d×k}</code>：FM 用它做二阶内积，DNN 从它查出 <code>e_t</code> 作为输入；DNN 额外还有自己的 MLP 参数 <code>W,b</code>。</li>
+            </ol>
+          </div>
+        </div>
+
+        <h3>3.2 三个 logit 分量分别代表什么？</h3>
+        <div class="equation-grid">
+          <div class="eq-card">
+            <h3>一阶记忆</h3>
+            <div class="formula">Σ<sub>i=1..d</sub>w<sub>i</sub>x<sub>i</sub></div>
+            <p>单个 feature 本身的贡献。例：某 app 类别普遍点击率高。</p>
+          </div>
+          <div class="eq-card">
+            <h3>二阶组合</h3>
+            <div class="formula">Σ<sub>i=1..d</sub>Σ<sub>j=i+1..d</sub>&lt;V<sub>i</sub>,V<sub>j</sub>&gt;x<sub>i</sub>x<sub>j</sub></div>
+            <p>任意两个被激活 feature 一起出现的贡献。例：外卖 × 饭点。</p>
+          </div>
+          <div class="eq-card">
+            <h3>高阶非线性</h3>
+            <div class="formula">MLP([e<sub>1</sub>,...,e<sub>m</sub>])</div>
+            <p>多字段、多层非线性组合。例：男性 × 青少年 × 射击游戏 × 周末夜间。</p>
+          </div>
+        </div>
+
+        <h3>3.3 一次 forward pass 的计算顺序</h3>
+        <div class="pipeline-steps">
+          <div class="pipeline-step"><div><b>稀疏输入。</b> 每条曝光样本被编码成 <code>x=[x_field1,...,x_fieldm]</code>；拼接后总维度是 <code>d</code>，类别 field 通常只有一个非零 feature。</div></div>
+          <div class="pipeline-step"><div><b>查表得到共享 embedding。</b> 对每个 field 中被激活的 feature 编号 <code>i</code> 取出 <code>V_i∈R^k</code>，形成 field embedding <code>e_t</code>；这里 <code>t∈{1,...,m}</code> 是 field 编号。</div></div>
+          <div class="pipeline-step"><div><b>FM 分支。</b> 用 <code>w_i∈R</code> 计算一阶项，用共享 <code>V_i∈R^k</code> 的内积计算二阶项，得到标量 logit <code>y_FM</code>。</div></div>
+          <div class="pipeline-step"><div><b>DNN 分支。</b> 拼接 <code>[e_1,...,e_m]</code> 得到 <code>a(0)∈R^{m×k}</code>，进入 MLP 前通常 flatten 为 <code>R^{mk}</code>，经过多层 <code>Linear + activation</code> 得到 <code>y_DNN</code>。</div></div>
+          <div class="pipeline-step"><div><b>联合输出与训练。</b> <code>sigmoid(y_FM + y_DNN)</code> 得到点击概率，用 LogLoss 反向传播；梯度更新 FM 一阶参数 <code>w∈R^d</code>、公共 embedding 表 <code>V∈R^{d×k}</code>、以及 DNN 自身参数 <code>W,b</code>。</div></div>
+        </div>
+
+        <h3>3.4 参数、张量形状与训练目标</h3>
+        <table>
+          <thead><tr><th>对象</th><th>形状 / 含义</th><th>在哪个分支使用</th></tr></thead>
+          <tbody>
+            <tr><td><code>x</code></td><td><code>x∈R^d</code>，由 <code>m</code> 个 field 拼接得到；<code>i∈{1,...,d}</code> 是 feature 维度编号</td><td>FM 与 embedding lookup</td></tr>
+            <tr><td><code>w_i</code> / <code>w</code></td><td><code>w_i∈R</code>；整体 <code>w∈R^d</code>，表示第 <code>i</code> 个 feature 的一阶标量权重</td><td>仅 FM 一阶项使用</td></tr>
+            <tr><td><code>V_i</code> / <code>V</code></td><td><code>V_i∈R^k</code>；整体 <code>V∈R^{d×k}</code>，表示第 <code>i</code> 个 feature 的 latent vector / embedding</td><td class="win">FM 二阶项使用；DNN 把查出的 <code>V_i</code> 当 embedding 输入</td></tr>
+            <tr><td><code>e_t</code></td><td><code>e_t∈R^k</code>，第 <code>t</code> 个 field 里被激活 feature 查到的 embedding；<code>t∈{1,...,m}</code></td><td>DNN embedding 层</td></tr>
+            <tr><td><code>a(0)</code></td><td><code>[e_1,e_2,...,e_m]</code>，可看作 <code>R^{m×k}</code>，输入 MLP 前 flatten 为 <code>R^{mk}</code></td><td>DNN 输入层</td></tr>
+            <tr><td><code>W(l), b(l)</code></td><td>若第 <code>l</code> 层输入维度为 <code>h_l</code>、输出维度为 <code>h_{l+1}</code>，则 <code>W(l)∈R^{h_{l+1}×h_l}</code>，<code>b(l)∈R^{h_{l+1}}</code></td><td>DNN 隐藏层</td></tr>
+            <tr><td><code>y_FM,y_DNN,ŷ</code></td><td>单样本都是标量；batch 实现中通常是 <code>[B,1]</code></td><td>输出 logit / CTR</td></tr>
+          </tbody>
+        </table>
+        <div class="two" style="margin-top:1rem">
+          <div class="card">
+            <h3>FM 二阶项的工程计算</h3>
+            <p>直接枚举所有 pair 是 <code>O(d²k)</code>。实际实现常用等价变换把复杂度降到 <code>O(dk)</code>：</p>
+            <div class="formula" style="color:#f4ecd8;background:#1e1812;white-space:normal">0.5 · Σ<sub>f=1..k</sub> [(Σ<sub>i</sub> v<sub>i,f</sub>x<sub>i</sub>)² - Σ<sub>i</sub>(v<sub>i,f</sub>x<sub>i</sub>)²]</div>
+            <p>这也是教程伪代码里 <code>(sum v)^2 - sum(v^2)</code> 的来源。</p>
+          </div>
+          <div class="card success">
+            <h3>训练目标</h3>
+            <p>论文用 CTR 二分类目标，评价用 LogLoss。单样本损失可写成：</p>
+            <div class="formula" style="color:#f4ecd8;background:#1e1812;white-space:normal">L = - y log(ŷ) - (1-y) log(1-ŷ)</div>
+            <p>反向传播不是只更新 DNN；FM 的 <code>w</code>、共享 embedding <code>V</code>、DNN 的 <code>W,b</code> 都一起更新。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="relations">
+        <h2>4. DeepFM 与 FNN、PNN、Wide & Deep 的差异</h2>
+        <table>
+          <thead>
+            <tr><th>模型</th><th>核心做法</th><th>论文指出的短板</th><th>DeepFM 的对应改进</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>LR / FTRL</td><td>线性加权</td><td>不能自动学习交互；交叉特征需人工构造</td><td>FM 分支自动学习二阶，DNN 分支学习高阶</td></tr>
+            <tr><td>FM</td><td>一阶 + 二阶隐向量内积</td><td>实际常只用到二阶，高阶复杂度高</td><td>保留 FM 的低阶能力，并用 DNN 建模高阶</td></tr>
+            <tr><td>FNN</td><td>先训练 FM，再用 FM embedding 初始化 DNN</td><td>需要预训练；主要捕获高阶；embedding 容易被 FM 阶段限制</td><td>无需预训练，端到端联合训练</td></tr>
+            <tr><td>PNN</td><td>embedding 后加入 product layer</td><td>计算复杂；低阶交互不足；外积近似可能丢信息</td><td>FM 的 product 只连最终输出，结构更轻</td></tr>
+            <tr><td>Wide & Deep</td><td>wide 记忆低阶/手工交叉，deep 泛化高阶</td><td>wide 输入依赖专家特征工程，且与 deep 输入不同</td><td class="win">共享输入与 embedding，不需要额外人工交叉</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="experiments">
+        <h2>5. 实验怎么证明有效？</h2>
+        <div class="two">
+          <div class="card">
+            <h3>数据集</h3>
+            <ul>
+              <li><b>Criteo</b>：4500 万点击记录，13 个连续特征，26 个类别特征；90% 训练，10% 测试。</li>
+              <li><b>Company*</b>：某应用商店游戏中心 7 天训练 + 下一天测试，约 10 亿记录；含 app、user、context 特征。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>指标</h3>
+            <ul>
+              <li><b>AUC</b>：排序质量，越高越好。</li>
+              <li><b>LogLoss</b>：概率校准误差，越低越好。</li>
+              <li>论文也比较训练时间：DeepFM 接近最有效率的深度 CTR 模型。</li>
+            </ul>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr><th>模型</th><th>Company* AUC</th><th>Company* LogLoss</th><th>Criteo AUC</th><th>Criteo LogLoss</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>LR</td><td>0.8640</td><td>0.02648</td><td>0.7686</td><td>0.47762</td></tr>
+            <tr><td>FM</td><td>0.8678</td><td>0.02633</td><td>0.7892</td><td>0.46077</td></tr>
+            <tr><td>FNN</td><td>0.8683</td><td>0.02629</td><td>0.7963</td><td>0.45738</td></tr>
+            <tr><td>IPNN</td><td>0.8664</td><td>0.02637</td><td>0.7972</td><td>0.45323</td></tr>
+            <tr><td>OPNN</td><td>0.8658</td><td>0.02641</td><td>0.7982</td><td>0.45256</td></tr>
+            <tr><td>PNN*</td><td>0.8672</td><td>0.02636</td><td>0.7987</td><td>0.45214</td></tr>
+            <tr><td>LR & DNN</td><td>0.8673</td><td>0.02634</td><td>0.7981</td><td>0.46772</td></tr>
+            <tr><td>FM & DNN</td><td>0.8661</td><td>0.02640</td><td>0.7850</td><td>0.45382</td></tr>
+            <tr><td class="win">DeepFM</td><td class="win">0.8715</td><td class="win">0.02618</td><td class="win">0.8007</td><td class="win">0.45083</td></tr>
+          </tbody>
+        </table>
+        <div class="note">论文结论：交互学习优于纯 LR；同时学习高低阶优于只学一类；共享 embedding 的 DeepFM 优于分离 embedding 的 LR & DNN / FM & DNN。</div>
+      </section>
+
+      <section id="hyper">
+        <h2>6. 超参数研究给工程实践的提示</h2>
+        <div class="tabs" role="tablist" aria-label="超参数研究">
+          <button class="tab" role="tab" aria-selected="true" data-tab="act">激活函数</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="drop">Dropout</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="width">层宽</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="depth">层数</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="shape">网络形状</button>
+        </div>
+        <div id="act" class="tab-panel active"><div class="card"><h3>ReLU 通常优于 tanh</h3><p>论文在 Company* 数据上比较 relu 和 tanh，除 IPNN 外，relu 对深度 CTR 模型更合适。作者推测可能因为 relu 会诱导稀疏性。</p></div></div>
+        <div id="drop" class="tab-panel"><div class="card"><h3>合理 dropout 提升鲁棒性</h3><p>论文测试保留概率 1.0 到 0.5。多数模型在 0.6 到 0.9 之间达到较好性能；过强或过弱正则都不稳。</p></div></div>
+        <div id="width" class="tab-panel"><div class="card"><h3>更宽不一定更好</h3><p>隐藏层神经元从 400 增到 800 不总是提升，OPNN 甚至变差。原因是模型复杂度上升后更容易过拟合。论文数据中 200 或 400 每层较合适。</p></div></div>
+        <div id="depth" class="tab-panel"><div class="card"><h3>更深也不一定更好</h3><p>隐藏层数量先增加会提升效果，但继续增加后性能下降，仍然是过拟合和优化难度带来的代价。</p></div></div>
+        <div id="shape" class="tab-panel"><div class="card"><h3>constant shape 表现更好</h3><p>在总神经元数固定时，论文比较 constant、increasing、decreasing、diamond 四种形状；constant，如 200-200-200，经验表现最好。</p></div></div>
+      </section>
+
+      <section id="practice">
+        <h2>7. 如何从零实现一个 DeepFM？</h2>
+        <div class="two">
+          <div class="card">
+            <h3>训练流程</h3>
+            <ol>
+              <li>把每个样本拆成多个 field：用户、物品、上下文。</li>
+              <li>类别特征做 ID 化或 one-hot；连续特征可直接输入或离散化。</li>
+              <li>为每个稀疏 feature <code>i∈{1,...,d}</code> 学习一阶权重 <code>w_i∈R</code> 与 embedding <code>V_i∈R^k</code>。</li>
+              <li>FM 分支计算一阶与二阶项。</li>
+              <li>DNN 分支拼接 <code>m</code> 个 field embedding，得到 <code>a(0)∈R^{m×k}</code>，flatten 后过多层 MLP。</li>
+              <li>把两路 logit 相加，经 sigmoid 得到 CTR。</li>
+              <li>用 LogLoss / Binary Cross Entropy 端到端训练。</li>
+            </ol>
+          </div>
+          <div class="card danger">
+            <h3>实现时容易犯错</h3>
+            <ul>
+              <li>把 FM 和 DNN 做成两套 embedding，失去论文核心设计。</li>
+              <li>连续特征未归一化，DNN 分支训练不稳。</li>
+              <li>只看 AUC，不看 LogLoss，导致概率不准。</li>
+              <li>离线 AUC 小幅提升不代表线上一定提升，还要做在线实验。</li>
+            </ul>
+          </div>
+        </div>
+        <pre><code># PyTorch 风格伪代码：突出结构，不绑定具体数据管道
+# 记号对应：feature_size=d, field_size=m, embed_dim=k, batch_size=B
+class DeepFM(nn.Module):
+    def __init__(self, feature_size, field_size, embed_dim, mlp_dims):
+        super().__init__()
+        self.linear = nn.Embedding(feature_size, 1)          # w table: [d, 1]
+        self.embedding = nn.Embedding(feature_size, embed_dim) # V table: [d, k]，FM 与 DNN 共享
+        layers = []
+        in_dim = field_size * embed_dim
+        for dim in mlp_dims:
+            layers += [nn.Linear(in_dim, dim), nn.ReLU(), nn.Dropout(0.2)]
+            in_dim = dim
+        layers += [nn.Linear(in_dim, 1)]
+        self.mlp = nn.Sequential(*layers)
+
+    def forward(self, feat_ids, feat_values):
+        # feat_ids: [B, m]，每个元素是 feature id i∈{1,...,d}
+        # feat_values: [B, m]，连续特征取实际值，类别特征通常为 1
+        values = feat_values.unsqueeze(-1)        # [B, m, 1]
+        emb = self.embedding(feat_ids) * values   # [B, m, k]，即每个 field 的 e_t
+
+        # FM 一阶
+        linear_logit = (self.linear(feat_ids) * values).sum(dim=1)  # [B, 1]
+
+        # FM 二阶：0.5 * ((sum e_t)^2 - sum(e_t^2))，等价于激活 feature 两两内积之和
+        sum_square = emb.sum(dim=1).pow(2)        # [B, k]
+        square_sum = emb.pow(2).sum(dim=1)        # [B, k]
+        fm_logit = linear_logit + 0.5 * (sum_square - square_sum).sum(dim=1, keepdim=True)  # [B, 1]
+
+        # DNN 高阶
+        dnn_input = emb.flatten(start_dim=1)      # [B, m*k]
+        dnn_logit = self.mlp(dnn_input)           # [B, 1]
+        return torch.sigmoid(fm_logit + dnn_logit) # [B, 1]</code></pre>
+      </section>
+
+      <section id="lab">
+        <h2>8. 交互小实验：低阶与高阶分别在看什么？</h2>
+        <p>下面不是论文实验数据，而是一个教学用可视化。选择不同上下文，观察一阶偏置、二阶组合、高阶组合如何共同影响最终 CTR 倾向。</p>
+        <div class="lab">
+          <div class="card">
+            <label for="category">应用类别</label>
+            <select id="category"><option>外卖</option><option>射击游戏</option><option>办公工具</option><option>理财</option></select>
+            <label for="time">时间</label>
+            <select id="time"><option>饭点</option><option>深夜</option><option>工作日上午</option><option>周末夜间</option></select>
+            <label for="user">用户画像</label>
+            <select id="user"><option>普通用户</option><option>男性青少年</option><option>白领</option><option>价格敏感用户</option></select>
+            <label for="noise">探索噪声 / 不确定性</label>
+            <input id="noise" type="range" min="0" max="20" value="6" />
+          </div>
+          <div class="card blue">
+            <h3>模型视角</h3>
+            <div class="chips" id="chips"></div>
+            <p><b>预测 CTR 倾向</b></p>
+            <div class="meter" aria-label="预测 CTR 倾向"><div id="bar"></div></div>
+            <p id="explain"></p>
+          </div>
+        </div>
+      </section>
+
+      <section id="takeaways">
+        <h2>9. 复盘：这篇论文该怎么记？</h2>
+        <div class="three">
+          <div class="card success"><h3>一句话</h3><p>DeepFM = FM 的低阶交互记忆能力 + DNN 的高阶组合泛化能力 + 共享 embedding 的端到端训练。</p></div>
+          <div class="card"><h3>最大贡献</h3><p>相比 Wide & Deep，DeepFM 不需要给 wide 部分手工做交叉特征；相比 FNN，不需要 FM 预训练；相比 PNN，更轻且保留低阶。</p></div>
+          <div class="card danger"><h3>局限与后续视角</h3><p>论文没有解决所有高阶交互选择问题。作者也提到未来可引入 pooling 等策略，增强对最有用高阶交互的学习；后续 DIN、DCN、xDeepFM 等工作继续沿着“显式/隐式交互建模”发展。</p></div>
+        </div>
+        <h3>阅读检查题</h3>
+        <ol>
+          <li>为什么 FM 在稀疏数据上比手工 pair 权重更容易泛化？</li>
+          <li>DeepFM 的 FM 分支和 DNN 分支共享了什么？这会带来什么好处？</li>
+          <li>DeepFM 与“FM & DNN”的关键差别是什么？</li>
+          <li>论文中 DeepFM 在 Criteo 数据集上的 AUC 和 LogLoss 分别是多少？</li>
+        </ol>
+      </section>
+
+      <footer>
+        本教程基于论文：Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, Xiuqiang He. “DeepFM: A Factorization-Machine based Neural Network for CTR Prediction.” arXiv:1703.04247, 2017。PDF 已保存到 <code>papers/1703.04247.pdf</code>。
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    const tabs = document.querySelectorAll('.tab');
+    const panels = document.querySelectorAll('.tab-panel');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.setAttribute('aria-selected', 'false'));
+        panels.forEach(p => p.classList.remove('active'));
+        tab.setAttribute('aria-selected', 'true');
+        document.getElementById(tab.dataset.tab).classList.add('active');
+      });
+    });
+
+    const category = document.getElementById('category');
+    const time = document.getElementById('time');
+    const user = document.getElementById('user');
+    const noise = document.getElementById('noise');
+    const bar = document.getElementById('bar');
+    const chips = document.getElementById('chips');
+    const explain = document.getElementById('explain');
+
+    function updateLab() {
+      let score = 28;
+      const reasons = [];
+      const c = category.value, t = time.value, u = user.value;
+      if (c === '外卖') { score += 8; reasons.push('一阶：外卖类别有基础需求'); }
+      if (c === '射击游戏') { score += 5; reasons.push('一阶：游戏类别有娱乐需求'); }
+      if (t === '饭点') { score += 4; reasons.push('一阶：饭点活跃'); }
+      if (c === '外卖' && t === '饭点') { score += 24; reasons.push('二阶：外卖 × 饭点 强正向'); }
+      if (c === '射击游戏' && u === '男性青少年') { score += 18; reasons.push('二阶：射击游戏 × 男性青少年'); }
+      if (c === '射击游戏' && u === '男性青少年' && t === '周末夜间') { score += 20; reasons.push('高阶：类别 × 用户画像 × 时间'); }
+      if (c === '办公工具' && t === '深夜') { score -= 10; reasons.push('二阶：办公工具 × 深夜 偏弱'); }
+      if (c === '理财' && u === '价格敏感用户') { score += 10; reasons.push('二阶：理财 × 价格敏感'); }
+      score -= Number(noise.value) / 2;
+      score = Math.max(3, Math.min(96, score));
+      bar.style.width = score + '%';
+      chips.innerHTML = reasons.map(r => `<span class="chip">${r}</span>`).join('') || '<span class="chip">主要由一阶项决定</span>';
+      explain.textContent = `当前组合的教学 CTR 倾向为 ${score.toFixed(1)}%。DeepFM 会让 FM 分支捕捉清晰的低阶组合，同时让 DNN 分支学习更复杂的高阶模式。`;
+    }
+    [category, time, user, noise].forEach(el => el.addEventListener('input', updateLab));
+    updateLab();
+  </script>
+</body>
+</html>

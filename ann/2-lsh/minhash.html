@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MinHash 演示：Jaccard 相似度的亚线性估计</title>
+<style>
+/* ============ 全局样式 ============ */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf3 100%);
+    color: #24292f;
+    line-height: 1.7;
+    min-height: 100vh;
+}
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+}
+.nav a { color: #0969da; text-decoration: none; font-weight: 500; padding: 6px 14px; border-radius: 6px; transition: background 0.2s; }
+.nav a:hover { background: #ddf4ff; }
+h1 { font-size: 26px; color: #1f2328; margin: 0; }
+h2 { font-size: 22px; color: #1f2328; border-bottom: 2px solid #d0d7de; padding-bottom: 6px; margin-top: 8px; }
+h3 { font-size: 18px; color: #24292f; margin: 20px 0 10px 0; }
+.card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #d0d7de;
+}
+.card.info { background: linear-gradient(135deg, #ddf4ff 0%, #e6f7ff 100%); border-left: 4px solid #0969da; }
+.card.warn { background: linear-gradient(135deg, #fff8c5 0%, #fff3c4 100%); border-left: 4px solid #d4a72c; }
+.card.success { background: linear-gradient(135deg, #dafbe1 0%, #d4f5da 100%); border-left: 4px solid #1a7f37; }
+pre {
+    background: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+}
+code {
+    background: #f6f8fa;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 13px;
+    color: #cf222e;
+}
+pre code { background: transparent; color: #24292f; padding: 0; }
+.controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.control-item {
+    background: #f6f8fa;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid #d0d7de;
+}
+.control-item label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #57606a;
+    margin-bottom: 6px;
+}
+.control-item input[type=range] { width: 100%; accent-color: #6f42c1; }
+.control-item textarea, .control-item input[type=text] {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 12px;
+    resize: vertical;
+}
+.value-badge {
+    display: inline-block;
+    background: #6f42c1;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 6px;
+}
+.btn {
+    background: #1f883d;
+    color: white;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    margin: 4px;
+    transition: background 0.2s;
+}
+.btn:hover { background: #1a7431; }
+.btn.secondary { background: #6f42c1; }
+.btn.secondary:hover { background: #5a35a5; }
+.set-input-group {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 8px;
+    align-items: center;
+    margin: 6px 0;
+}
+.set-input-group label { font-size: 13px; color: #57606a; }
+.set-input-group input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: monospace;
+}
+.stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+}
+.stat-box {
+    background: #f6f8fa;
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid #d0d7de;
+}
+.stat-box .label { font-size: 12px; color: #57606a; }
+.stat-box .value { font-size: 22px; font-weight: 700; color: #6f42c1; }
+
+/* Signature matrix */
+.matrix-wrap { overflow-x: auto; margin: 14px 0; }
+table.sigmatrix {
+    border-collapse: collapse;
+    font-family: monospace;
+    font-size: 12px;
+}
+table.sigmatrix th, table.sigmatrix td {
+    border: 1px solid #d0d7de;
+    padding: 3px 8px;
+    text-align: center;
+    min-width: 26px;
+}
+table.sigmatrix th { background: #f6f8fa; font-weight: 600; }
+table.sigmatrix td.match { background: #dafbe1; color: #1a7f37; font-weight: 700; }
+table.sigmatrix td.band-sep { border-right: 3px solid #6f42c1; }
+table.sigmatrix td.rowlabel { background: #f6f8fa; font-weight: 600; }
+
+.formula {
+    background: #f6f8fa;
+    padding: 12px 16px;
+    border-radius: 6px;
+    text-align: center;
+    font-family: "Times New Roman", serif;
+    font-style: italic;
+    font-size: 16px;
+    margin: 10px 0;
+    border-left: 3px solid #6f42c1;
+}
+table.reg {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+}
+table.reg th, table.reg td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #d0d7de;
+}
+table.reg th { background: #f6f8fa; font-weight: 600; }
+canvas { display: block; background: #ffffff; border-radius: 8px; border: 1px solid #d0d7de; }
+.set-preview {
+    background: #f6f8fa;
+    border-radius: 6px;
+    padding: 8px;
+    margin: 6px 0;
+    font-family: monospace;
+    font-size: 12px;
+    color: #24292f;
+    word-break: break-all;
+}
+.token-chip {
+    display: inline-block;
+    background: #ffffff;
+    padding: 2px 8px;
+    margin: 2px;
+    border-radius: 12px;
+    border: 1px solid #d0d7de;
+    font-size: 11px;
+}
+.token-chip.shared {
+    background: #dafbe1;
+    border-color: #1a7f37;
+    color: #1a7f37;
+    font-weight: 600;
+}
+ul li { margin: 4px 0; }
+/* ============ 教学辅助样式 ============ */
+.prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+.prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+.glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+.glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+.glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+.glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+.new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.pitfall h4 { color: #92400e; margin-top: 0; }
+.next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.next-steps a { color: #047857; font-weight: 600; }
+.symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+.symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+.symbol-table th { background: #f9fafb; color: #374151; }
+.symbol-table code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-family: Monaco, monospace; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="nav">
+    <h1>MinHash：Jaccard 相似度的亚线性估计</h1>
+    <a href="../index.html">← 返回目录</a>
+</div>
+
+<!-- ============ 前置阅读 ============ -->
+<div class="prereq-bar">
+    <b>前置：</b>
+    <span class="pill">Jaccard 相似度基础</span>
+    <span style="color:#1e40af;font-size:0.85rem;margin-left:6px;">（如果你想学欧氏距离的 LSH，请看 <a href="classic-lsh.html" style="color:#1e40af;">Classic LSH</a>）</span>
+</div>
+
+<!-- ============ 关键术语速查 ============ -->
+<details class="glossary">
+    <summary>关键术语速查（点击展开）</summary>
+    <dl>
+        <dt>Jaccard 相似度</dt>
+        <dd>两个集合的交集除以并集，<code>J(A,B) = |A ∩ B| / |A ∪ B|</code>，范围 [0,1]。</dd>
+        <dt>shingle</dt>
+        <dd>k-gram 滑动子串。把文本按 k 个字符一组切成一堆重叠的短片，用来把"文档"变成"集合"。</dd>
+        <dt>排列 π</dt>
+        <dd>对全集元素做一次随机重排，把每个元素都重新编号，用来定义 MinHash。</dd>
+        <dt>签名（signature）</dt>
+        <dd>每个集合用 k 个哈希函数各取一个 min 值，得到长度为 k 的整数向量，就是这个集合的"MinHash 签名"。</dd>
+        <dt>band</dt>
+        <dd>把签名按行切成 b 段，每段包含 r 行。每一 band 单独当哈希键分桶。</dd>
+        <dt>S-curve</dt>
+        <dd>候选概率 <code>1−(1−J<sup>r</sup>)<sup>b</sup></code> 随 Jaccard 变化的 S 形曲线：低相似段几乎不命中，高相似段几乎必命中。</dd>
+        <dt>LSH banding</dt>
+        <dd>把签名切 band + 每 band 分桶的整套流程，让 MinHash 从"逐对比较"降到"亚线性检索"。</dd>
+    </dl>
+</details>
+
+<!-- ============ 新手引导 ============ -->
+<div class="new-user-tip">
+    <b>新手怎么玩这个页面？</b>
+    <ol style="margin:6px 0 0 20px;padding:0;">
+        <li>修改集合 A、B 的文本，看它们的 shingle 集合怎么变。</li>
+        <li>观察绿色 chip：那些是 A、B 共有的 shingle，越多说明真实 Jaccard 越高。</li>
+        <li>把 k 从 4 拉到 60，观察 MinHash 估计逐渐逼近真实 Jaccard（方差 ~ 1/k）。</li>
+        <li>调整 bands b，观察 S-curve 的拐点 <code>t* ≈ (1/b)<sup>1/r</sup></code> 左右移动。</li>
+    </ol>
+</div>
+
+<!-- ============ 直观理解 ============ -->
+<div class="card info">
+    <h2>1. 直观理解：抽签选代表</h2>
+    <p>假设你手上有两袋糖，每袋里有几十种颜色的糖果。要判断两袋糖有多相似，直接算 <b>交集 / 并集</b>（也就是 Jaccard 相似度）当然可以，但集合一大就慢了。</p>
+    <p>MinHash 的思路：<b>用一个统一的随机顺序为每种糖果编号，问"每袋糖里编号最小的那颗是啥？"</b> 如果两袋糖内容差不多，那么它们"最小编号糖果"很可能是同一种；反之则不同。</p>
+    <p>神奇的性质：</p>
+    <div class="formula">
+        Pr[MinHash(A) = MinHash(B)] = |A ∩ B| / |A ∪ B| = Jaccard(A, B)
+    </div>
+    <p>只用一次 Min 就能拿到 Jaccard 的无偏估计！用 <b>k 个独立的随机顺序</b>，取平均即可把方差缩到 <code>J(1-J)/k</code>。这就是 MinHash 的全部魔法。</p>
+</div>
+
+<!-- ============ 算法原理 ============ -->
+<div class="card">
+    <h2>2. 算法原理</h2>
+
+    <h3>2.0 符号速查表</h3>
+    <table class="symbol-table">
+        <tr><th>符号</th><th>含义</th></tr>
+        <tr><td><code>k</code></td><td>哈希函数（也就是签名长度）个数，越大估计越准</td></tr>
+        <tr><td><code>b</code></td><td>band 数量，把签名切成多少段做 LSH 分桶</td></tr>
+        <tr><td><code>r</code></td><td>每 band 的行数，满足 <code>b · r = k</code></td></tr>
+        <tr><td><code>π</code></td><td>作用在全集 U 上的一次随机排列</td></tr>
+        <tr><td><code>h<sub>i</sub></code></td><td>第 i 个哈希函数，用来近似模拟第 i 个随机排列</td></tr>
+        <tr><td><code>s<sub>i</sub></code></td><td>集合 S 在 h<sub>i</sub> 下的最小值，即签名向量的第 i 位</td></tr>
+        <tr><td><code>J</code></td><td>真实 Jaccard 相似度</td></tr>
+        <tr><td><code>t*</code></td><td>S-curve 拐点，<code>t* ≈ (1/b)<sup>1/r</sup></code></td></tr>
+    </table>
+
+    <h3>2.1 Jaccard 相似度回顾</h3>
+    <div class="formula">J(A, B) = |A ∩ B| / |A ∪ B|</div>
+    <p>范围 <code>[0, 1]</code>；1 表示完全相同，0 表示完全不相交。</p>
+
+    <h3>2.2 MinHash 定义</h3>
+    <p>选一个作用在全集 U 上的随机排列 π：U → U。则</p>
+    <div class="formula">h<sub>π</sub>(S) = min{ π(x) : x ∈ S }</div>
+
+    <h3>2.3 全文最关键的一步：为什么"最小值 = Jaccard"？</h3>
+    <p>这是 MinHash 全部魔法的来源，请务必花两分钟看懂。</p>
+    <p><b>准备场景：</b>把 <code>A ∪ B</code> 里所有元素排成竖直一列，每个元素在这一列里的位置由随机排列 π 决定。也就是说，每个元素都被随机地扔到列的某一行，行号就是它的"编号"。</p>
+    <p><b>问一个问题：</b>"这一列从上往下数，第一个属于 A 的元素是谁？"记它为 <code>a*</code>。它就是 <code>min π(A)</code> 对应的元素，也就是 <code>MinHash(A)</code>。同理 <code>b* = MinHash(B)</code>。</p>
+    <p><b>什么时候 MinHash(A) = MinHash(B)？</b>当且仅当 <code>a* = b*</code>，也就是说"A ∪ B 里排名最靠前的那个元素，同时属于 A 和 B"，也就是"排名最靠前的元素落在 A ∩ B 里"。</p>
+    <p><b>算概率：</b>因为 π 是均匀随机排列，"A ∪ B 里排名最靠前的元素"是等概率地从 <code>A ∪ B</code> 中任选一个。它恰好落在 <code>A ∩ B</code> 的概率就是</p>
+    <div class="formula">
+        Pr[排名第一的元素 ∈ A ∩ B] = |A ∩ B| / |A ∪ B| = J(A, B)
+    </div>
+    <p>所以</p>
+    <div class="formula">
+        Pr[MinHash(A) = MinHash(B)] = J(A, B)
+    </div>
+    <p>只用一次 min，就得到 Jaccard 的一个无偏 0/1 采样！用 <b>k 个独立的随机排列</b>，取"相同格子的比例"作为估计，方差就是 <code>J(1−J)/k</code>。这也是为什么 k 越大越准。</p>
+
+    <h3>2.4 用哈希函数替代显式排列（工程实现）</h3>
+    <p><b>直觉铺垫：</b>真正的随机排列 π 太贵——需要存 <code>|U|</code> 个位置。工程上我们用简单的线性哈希 <code>h(x) = (a·x + b) mod p</code> 来近似模拟一个均匀随机排列，误差在实践中可以忽略。</p>
+    <div class="formula">
+        h(x) = (a · x + b) mod p&nbsp;&nbsp;&nbsp;&nbsp; (a, b 从 [1, p) 随机取，p 为大素数)
+    </div>
+    <p>把 <code>min<sub>x∈S</sub> h(x)</code> 当作近似 MinHash。理论上这只是"近似"的排列，但在实践里质量很好。</p>
+
+    <h3>2.5 Signature 矩阵</h3>
+    <p>对每个集合 S，用 <code>k</code> 个独立哈希函数得到长度 <code>k</code> 的 <b>签名向量</b>。所有集合的签名并列组成一个 <code>k × N</code> 矩阵。相似的两列签名向量在很多行上会数值相同。</p>
+
+    <h3>2.6 LSH Banding：从 signature 到候选对</h3>
+    <p><b>先文字讲一遍：</b>假设我们有 k = 12 行签名，选 b = 3、r = 4，那就是"把 12 行签名切成 3 段，每段 4 行"。每段（band）单独当作一个哈希键：把 band 内的 4 个数字拼字符串再哈希一次，落到同一个桶的两个集合就成为候选对。</p>
+    <p>示意：</p>
+<pre><code>签名（12 行）    切成 3 个 band（每 band 4 行）
+   s1                ┐
+   s2                │  Band 0 → 拼串哈希 → 桶键 0
+   s3                │
+   s4                ┘
+   s5                ┐
+   s6                │  Band 1 → 拼串哈希 → 桶键 1
+   s7                │
+   s8                ┘
+   s9                ┐
+   s10               │  Band 2 → 拼串哈希 → 桶键 2
+   s11               │
+   s12               ┘</code></pre>
+    <ul>
+        <li>两列在 <b>某个 band 完全相同</b> ⇒ 视为候选对</li>
+        <li>Pr[候选] = 1 − (1 − J<sup>r</sup>)<sup>b</sup>（经典 S-curve）</li>
+        <li>让"S-curve"的拐点落在你希望的相似度阈值 <code>t*</code>：<code>t* ≈ (1/b)<sup>1/r</sup></code></li>
+        <li>调参口诀：<code>b</code> 越多、<code>r</code> 越小 → 拐点左移（更宽松，召回更多候选）；<code>b</code> 越少、<code>r</code> 越大 → 拐点右移（更严格，只挑高相似的）。</li>
+    </ul>
+
+    <h3>2.7 伪代码</h3>
+<pre><code>输入：文档集合 D₁, D₂, ..., D_n；参数 k, b, r（k = b·r）
+预处理：
+  1. 对每个文档做 shingling（如 3-gram 字符或分词）→ 集合 S_i
+  2. 随机采样 k 组 (a_j, b_j)，构造 h_j(x) = (a_j·x + b_j) mod p
+  3. 对每个 S_i，计算签名 sig_i[j] = min_{x∈S_i} h_j(x)
+查询/去重：
+  1. 把 sig 分成 b 个 band
+  2. 每个 band 做一次哈希桶（band 内的向量拼字符串再哈希）
+  3. 落到同一个桶的一对文档 → 候选
+  4. 对候选精确计算 Jaccard，做最终过滤</code></pre>
+</div>
+
+<!-- ============ 交互演示 ============ -->
+<div class="card">
+    <h2>3. 交互式演示：两个集合的 MinHash 过程</h2>
+
+    <div class="controls">
+        <div class="control-item">
+            <label>集合 A（英文单词/字符 shingle 已自动生成）</label>
+            <textarea id="text-a" rows="3">the quick brown fox jumps over the lazy dog</textarea>
+        </div>
+        <div class="control-item">
+            <label>集合 B</label>
+            <textarea id="text-b" rows="3">a quick brown fox leaps over the lazy dog</textarea>
+        </div>
+        <div class="control-item">
+            <label>Shingle 大小: <span class="value-badge" id="v-shingle">3</span></label>
+            <input type="range" id="c-shingle" min="1" max="5" value="3">
+        </div>
+        <div class="control-item">
+            <label>哈希函数数 k: <span class="value-badge" id="v-k">12</span></label>
+            <input type="range" id="c-k" min="2" max="60" value="12">
+        </div>
+        <div class="control-item">
+            <label>Bands b: <span class="value-badge" id="v-b">4</span> &nbsp; Rows r: <span class="value-badge" id="v-r">3</span></label>
+            <input type="range" id="c-b" min="1" max="12" value="4">
+        </div>
+        <div class="control-item">
+            <label>&nbsp;</label>
+            <button class="btn" id="btn-rehash">重新采样哈希函数</button>
+        </div>
+    </div>
+
+    <h3>Step 1：Shingling 后的集合内容</h3>
+    <div>
+        <b>A：</b>
+        <div class="set-preview" id="setA-preview"></div>
+        <b>B：</b>
+        <div class="set-preview" id="setB-preview"></div>
+        <div class="stat-row">
+            <div class="stat-box">
+                <div class="label">|A|</div>
+                <div class="value" id="stat-sizeA">-</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">|B|</div>
+                <div class="value" id="stat-sizeB">-</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">|A ∩ B|</div>
+                <div class="value" id="stat-inter">-</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">|A ∪ B|</div>
+                <div class="value" id="stat-union">-</div>
+            </div>
+            <div class="stat-box" style="background:#dafbe1">
+                <div class="label">Jaccard 真实值</div>
+                <div class="value" id="stat-jaccard" style="color:#1a7f37">-</div>
+            </div>
+            <div class="stat-box" style="background:#ddf4ff">
+                <div class="label">MinHash 估计</div>
+                <div class="value" id="stat-mh" style="color:#0969da">-</div>
+            </div>
+        </div>
+    </div>
+
+    <h3>Step 2：Signature 矩阵（k 行 × 2 列）</h3>
+    <p style="font-size:13px;color:#57606a">每行是一个哈希函数下 <code>min(h(x))</code> 的结果，两列相同的格子标绿 —— 相同格子的比例 = MinHash 估计的 Jaccard。竖线分隔 band。</p>
+    <div class="matrix-wrap" id="sigMatrix"></div>
+
+    <h3>Step 3：LSH Banding 匹配</h3>
+    <div class="matrix-wrap" id="bandStatus"></div>
+
+    <h3>S-curve：候选概率 vs Jaccard</h3>
+    <p style="font-size:13px;color:#57606a">曲线：<code>1 − (1 − J<sup>r</sup>)<sup>b</sup></code>。绿色圆点标出了当前两个集合的真实 Jaccard 位置。</p>
+    <canvas id="scurve" width="720" height="280"></canvas>
+</div>
+
+<!-- ============ 案例讲解 ============ -->
+<div class="card success">
+    <h2>4. 案例逐步讲解</h2>
+    <p>以默认输入为例：</p>
+    <ul>
+        <li><b>A</b> = "the quick brown fox jumps over the lazy dog" → 3-gram shingling 后约 40 个片段</li>
+        <li><b>B</b> = "a quick brown fox leaps over the lazy dog" → 与 A 大部分 shingle 重叠</li>
+        <li>真实 Jaccard ≈ 0.7~0.8（视 shingle 大小而定）</li>
+        <li>用 k=12 个哈希函数得到长度 12 的签名，落在相同格子的比例约为 8-10 / 12 → MinHash 估计 ≈ 真实 Jaccard</li>
+        <li>切成 b=4 band、r=3 rows：<code>1 − (1 − 0.75³)⁴ ≈ 0.88</code>，说明相似度 0.75 的两文档有约 88% 概率被送入候选</li>
+    </ul>
+    <p>试着修改 A/B 文本、增大 k 观察估计变得越来越稳，或减小 b/增大 r 观察 S-curve 变陡（更严的相似度门槛）。</p>
+</div>
+
+<!-- ============ 复杂度 ============ -->
+<div class="card">
+    <h2>5. 复杂度 & 精度权衡</h2>
+    <table class="reg">
+        <tr><th>指标</th><th>值</th><th>说明</th></tr>
+        <tr><td>Signature 计算</td><td>O(k · |S|)</td><td>每个哈希扫一遍集合</td></tr>
+        <tr><td>存储签名</td><td>O(k) 每文档</td><td>k 通常 100~200，比原文档小得多</td></tr>
+        <tr><td>估计方差</td><td>Var = J(1−J) / k</td><td>k 越大越准</td></tr>
+        <tr><td>LSH 拐点</td><td>t* ≈ (1/b)<sup>1/r</sup></td><td>b↓ 或 r↑ → 拐点右移（更严）</td></tr>
+        <tr><td>候选查询</td><td>≈ O(b) 次哈希桶查询</td><td>桶粒度取决于 r</td></tr>
+    </table>
+</div>
+
+<!-- ============ 优缺点 ============ -->
+<div class="card warn">
+    <h2>6. 优缺点 & 适用场景</h2>
+    <table class="reg">
+        <tr><th></th><th>优点</th><th>缺点</th></tr>
+        <tr>
+            <td><b>MinHash</b></td>
+            <td>
+                <ul>
+                    <li>Jaccard 相似度的无偏估计</li>
+                    <li>签名尺寸远小于原文档</li>
+                    <li>可分布式（每个 hash 独立）</li>
+                    <li>与 LSH banding 天然结合</li>
+                </ul>
+            </td>
+            <td>
+                <ul>
+                    <li>只对 Jaccard / 集合相似度有效</li>
+                    <li>对稠密向量（欧氏 / 余弦）不适用</li>
+                    <li>估计误差 ~ 1/√k</li>
+                    <li>Shingling 选择影响很大</li>
+                </ul>
+            </td>
+        </tr>
+    </table>
+    <p><b>典型场景：</b>大规模网页 / 新闻去重（Google, Bing）、爬虫 dedup、抄袭检测、Recommendation 中的 item-item 相似召回、日志异常子序列聚类。</p>
+</div>
+
+<!-- ============ 常见误区 ============ -->
+<div class="pitfall">
+    <h4>常见误区</h4>
+    <ul>
+        <li><b>shingle 太小 → 假阳性激增。</b>用 1-gram（单字符）会让几乎所有中文文档都共享大量单字，Jaccard 严重虚高。中文经验值 3~5-gram，英文 5~9-gram。</li>
+        <li><b>b · r 必须 ≤ k，且通常应恰好等于 k。</b>不能超过签名长度，否则某些 band 会引用到"越界"的行。工程上要在 UI/参数里显式保证 <code>b · r = k</code>。</li>
+        <li><b>k 个哈希必须真正独立（不同 seed）。</b>如果偷懒用同一个 seed 让 k 个 min 都一样，方差不会随 k 减小，估计毫无意义。</li>
+    </ul>
+</div>
+
+<!-- ============ 下一步 ============ -->
+<div class="next-steps">
+    <b>下一步学什么？</b>
+    <ul>
+        <li><a href="classic-lsh.html">Classic LSH</a> — 如果你要做欧氏/余弦距离检索，换那一族哈希。</li>
+        <li><a href="simhash.html">SimHash</a> — 需要词频权重的文档指纹去重。</li>
+        <li><b>LSH Forest</b> — 用可变前缀替代固定 band，自适应相似度分布。</li>
+        <li><b>Weighted MinHash</b> — 元素带权重的场景（如加权集合、TF 特征）。</li>
+        <li><b>bottom-k MinHash</b> — 只保留每个哈希下最小的 k 个元素，估计更稳。</li>
+    </ul>
+</div>
+
+<script>
+/* ==========================================================
+   MinHash 交互演示
+   ========================================================== */
+
+// -------- 全局参数 --------
+const PRIME = 4294967311;    // 大素数 > 2^32
+let params = {
+    shingleSize: 3,
+    k: 12,
+    b: 4
+};
+let hashCoeffs = [];   // {a, b}
+let setA = new Set();
+let setB = new Set();
+let elementDomain = new Set();  // A ∪ B（用于展示）
+
+// -------- 工具 --------
+function fnv1a(str) {
+    // 简单可复现的字符串哈希 → 32bit 整数
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return h >>> 0;
+}
+function shingling(text, k) {
+    const s = new Set();
+    text = text.trim().toLowerCase();
+    for (let i = 0; i + k <= text.length; i++) {
+        s.add(text.substr(i, k));
+    }
+    return s;
+}
+function sampleHashCoeffs(k) {
+    hashCoeffs = [];
+    for (let i = 0; i < k; i++) {
+        hashCoeffs.push({
+            a: 1 + Math.floor(Math.random() * (PRIME - 1)),
+            b: Math.floor(Math.random() * PRIME)
+        });
+    }
+}
+function hashOf(x, coef) {
+    // (a * x + b) mod p
+    // x 是 32bit unsigned；用 BigInt 避免溢出
+    const val = (BigInt(coef.a) * BigInt(x) + BigInt(coef.b)) % BigInt(PRIME);
+    return Number(val);
+}
+function minHash(elements, coeffs) {
+    // 对集合的 elements 做 fnv1a → 再做 (a*x+b) mod p → 取最小
+    const xs = Array.from(elements).map(e => fnv1a(e));
+    const sig = new Array(coeffs.length).fill(Infinity);
+    for (const x of xs) {
+        for (let j = 0; j < coeffs.length; j++) {
+            const h = hashOf(x, coeffs[j]);
+            if (h < sig[j]) sig[j] = h;
+        }
+    }
+    return sig;
+}
+
+// -------- 计算并渲染 --------
+function updateAll() {
+    const textA = document.getElementById('text-a').value;
+    const textB = document.getElementById('text-b').value;
+    setA = shingling(textA, params.shingleSize);
+    setB = shingling(textB, params.shingleSize);
+    elementDomain = new Set([...setA, ...setB]);
+
+    renderSetPreviews();
+
+    // Jaccard 真实
+    const inter = [...setA].filter(x => setB.has(x));
+    const uni = new Set([...setA, ...setB]);
+    const trueJ = uni.size === 0 ? 0 : inter.length / uni.size;
+
+    document.getElementById('stat-sizeA').textContent = setA.size;
+    document.getElementById('stat-sizeB').textContent = setB.size;
+    document.getElementById('stat-inter').textContent = inter.length;
+    document.getElementById('stat-union').textContent = uni.size;
+    document.getElementById('stat-jaccard').textContent = trueJ.toFixed(3);
+
+    // Signature
+    const sigA = minHash(setA, hashCoeffs);
+    const sigB = minHash(setB, hashCoeffs);
+    let matches = 0;
+    for (let i = 0; i < params.k; i++) if (sigA[i] === sigB[i]) matches++;
+    const est = matches / params.k;
+    document.getElementById('stat-mh').textContent = est.toFixed(3);
+
+    renderSignatureMatrix(sigA, sigB);
+    renderBandStatus(sigA, sigB);
+    drawScurve(trueJ);
+}
+
+function renderSetPreviews() {
+    const shared = new Set([...setA].filter(x => setB.has(x)));
+    function render(el, s) {
+        const arr = Array.from(s);
+        el.innerHTML = arr.map(x => {
+            const cls = shared.has(x) ? 'token-chip shared' : 'token-chip';
+            return `<span class="${cls}">${escapeHTML(x)}</span>`;
+        }).join('');
+    }
+    render(document.getElementById('setA-preview'), setA);
+    render(document.getElementById('setB-preview'), setB);
+}
+function escapeHTML(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function renderSignatureMatrix(sigA, sigB) {
+    const container = document.getElementById('sigMatrix');
+    const r = Math.floor(params.k / params.b);
+    let html = '<table class="sigmatrix"><thead><tr><th>#</th><th>Band</th><th>sig(A)</th><th>sig(B)</th><th>相同?</th></tr></thead><tbody>';
+    for (let i = 0; i < params.k; i++) {
+        const band = Math.floor(i / r);
+        const bandEnd = (i + 1) % r === 0 && i < params.k - 1;
+        const cls = sigA[i] === sigB[i] ? 'match' : '';
+        const sepCls = bandEnd ? ' band-sep' : '';
+        html += `<tr>`;
+        html += `<td class="rowlabel">${i}</td>`;
+        html += `<td class="rowlabel">B${band}</td>`;
+        html += `<td class="${cls}${sepCls}">${sigA[i] === Infinity ? '∞' : shortNum(sigA[i])}</td>`;
+        html += `<td class="${cls}${sepCls}">${sigB[i] === Infinity ? '∞' : shortNum(sigB[i])}</td>`;
+        html += `<td class="${cls}">${sigA[i] === sigB[i] ? '✓' : ''}</td>`;
+        html += `</tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function shortNum(n) {
+    if (n === Infinity) return '∞';
+    // 6 位短数字
+    return String(n).slice(0, 8);
+}
+
+function renderBandStatus(sigA, sigB) {
+    const container = document.getElementById('bandStatus');
+    const r = Math.floor(params.k / params.b);
+    document.getElementById('v-r').textContent = r;
+
+    let html = '<table class="sigmatrix"><thead><tr><th>Band</th><th>sig_A 段</th><th>sig_B 段</th><th>整段相等?</th></tr></thead><tbody>';
+    let anyMatch = false;
+    for (let bandIdx = 0; bandIdx < params.b; bandIdx++) {
+        const start = bandIdx * r;
+        const end = start + r;
+        const partA = sigA.slice(start, end);
+        const partB = sigB.slice(start, end);
+        const equal = partA.every((v, i) => v === partB[i]);
+        if (equal) anyMatch = true;
+        html += `<tr>`;
+        html += `<td class="rowlabel">B${bandIdx}</td>`;
+        html += `<td>${partA.map(shortNum).join(', ')}</td>`;
+        html += `<td>${partB.map(shortNum).join(', ')}</td>`;
+        html += `<td class="${equal ? 'match' : ''}">${equal ? '✓ 命中' : '未命中'}</td>`;
+        html += `</tr>`;
+    }
+    html += '</tbody></table>';
+    html += `<p style="margin-top:8px;font-size:14px"><b>LSH 结论：</b>${anyMatch ? '<span style="color:#1a7f37;font-weight:700">进入候选集（至少一个 band 命中）</span>' : '<span style="color:#cf222e;font-weight:700">不进入候选集（所有 band 都未命中）</span>'}</p>`;
+    container.innerHTML = html;
+}
+
+// -------- S-curve 绘制 --------
+function drawScurve(trueJ) {
+    const cv = document.getElementById('scurve');
+    const cx = cv.getContext('2d');
+    cx.fillStyle = '#ffffff';
+    cx.fillRect(0, 0, cv.width, cv.height);
+    const pad = { l: 50, r: 20, t: 20, b: 40 };
+    const W = cv.width - pad.l - pad.r;
+    const H = cv.height - pad.t - pad.b;
+    // 网格
+    cx.strokeStyle = '#d0d7de';
+    cx.lineWidth = 1;
+    for (let i = 0; i <= 10; i++) {
+        const y = pad.t + H * (i / 10);
+        cx.beginPath(); cx.moveTo(pad.l, y); cx.lineTo(pad.l + W, y); cx.stroke();
+    }
+    for (let i = 0; i <= 10; i++) {
+        const x = pad.l + W * (i / 10);
+        cx.beginPath(); cx.moveTo(x, pad.t); cx.lineTo(x, pad.t + H); cx.stroke();
+    }
+    cx.fillStyle = '#57606a';
+    cx.font = '11px sans-serif';
+    cx.textAlign = 'right';
+    for (let i = 0; i <= 5; i++) {
+        const y = pad.t + H * (1 - i / 5);
+        cx.fillText((i / 5).toFixed(1), pad.l - 6, y + 4);
+    }
+    cx.textAlign = 'center';
+    for (let i = 0; i <= 10; i++) {
+        const x = pad.l + W * (i / 10);
+        cx.fillText((i / 10).toFixed(1), x, pad.t + H + 16);
+    }
+    cx.font = 'bold 12px sans-serif';
+    cx.fillText('Jaccard J', pad.l + W / 2, pad.t + H + 34);
+    cx.save();
+    cx.translate(15, pad.t + H / 2);
+    cx.rotate(-Math.PI / 2);
+    cx.fillText('候选概率', 0, 0);
+    cx.restore();
+
+    // S-curve
+    const r = Math.floor(params.k / params.b);
+    cx.strokeStyle = '#6f42c1';
+    cx.lineWidth = 2.5;
+    cx.beginPath();
+    for (let i = 0; i <= 200; i++) {
+        const J = i / 200;
+        const p = 1 - Math.pow(1 - Math.pow(J, r), params.b);
+        const x = pad.l + J * W;
+        const y = pad.t + (1 - p) * H;
+        if (i === 0) cx.moveTo(x, y);
+        else cx.lineTo(x, y);
+    }
+    cx.stroke();
+
+    // 拐点估计 t* = (1/b)^(1/r)
+    const tstar = Math.pow(1 / params.b, 1 / r);
+    cx.strokeStyle = '#cf222e';
+    cx.lineWidth = 1;
+    cx.setLineDash([6, 4]);
+    cx.beginPath();
+    cx.moveTo(pad.l + tstar * W, pad.t);
+    cx.lineTo(pad.l + tstar * W, pad.t + H);
+    cx.stroke();
+    cx.setLineDash([]);
+    cx.fillStyle = '#cf222e';
+    cx.font = '12px sans-serif';
+    cx.textAlign = 'left';
+    cx.fillText(`t* ≈ ${tstar.toFixed(3)}`, pad.l + tstar * W + 4, pad.t + 14);
+
+    // 真实 Jaccard 点
+    const p_at_J = 1 - Math.pow(1 - Math.pow(trueJ, r), params.b);
+    cx.fillStyle = '#1a7f37';
+    cx.beginPath();
+    cx.arc(pad.l + trueJ * W, pad.t + (1 - p_at_J) * H, 6, 0, Math.PI * 2);
+    cx.fill();
+    cx.fillStyle = '#1a7f37';
+    cx.font = '12px sans-serif';
+    cx.textAlign = 'left';
+    cx.fillText(`当前 (J=${trueJ.toFixed(2)}, p=${p_at_J.toFixed(2)})`, pad.l + trueJ * W + 8, pad.t + (1 - p_at_J) * H - 6);
+}
+
+// -------- 事件绑定 --------
+function bindEvents() {
+    document.getElementById('text-a').addEventListener('input', updateAll);
+    document.getElementById('text-b').addEventListener('input', updateAll);
+    document.getElementById('c-shingle').addEventListener('input', (e) => {
+        params.shingleSize = +e.target.value;
+        document.getElementById('v-shingle').textContent = params.shingleSize;
+        updateAll();
+    });
+    document.getElementById('c-k').addEventListener('input', (e) => {
+        params.k = +e.target.value;
+        document.getElementById('v-k').textContent = params.k;
+        // 保证 b 能整除 k
+        const bSlider = document.getElementById('c-b');
+        const maxB = Math.min(params.k, 12);
+        bSlider.max = maxB;
+        if (params.b > maxB) { params.b = maxB; bSlider.value = maxB; document.getElementById('v-b').textContent = maxB; }
+        sampleHashCoeffs(params.k);
+        updateAll();
+    });
+    document.getElementById('c-b').addEventListener('input', (e) => {
+        params.b = +e.target.value;
+        document.getElementById('v-b').textContent = params.b;
+        updateAll();
+    });
+    document.getElementById('btn-rehash').addEventListener('click', () => {
+        sampleHashCoeffs(params.k);
+        updateAll();
+    });
+}
+
+// -------- 初始化 --------
+sampleHashCoeffs(params.k);
+bindEvents();
+updateAll();
+</script>
+
+</div>
+</body>
+</html>

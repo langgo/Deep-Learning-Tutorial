@@ -1,0 +1,1994 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Ball Tree / VP-Tree | 树形近似最近邻搜索</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+        background: #f7f8fa;
+        color: #202124;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        line-height: 1.7;
+    }
+    a { color: #1a73e8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    header {
+        background: linear-gradient(135deg, #ffffff 0%, #f0eef8 100%);
+        border-bottom: 1px solid #e0e3e7;
+        padding: 28px 40px;
+    }
+    header .back { font-size: 14px; color: #5f6368; }
+    header h1 {
+        margin-top: 8px;
+        font-size: 28px;
+        font-weight: 700;
+        color: #202124;
+    }
+    header .subtitle {
+        margin-top: 4px;
+        color: #5f6368;
+        font-size: 15px;
+    }
+
+    main {
+        max-width: 1180px;
+        margin: 30px auto;
+        padding: 0 24px;
+    }
+
+    section {
+        background: #ffffff;
+        border: 1px solid #e6e8eb;
+        border-radius: 10px;
+        padding: 24px 28px;
+        margin-bottom: 22px;
+        box-shadow: 0 1px 3px rgba(15, 20, 30, 0.03);
+    }
+    section h2 {
+        font-size: 20px;
+        color: #1a1f36;
+        border-left: 4px solid #7b3fd7;
+        padding-left: 10px;
+        margin-bottom: 14px;
+    }
+    section h3 {
+        font-size: 16px;
+        color: #202124;
+        margin: 16px 0 8px;
+    }
+    section p { margin-bottom: 10px; color: #333; }
+    section ul, section ol { padding-left: 24px; margin-bottom: 12px; }
+    section li { margin-bottom: 4px; }
+
+    pre.code {
+        background: #1e1e2f;
+        color: #e6e6e6;
+        padding: 14px 16px;
+        border-radius: 8px;
+        overflow-x: auto;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 1.55;
+        margin: 8px 0 14px;
+    }
+    pre.code .kw { color: #c586c0; }
+    pre.code .fn { color: #dcdcaa; }
+    pre.code .str { color: #ce9178; }
+    pre.code .num { color: #b5cea8; }
+    pre.code .cmt { color: #6a9955; font-style: italic; }
+
+    .card {
+        background: #fafbfd;
+        border: 1px solid #e6e8eb;
+        border-radius: 8px;
+        padding: 16px;
+    }
+    .card h4 {
+        font-size: 15px;
+        margin-bottom: 8px;
+        color: #7b3fd7;
+    }
+
+    .canvas-wrap {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+    .canvas-wrap > .col-left { flex: 1 1 480px; }
+    .canvas-wrap > .col-right { flex: 1 1 480px; }
+
+    canvas {
+        background: #ffffff;
+        border: 1px solid #dcdfe3;
+        border-radius: 6px;
+        display: block;
+        cursor: crosshair;
+    }
+
+    svg.tree-view {
+        background: #ffffff;
+        border: 1px solid #dcdfe3;
+        border-radius: 6px;
+        width: 100%;
+        height: 380px;
+    }
+
+    .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0 4px;
+    }
+    button {
+        background: #7b3fd7;
+        color: white;
+        border: 0;
+        border-radius: 6px;
+        padding: 8px 14px;
+        cursor: pointer;
+        font-size: 13px;
+    }
+    button:hover { background: #6a34bd; }
+    button.secondary { background: #ffffff; color: #7b3fd7; border: 1px solid #7b3fd7; }
+    button.secondary:hover { background: #f5efff; }
+    button.danger { background: #d93025; }
+    button.danger:hover { background: #b8231b; }
+
+    .param {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 6px 0;
+        font-size: 13px;
+        color: #333;
+        flex-wrap: wrap;
+    }
+    .param input[type=range] { width: 160px; }
+    .param select { padding: 4px 6px; }
+
+    .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 12px;
+        color: #555;
+        margin: 8px 0;
+    }
+    .legend span.dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 4px;
+        vertical-align: middle;
+    }
+
+    .step-info {
+        background: #f5efff;
+        border-left: 4px solid #7b3fd7;
+        padding: 10px 14px;
+        border-radius: 4px;
+        margin: 10px 0;
+        font-size: 14px;
+        color: #3c1a70;
+        min-height: 44px;
+    }
+
+    table.complexity {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        font-size: 14px;
+    }
+    table.complexity th, table.complexity td {
+        border: 1px solid #e0e3e7;
+        padding: 8px 10px;
+        text-align: left;
+    }
+    table.complexity th { background: #f5efff; color: #3c1a70; }
+
+    .pros-cons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+    @media (max-width: 720px) { .pros-cons { grid-template-columns: 1fr; } }
+    .pros { background: #ecf9f0; border-left: 4px solid #2e9d5a; padding: 10px 14px; border-radius: 4px; }
+    .cons { background: #fdecec; border-left: 4px solid #d93025; padding: 10px 14px; border-radius: 4px; }
+    .pros h4 { color: #1e6b3d; margin-bottom: 6px; }
+    .cons h4 { color: #a3221b; margin-bottom: 6px; }
+
+    .compare-box {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+    @media (max-width: 720px) { .compare-box { grid-template-columns: 1fr; } }
+
+    footer {
+        text-align: center;
+        padding: 20px 0;
+        color: #8b8f94;
+        font-size: 13px;
+    }
+
+    /* ============ 新手友好组件 ============ */
+    .prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; color: #1e3a8a; }
+    .prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+    .prereq-bar .pill:hover { background: #dbeafe; text-decoration: none; }
+    .glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+    .glossary summary { cursor: pointer; font-weight: 600; color: #374151; }
+    .glossary dl { margin-top: 10px; }
+    .glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+    .glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+    .new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+    .new-user-tip strong { color: #1e40af; }
+    .new-user-tip ol { padding-left: 22px; margin: 6px 0; }
+    .intuition-primer { background: #fefce8; border-left: 3px solid #eab308; padding: 10px 14px; margin: 10px 0; border-radius: 4px; font-size: 0.94rem; color: #713f12; }
+    .pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+    .pitfall h4 { color: #92400e; margin-top: 0; margin-bottom: 8px; }
+    .pitfall ol { padding-left: 22px; }
+    .next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; color: #065f46; }
+    .next-steps a { color: #047857; font-weight: 600; }
+    .param-hint-table { width: 100%; font-size: 0.88rem; margin: 8px 0; border-collapse: collapse; }
+    .param-hint-table th, .param-hint-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    .param-hint-table th { background: #f9fafb; color: #374151; }
+    .geom-svg { display: block; margin: 12px auto; background: #fdfdfd; border: 1px solid #e5e7eb; border-radius: 6px; }
+
+    /* ============ 双面板"代码 + 可视化"演示 ============ */
+    .walk-wrap {
+      display: grid;
+      grid-template-columns: minmax(420px, 1fr) minmax(520px, 1.1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    @media (max-width: 1000px) { .walk-wrap { grid-template-columns: 1fr; } }
+
+    .code-pane {
+      background: #1e1e2f;
+      color: #e6e6e6;
+      border-radius: 10px;
+      padding: 12px 0;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 12.5px;
+      line-height: 1.55;
+      max-height: 560px;
+      overflow: auto;
+      position: relative;
+    }
+    .code-pane .code-title {
+      color: #b48ee6;
+      padding: 4px 16px 8px;
+      font-size: 12px;
+      border-bottom: 1px solid #2d2d44;
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }
+    .code-pane .code-line {
+      display: flex;
+      padding: 1px 12px 1px 4px;
+      white-space: pre;
+      transition: background 0.15s;
+    }
+    .code-pane .code-line .ln {
+      display: inline-block;
+      width: 32px;
+      text-align: right;
+      color: #565672;
+      user-select: none;
+      padding-right: 10px;
+      flex-shrink: 0;
+    }
+    .code-pane .code-line.active {
+      background: linear-gradient(90deg, rgba(255,204,102,0.18) 0%, rgba(255,204,102,0.06) 90%);
+      border-left: 3px solid #ffcc66;
+      padding-left: 1px;
+    }
+    .code-pane .code-line.active .ln { color: #ffcc66; font-weight: 700; }
+    .code-pane .kw { color: #c586c0; }
+    .code-pane .fn { color: #dcdcaa; }
+    .code-pane .str { color: #ce9178; }
+    .code-pane .num { color: #b5cea8; }
+    .code-pane .cmt { color: #6a9955; font-style: italic; }
+    .code-pane .self { color: #9cdcfe; }
+
+    .viz-pane { display: flex; flex-direction: column; gap: 10px; }
+    .viz-pane canvas { background: #ffffff; border: 1px solid #dcdfe3; border-radius: 6px; display: block; }
+
+    .state-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #1f2937;
+    }
+    .state-box .row { display: flex; gap: 12px; flex-wrap: wrap; padding: 2px 0; }
+    .state-box .kv { font-family: Consolas, "SFMono-Regular", monospace; font-size: 12.5px; }
+    .state-box .k { color: #6b7280; }
+    .state-box .v { color: #111827; font-weight: 600; }
+    .state-box .v.update { color: #16a34a; }
+    .state-box .v.prune  { color: #dc2626; }
+
+    .call-stack {
+      background: #fff7ed;
+      border-left: 4px solid #f97316;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #7c2d12;
+      font-family: Consolas, monospace;
+      max-height: 130px;
+      overflow: auto;
+    }
+    .call-stack .frame { padding: 2px 0; }
+    .call-stack .frame.top { color: #c2410c; font-weight: 700; }
+
+    .step-narration {
+      background: #eff6ff;
+      border-left: 4px solid #3b82f6;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 13.5px;
+      color: #1e3a8a;
+      min-height: 62px;
+    }
+    .step-narration .kind {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      margin-right: 6px;
+      color: #fff;
+    }
+    .step-narration .kind-build   { background: #7b3fd7; }
+    .step-narration .kind-enter   { background: #d97706; }
+    .step-narration .kind-check   { background: #0ea5e9; }
+    .step-narration .kind-leaf    { background: #059669; }
+    .step-narration .kind-update  { background: #16a34a; }
+    .step-narration .kind-prune   { background: #dc2626; }
+    .step-narration .kind-return  { background: #6b7280; }
+    .step-narration .kind-done    { background: #111827; }
+
+    .walk-controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 4px;
+    }
+    .walk-controls .progress {
+      flex: 1 1 200px;
+      height: 6px;
+      background: #e5e7eb;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .walk-controls .progress .bar { height: 100%; background: #7b3fd7; width: 0; transition: width 0.15s; }
+    .walk-controls .step-idx { font-size: 12px; color: #6b7280; font-family: Consolas, monospace; min-width: 70px; text-align: right; }
+    .walk-controls input[type=range] { width: 140px; }
+</style>
+</head>
+<body>
+<header>
+    <div class="back"><a href="../index.html">&larr; 返回 ANN 算法总览</a></div>
+    <h1>Ball Tree / VP-Tree · 基于度量球的最近邻搜索</h1>
+    <div class="subtitle">Omohundro 1989 提出的度量树；用嵌套超球体划分数据，通过三角不等式实现高维剪枝。</div>
+</header>
+
+<main>
+
+<div class="prereq-bar">
+    <b>前置阅读：</b>
+    <a class="pill" href="./kd-tree.html">KD-Tree（推荐先读）</a>
+    <span class="pill">欧氏距离与三角不等式</span>
+    <a class="pill" href="../index.html">返回总览</a>
+    <br>
+    <b style="display:inline-block;margin-top:6px;">本页在 ANN 教程中的位置：</b>
+    <span style="color:#7c2d12">
+        树类的第二站，介绍<b>度量树 (metric tree)</b> 家族——Ball Tree 与 VP-Tree。它们仍是<b>精确</b> K-NN 结构（低-中维度下），
+        通过三角不等式做剪枝；下一步 <a href="./annoy.html" style="color:#7c2d12;text-decoration:underline">Annoy</a> 才转向真正的近似方法。
+    </span>
+</div>
+
+<details class="glossary" open>
+    <summary>关键术语速查（读全文前请浏览一遍）</summary>
+    <dl>
+        <dt>度量空间 (metric space) <code>(M, d)</code></dt>
+        <dd>一个"有距离定义"的空间。距离函数 <code>d</code> 必须满足四条公理：<b>非负</b>、<b>同一性</b>（<code>d(x,y)=0 ⇔ x=y</code>）、<b>对称</b>、<b>三角不等式</b>。欧氏、曼哈顿、Hamming、Levenshtein、Jaccard 距离都是真度量；<b>余弦相似度不是</b>（不满足三角不等式），使用前必须先转为 angular distance。</dd>
+        <dt>三角不等式</dt>
+        <dd><code>d(A, C) ≤ d(A, B) + d(B, C)</code>。人话："走弯路不会比直线更短"。Ball Tree 与 VP-Tree 的剪枝<b>完全依赖</b>这条不等式，因此可推广到任何度量空间。</dd>
+        <dt>包围球 (bounding ball)</dt>
+        <dd>一个 <code>(center, radius)</code> 二元组，把节点覆盖的所有点"套住"。2D 是圆、3D 是球、更高维叫<b>超球体</b>。Ball Tree 每个节点存一个。</dd>
+        <dt>下界剪枝 (lower-bound pruning)</dt>
+        <dd>先算 <b>"子集内任何点到查询点的最小可能距离"</b>——即下界。若下界 ≥ 当前最优距离，则整个子集直接跳过。Ball Tree 用 <code>d(q,c)−r</code>；VP-Tree 用 <code>|d(q,vp)−μ|</code>。</dd>
+        <dt>VP (Vantage Point，参照点)</dt>
+        <dd>VP-Tree 每层挑一个<b>真实数据点</b>作参照，用其他点到它的距离中位数 μ 划分数据。相比 Ball Tree 的质心 + 覆盖半径，VP-Tree 构建更省、几何更规则。</dd>
+        <dt>leaf_size</dt>
+        <dd>叶节点最多存的点数。子集 ≤ leaf_size 时不再切分，改为暴力扫描。sklearn 默认 40；本页演示用 3 便于观察嵌套结构。</dd>
+        <dt>本页涉及的度量树家族</dt>
+        <dd><b>Ball Tree</b>（Omohundro 1989）·  <b>VP-Tree</b>（Uhlmann 1991 / Yianilos 1993）· <b>M-Tree</b>（Ciaccia-Patella-Zezula VLDB 1997，支持动态更新）· <b>MVP-Tree</b>（Bozkaya-Ozsoyoglu 1997，多参照点变体）。全家族统称<b>度量索引 (metric index)</b>。</dd>
+    </dl>
+</details>
+
+<!-- ============================================================
+     1. 简介与全局定位
+     ============================================================ -->
+<section>
+    <h2>1. 简介与全局定位</h2>
+
+    <h3>1.1 一句话总结</h3>
+    <p style="font-size: 15px; padding: 10px 14px; background: #f5efff; border-left: 4px solid #7b3fd7; border-radius: 4px;">
+        <b>用包围球代替包围盒的空间划分树，剪枝依据从"轴距离"改为"球心距离减半径"——因此摆脱了坐标依赖，能处理任意度量空间。</b>
+    </p>
+
+    <h3>1.2 与 KD-Tree 的关键差异</h3>
+    <table class="complexity">
+        <thead><tr><th>维度</th><th>KD-Tree</th><th>Ball Tree</th><th>影响</th></tr></thead>
+        <tbody>
+            <tr>
+                <td>空间划分</td>
+                <td>轴对齐超矩形（盒子）</td>
+                <td>超球体（<code>center, radius</code>）</td>
+                <td>球更贴合数据的实际分布，中维下剪枝更强</td>
+            </tr>
+            <tr>
+                <td>剪枝下界</td>
+                <td>轴距离 <code>|q<sub>d</sub> − t|</code></td>
+                <td>球心距离减半径 <code>d(q,c) − r</code></td>
+                <td>Ball Tree 每次剪枝多算一次距离，但可用于任意度量</td>
+            </tr>
+            <tr>
+                <td>距离度量</td>
+                <td>只支持 L<sub>p</sub>（几何证明依赖坐标）</td>
+                <td>任意满足三角不等式的度量</td>
+                <td>Ball/VP-Tree 支持编辑距离、Hamming、Jaccard 等非欧度量</td>
+            </tr>
+            <tr>
+                <td>每节点存储</td>
+                <td>切分维度 + 阈值（O(1)）</td>
+                <td>球心（O(D)）+ 半径（O(1)）</td>
+                <td>Ball Tree 内存约为 KD-Tree 的 1.3~2×</td>
+            </tr>
+            <tr>
+                <td>擅长维度</td>
+                <td>D ≤ 10</td>
+                <td>10 ≤ D ≤ 100</td>
+                <td>Ball Tree 的临界维度约为 KD-Tree 的两倍</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>1.3 度量树家族图谱</h3>
+    <p>了解全局才知道 Ball Tree 处在什么位置——它是"度量索引"家族的入门代表，家族的其他成员针对不同工程需求做了扩展：</p>
+    <pre class="code" style="background:#fafbfd;color:#333;border:1px solid #e6e8eb;">度量索引家族（Metric Index Family）
+├── Ball Tree            [Omohundro 1989]   球心=质心，静态
+│   └── Anchors Hierarchy [Moore UAI 2000]  高维改进，最远点对做锚
+├── VP-Tree              [Yianilos 1993]    球心=数据点 vp，非欧度量首选
+│   └── MVP-Tree         [Bozkaya 1997]     多个 vp 组合，减少 pivot 计算
+├── M-Tree               [Ciaccia VLDB 1997]  B-Tree 化，支持动态插入/删除
+├── SS-Tree / SR-Tree    [1996-1997]        R-Tree 家族与 Ball Tree 融合，数据库场景
+└── Cover Tree           [Beygelzimer ICML 2006]  形式化保证 O(c<sup>D</sup> log N) 查询，D=intrinsic dim</pre>
+    <p><b>本页重点讲解 Ball Tree 与 VP-Tree</b>——它们是家族里最经典也最广泛使用的两种。sklearn 的 <code>BallTree</code> 类使用 Omohundro 的 K-D construction 策略；<code>vptree</code> Python 包与许多字符串数据库使用 Yianilos 的 VP-Tree。</p>
+
+    <h3>1.4 何时选 Ball Tree/VP-Tree？</h3>
+    <ul>
+        <li><b>选 KD-Tree</b>：D ≤ 10 的欧氏空间；追求最快构建。</li>
+        <li><b>选 Ball Tree</b>：10 &lt; D &lt; 100 的欧氏空间；需要范围查询、密度估计等操作；追求剪枝率优于 KD-Tree。</li>
+        <li><b>选 VP-Tree</b>：非欧度量（编辑距离、Hamming、Jaccard）；字符串/DNA 检索；数据规模中等（几十万-几百万）。</li>
+        <li><b>选 Annoy / HNSW / IVF-PQ</b>：D ≥ 100 的向量检索；数据规模上千万；接受近似结果换速度。</li>
+    </ul>
+
+    <div class="new-user-tip">
+        <strong>建议阅读顺序：</strong>
+        <ol>
+            <li>先看下面第 <b>2 节</b> 建立"三角不等式→下界剪枝"的直觉，20 秒理解全篇的核心。</li>
+            <li>浏览 <b>第 3 节</b> 算法原理（构建 + 查询）+ 严格证明。</li>
+            <li>去 <b>第 4-5 节</b> 亲手玩交互演示，感受剪枝威力。</li>
+            <li>在 <b>第 6 节</b> 用调试器风格逐行看代码执行细节。</li>
+            <li>看 <b>第 7 节</b> 复杂度、<b>第 8 节</b> 工程实践与代码调用。</li>
+        </ol>
+    </div>
+</section>
+
+<!-- ============================================================
+     2. 直觉理解
+     ============================================================ -->
+<section>
+    <h2>2. 直觉理解：三角不等式的两个用法</h2>
+
+    <h3>2.1 生活化类比</h3>
+    <p>
+        想象你在一个大型商场里找最近的某类店铺。商场按 <b>楼层区域</b> 划分——每个区域有一个中心位置和最大覆盖半径。
+        你只需一个简单的估算：
+    </p>
+    <p style="text-align:center; padding: 8px; background: #fafbfd; border: 1px dashed #7b3fd7; border-radius: 6px;">
+        <b>「我到区域中心的距离」 − 「区域半径」 = 「该区域最近可能的店铺距离」</b>
+    </p>
+    <p>
+        如果这个下界已经大于当前最近店铺的距离，则<b>整个区域可以跳过</b>——里面所有店铺都不可能更近。这就是 Ball Tree 剪枝的直觉。
+    </p>
+
+    <h3>2.2 三角不等式的严格证明</h3>
+    <p>设查询点 <code>q</code>、球心 <code>c</code>、球半径 <code>r</code>；<code>p</code> 是球内<b>任意</b>一点（即 <code>d(p, c) ≤ r</code>）。由三角不等式：</p>
+    <pre class="code">d(q, c) ≤ d(q, p) + d(p, c)
+=&gt; d(q, p) ≥ d(q, c) − d(p, c)
+=&gt; d(q, p) ≥ d(q, c) − r          # 因为 d(p, c) ≤ r</pre>
+    <p>所以 <b><code>d(q, c) − r</code> 是球内任何点到 q 距离的下界</b>。这一句就是 Ball Tree 的"灵魂"——整棵子树的所有点都逃不过这个下界。</p>
+
+    <svg class="geom-svg" width="440" height="220" viewBox="0 0 440 220" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="290" cy="120" r="70" fill="#f5efff" stroke="#7b3fd7" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <circle cx="290" cy="120" r="4" fill="#7b3fd7"/>
+        <text x="298" y="118" font-size="12" fill="#7b3fd7" font-weight="bold">c（球心）</text>
+        <circle cx="330" cy="90" r="4" fill="#3b7ddd"/>
+        <text x="336" y="88" font-size="12" fill="#3b7ddd">p（球内任一点）</text>
+        <circle cx="70" cy="120" r="5" fill="#d93025"/>
+        <text x="30" y="115" font-size="12" fill="#d93025" font-weight="bold">q（查询点）</text>
+        <line x1="70" y1="120" x2="290" y2="120" stroke="#333" stroke-width="1.4"/>
+        <text x="150" y="115" font-size="12" fill="#333">d(q, c)</text>
+        <line x1="290" y1="120" x2="330" y2="90" stroke="#7b3fd7" stroke-width="1.4"/>
+        <text x="304" y="108" font-size="11" fill="#7b3fd7">≤ r</text>
+        <line x1="70" y1="120" x2="330" y2="90" stroke="#2e9d5a" stroke-width="1.4" stroke-dasharray="4 3"/>
+        <text x="180" y="98" font-size="12" fill="#2e9d5a">d(q, p) ≥ d(q, c) − r</text>
+        <line x1="290" y1="120" x2="360" y2="120" stroke="#7b3fd7" stroke-width="1" stroke-dasharray="2 2"/>
+        <text x="316" y="135" font-size="11" fill="#7b3fd7">r</text>
+    </svg>
+
+    <h3>2.3 VP-Tree 的两个下界（三角不等式的另一种用法）</h3>
+    <p>VP-Tree 把点集按"到参照点 vp 的距离"切成<b>内球</b>（<code>d ≤ μ</code>）与<b>外壳</b>（<code>d &gt; μ</code>）。<b>同样是三角不等式</b>，能给出两个方向的下界：</p>
+    <table class="complexity">
+        <thead><tr><th>访问方向</th><th>下界公式</th><th>剪枝条件</th></tr></thead>
+        <tbody>
+            <tr>
+                <td><b>访问内球</b> <br>（d(q,vp) ≤ μ 时优先）</td>
+                <td><code>d(q, x) ≥ d(q, vp) − μ</code> ，x 在内球</td>
+                <td><code>d(q,vp) − μ ≥ best.d</code> → 剪</td>
+            </tr>
+            <tr>
+                <td><b>访问外壳</b></td>
+                <td><code>d(q, x) ≥ μ − d(q, vp)</code>，x 在外壳</td>
+                <td><code>μ − d(q,vp) ≥ best.d</code> → 剪</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>合并写就是：<code>|d(q, vp) − μ| ≥ best.d</code> 时剪掉<b>另一半</b>。VP-Tree 的下界公式看似不同，本质仍是三角不等式的直接推论。</p>
+
+    <div class="card">
+        <h4>核心一句话</h4>
+        <p style="margin:6px 0 0;">
+            Ball Tree 和 VP-Tree 都是<b>用三角不等式给「子集内任何点到 q 的最小可能距离」定一个下界</b>。
+            下界 ≥ 当前最优半径 → 整个子集连同所有子孙一并剪掉。学 Ball Tree 就是学这一句话的几何变体。
+        </p>
+    </div>
+</section>
+
+<!-- ============================================================
+     3. 算法原理（构建 + 查询）
+     ============================================================ -->
+<section>
+    <h2>3. 算法原理：构建 + 查询</h2>
+
+    <h3>3.1 数据结构</h3>
+    <pre class="code">Node = {
+    center: 球心    # Ball Tree: 点集质心；VP-Tree: 选中的数据点 vp
+    radius: 半径    # Ball Tree: max d(p, center)；VP-Tree: μ（中位距离）
+    left:   Ball Tree 子树（覆盖左半点集）
+    right:  Ball Tree 子树（覆盖右半点集）
+    points: 叶节点存点数组（子集 ≤ leaf_size 时）
+}</pre>
+
+    <h3>3.2 Ball Tree 构建（Omohundro 的 K-D construction 变体）</h3>
+    <p>Omohundro 1989 的原论文标题 "Five Balltree Construction Algorithms" 列出五种方案。工业界最常用的是<b>方差最大维度中位数切分</b>（本页与 sklearn 一致），因为它既是 O(N log N) 又几乎不劣于其他方案。</p>
+    <pre class="code"><span class="kw">def</span> <span class="fn">build_ball_tree</span>(points, leaf_size=<span class="num">40</span>):
+    node = <span class="fn">Node</span>(
+        center = <span class="fn">centroid</span>(points),                       <span class="cmt"># 几何质心</span>
+        radius = <span class="fn">max</span>(<span class="fn">dist</span>(p, centroid(points)) <span class="kw">for</span> p <span class="kw">in</span> points)
+    )
+    <span class="kw">if</span> <span class="fn">len</span>(points) &lt;= leaf_size:
+        node.points = points                              <span class="cmt"># 叶子存点数组</span>
+        <span class="kw">return</span> node
+
+    axis  = <span class="fn">argmax</span>(np.<span class="fn">var</span>(points, axis=<span class="num">0</span>))        <span class="cmt"># 选方差最大维度</span>
+    med   = np.<span class="fn">median</span>(points[:, axis])                <span class="cmt"># 中位数切分（保证树平衡）</span>
+    left  = points[points[:, axis] &lt;= med]
+    right = points[points[:, axis] &gt;  med]
+
+    node.left  = <span class="fn">build_ball_tree</span>(left,  leaf_size)
+    node.right = <span class="fn">build_ball_tree</span>(right, leaf_size)
+    <span class="kw">return</span> node</pre>
+    <details style="margin: 4px 0 10px;">
+        <summary style="cursor: pointer; color: #7b3fd7;">其余四种 Omohundro 构建策略（点击展开）</summary>
+        <table class="complexity" style="margin-top:8px;">
+            <thead><tr><th>方案</th><th>做法</th><th>特点</th></tr></thead>
+            <tbody>
+                <tr><td>Anchors hierarchy</td><td>选两个最远点对作 anchors</td><td>球更紧但构建 O(N²)</td></tr>
+                <tr><td>Bottom-up (agglomerative)</td><td>每点一球，逐层合并最近两球</td><td>球最紧但 O(N² log N)</td></tr>
+                <tr><td>Top-down (bisecting k-means)</td><td>k=2 K-Means 递归划分</td><td>质量高，O(N log N × 迭代数)</td></tr>
+                <tr><td>Middle-out (VP)</td><td>Yianilos 的 VP-Tree 变体</td><td>非欧度量最佳</td></tr>
+            </tbody>
+        </table>
+    </details>
+
+    <h3>3.3 VP-Tree 构建（Yianilos SODA 1993）</h3>
+    <pre class="code"><span class="kw">def</span> <span class="fn">build_vp_tree</span>(points):
+    <span class="kw">if</span> <span class="fn">len</span>(points) &lt;= <span class="num">1</span>: <span class="kw">return</span> <span class="fn">Leaf</span>(points)
+    vp    = <span class="fn">choose_vp</span>(points)                      <span class="cmt"># 随机选或用高方差启发式</span>
+    dists = [<span class="fn">dist</span>(vp, p) <span class="kw">for</span> p <span class="kw">in</span> points]
+    mu    = np.<span class="fn">median</span>(dists)
+    inner = [p <span class="kw">for</span> p, d <span class="kw">in</span> <span class="fn">zip</span>(points, dists) <span class="kw">if</span> d &lt; mu]
+    outer = [p <span class="kw">for</span> p, d <span class="kw">in</span> <span class="fn">zip</span>(points, dists) <span class="kw">if</span> d &gt;= mu]
+    <span class="kw">return</span> <span class="fn">Node</span>(vp, mu, <span class="fn">build_vp_tree</span>(inner), <span class="fn">build_vp_tree</span>(outer))</pre>
+    <p><b>与 Ball Tree 的核心差异：</b>vp 是<b>真实数据点</b>而非质心。这样构建时能复用 <code>dist(vp, ·)</code>——每层只算 N 次距离（不需要重算质心与半径），构建代价更低。</p>
+
+    <h3>3.4 最近邻查询（Ball Tree）</h3>
+    <pre class="code"><span class="kw">def</span> <span class="fn">nn</span>(node, q, best):
+    <span class="cmt"># --- 剪枝判定（关键！先算下界再决定是否递归）---</span>
+    d_c   = <span class="fn">dist</span>(q, node.center)
+    lower = d_c - node.radius
+    <span class="kw">if</span> lower &gt;= best.dist:
+        <span class="kw">return</span>                                <span class="cmt"># ✂ 整球剪枝，含所有子孙</span>
+
+    <span class="kw">if</span> node.is_leaf:
+        <span class="kw">for</span> p <span class="kw">in</span> node.points:
+            best.<span class="fn">update</span>(p, <span class="fn">dist</span>(q, p))       <span class="cmt"># 叶内暴力扫描</span>
+        <span class="kw">return</span>
+
+    <span class="cmt"># 内部节点：优先访问 center 更近的子球（best 收缩更快 → 剪枝更狠）</span>
+    a, b = <span class="fn">sorted</span>(node.children,
+                  key=<span class="kw">lambda</span> ch: <span class="fn">dist</span>(q, ch.center))
+    <span class="fn">nn</span>(a, q, best)
+    <span class="fn">nn</span>(b, q, best)</pre>
+
+    <h3>3.5 从 1-NN 扩展到 K-NN 与范围查询</h3>
+    <ul>
+        <li><b>K-NN</b>：把 <code>best</code> 从单个最优改为<b>大小为 K 的最大堆</b>（堆顶=第 K 近距离）。剪枝条件把 <code>best.dist</code> 换成 <code>heap.top()</code>。</li>
+        <li><b>范围查询（radius query）</b>：给定固定半径 <code>R</code>，返回 <code>{p : d(q,p) ≤ R}</code>。剪枝条件从"<code>lower ≥ heap.top()</code>"变成"<code>lower &gt; R</code>"，其余流程完全相同——这是 <code>sklearn.BallTree.query_radius</code> 的核心。</li>
+        <li><b>核密度估计（KDE）</b>：不返回具体点，只累加核函数贡献。sklearn <code>KernelDensity</code> 就是在 Ball Tree 上做双层剪枝：远球贡献极小、近球贡献极大，可提前截断。</li>
+    </ul>
+</section>
+
+<section>
+    <h2>4. 交互式演示：拖动查询点，观察剪枝</h2>
+    <p><b>玩法：</b>左侧 Canvas 支持点击空白添加点、拖动红色查询点观察最近邻与剪枝效果。右侧 SVG 实时展示 Ball Tree 结构（每个节点标注球心与半径）。可切换 Ball Tree 或 VP-Tree 模式。</p>
+    <div class="canvas-wrap">
+        <div class="col-left">
+            <canvas id="ballCanvas" width="520" height="440"></canvas>
+            <div class="controls">
+                <button id="btnRandom">随机 25 点</button>
+                <button id="btnClusters" class="secondary">簇状分布</button>
+                <button id="btnClear" class="danger">清空</button>
+            </div>
+            <div class="legend">
+                <span><span class="dot" style="background:#3b7ddd"></span>数据点</span>
+                <span><span class="dot" style="background:#d93025"></span>查询点</span>
+                <span><span class="dot" style="background:#2e9d5a"></span>最近邻</span>
+                <span><span class="dot" style="background:#7b3fd7"></span>被访问球</span>
+                <span><span class="dot" style="background:#bbb"></span>被剪枝球</span>
+            </div>
+        </div>
+        <div class="col-right">
+            <svg id="treeSvg" class="tree-view" viewBox="0 0 640 380"></svg>
+            <div class="param">
+                <label>模式：</label>
+                <select id="modeSelect">
+                    <option value="ball">Ball Tree（方差最大维度切分）</option>
+                    <option value="vp">VP-Tree（随机参照点 + 中位距离）</option>
+                </select>
+            </div>
+            <div class="param">
+                <label>叶子大小 leaf_size：</label>
+                <input type="range" id="leafSize" min="1" max="10" value="3">
+                <span id="leafVal">3</span>
+                <label>&nbsp;显示层级 (0=所有)：</label>
+                <input type="range" id="depthLimit" min="0" max="8" value="0">
+                <span id="depthVal">全部</span>
+            </div>
+            <div class="param">
+                <label>k 近邻：</label>
+                <input type="range" id="kInput" min="1" max="5" value="1">
+                <span id="kVal">1</span>
+            </div>
+            <div class="step-info" id="stepInfo">
+                拖动红色查询点，观察 Ball Tree 剪枝行为。
+            </div>
+            <p style="font-size:0.88rem;color:#555;margin-top:10px;">
+                <b>观察建议：</b>
+            </p>
+            <ul style="font-size:0.88rem;color:#555;">
+                <li>切换 <b>Ball Tree ↔ VP-Tree</b>：VP-Tree 的球心是<b>数据点</b>（不居中），Ball Tree 的球心是<b>质心</b>（居中）。</li>
+                <li>拖动查询点到<b>簇内密集区</b>：访问球数常降到 3~4 个（大量剪枝）。</li>
+                <li>拖动查询点到<b>簇与簇之间的空白</b>：访问球数上升，因为搜索半径变大、剪枝阈值宽松。</li>
+                <li>把 <b>leaf_size</b> 拉到 10：树变浅、球变少、叶内暴力扫描代价上升——观察 stepInfo 的"访问球数"变化。</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3 style="margin-top:16px;">参数速查</h3>
+    <table class="param-hint-table">
+        <thead><tr><th>参数</th><th>调大的影响</th><th>调小的影响</th><th>调节建议</th></tr></thead>
+        <tbody>
+            <tr><td>leaf_size</td><td>树浅、节点少、叶子内暴力扫描代价上升</td><td>树深、节点多、剪枝更精细但构建慢</td><td>sklearn 默认 40；本演示用 3 便于观察嵌套结构</td></tr>
+            <tr><td>k 近邻</td><td>找更多邻居，搜索半径圆变大，剪枝更弱</td><td>只找最近，搜索半径小，剪枝最凶</td><td>推荐/检索场景 k 常取 10~50</td></tr>
+            <tr><td>模式（Ball vs VP）</td><td colspan="2">—</td><td>Ball Tree 适合欧氏空间；VP-Tree 更擅长非欧度量（如编辑距离、Hamming）</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<section>
+    <h2>5. Ball Tree vs VP-Tree 并排对比</h2>
+    <p>
+        <b>相同数据点</b>下 Ball Tree 与 VP-Tree 的结构差异。观察两个关键差异：
+    </p>
+    <ul>
+        <li><b>球心位置</b>：Ball Tree 的球心是<b>质心</b>（一般不与任何数据点重合，居于点集"中间"）；VP-Tree 的球心是<b>随机选中的数据点 vp</b>（位于点云边缘时球会很大）。</li>
+        <li><b>切分方式</b>：Ball Tree 按方差最大维度<b>坐标</b>切分；VP-Tree 按到 vp 的<b>距离</b>切分——所以 VP-Tree 内外两个子集"几何上"是同心球环。</li>
+    </ul>
+    <div class="compare-box">
+        <div>
+            <div style="text-align:center;color:#7b3fd7;font-size:13px;margin-bottom:4px;">Ball Tree（K-D construction）</div>
+            <canvas id="cmpBall" width="460" height="360"></canvas>
+        </div>
+        <div>
+            <div style="text-align:center;color:#7b3fd7;font-size:13px;margin-bottom:4px;">VP-Tree（Yianilos 1993）</div>
+            <canvas id="cmpVP" width="460" height="360"></canvas>
+        </div>
+    </div>
+    <button id="cmpRegen" class="secondary" style="margin-top:8px;">重新生成数据</button>
+</section>
+
+<section>
+    <h2>6. 代码执行调试器：单步跟踪构建 + 查询 + 剪枝</h2>
+    <p>
+        左侧显示<b>标注行号的 Python 伪代码</b>，右侧同步显示<b>球树几何图与实时变量</b>。
+        点击 <b>【下一行】</b> 即可让代码执行一行、画布同步更新——像调试器一样单步走完整个"构建 → 查询 → 剪枝"流程。
+    </p>
+
+    <div class="intuition-primer">
+        <b>本次案例：</b> 10 个二维数据点 A~J，<code>leaf_size = 2</code>。查询点 Q=(380, 150) 靠近 H 点，
+        会触发一次<b>球剪枝</b>——某个球的下界距离 <code>d(Q, c) − r</code> 已经 ≥ 当前最优半径 <code>best.d</code>，整个球（含其所有子孙）一次跳过。
+    </div>
+
+    <div class="walk-wrap">
+
+        <!-- 左：代码 -->
+        <div class="code-pane" id="codePane">
+            <div class="code-title">algorithm.py &nbsp;·&nbsp; Ball Tree 构建 &amp; 最近邻查询</div>
+            <!-- 代码行由 JS 渲染 -->
+        </div>
+
+        <!-- 右：可视化 + 状态 -->
+        <div class="viz-pane">
+            <canvas id="walkCanvas" width="560" height="400"></canvas>
+
+            <div class="step-narration" id="walkNarration">
+                <span class="kind kind-build">init</span>
+                <span id="walkText">点击【下一行】开始单步执行。</span>
+            </div>
+
+            <div class="state-box">
+                <div class="row">
+                    <span class="kv"><span class="k">step:</span> <span class="v" id="stateStep">0 / 0</span></span>
+                    <span class="kv"><span class="k">phase:</span> <span class="v" id="statePhase">-</span></span>
+                    <span class="kv"><span class="k">visited:</span> <span class="v" id="stateVisited">0</span></span>
+                    <span class="kv"><span class="k">pruned:</span> <span class="v" id="statePruned">0</span></span>
+                </div>
+                <div class="row">
+                    <span class="kv"><span class="k">best.d:</span> <span class="v" id="stateBestD">∞</span></span>
+                    <span class="kv"><span class="k">best.p:</span> <span class="v" id="stateBestP">null</span></span>
+                    <span class="kv"><span class="k">当前节点 c:</span> <span class="v" id="stateNodeC">-</span></span>
+                    <span class="kv"><span class="k">半径 r:</span> <span class="v" id="stateNodeR">-</span></span>
+                </div>
+                <div class="row">
+                    <span class="kv"><span class="k">d(Q, c):</span> <span class="v" id="stateDc">-</span></span>
+                    <span class="kv"><span class="k">下界 d(Q,c)−r:</span> <span class="v" id="stateLower">-</span></span>
+                </div>
+            </div>
+
+            <div class="call-stack" id="callStack">
+                <div class="frame">调用栈：空</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="walk-controls">
+        <button id="btnWalkPrev" class="secondary">上一行</button>
+        <button id="btnWalkNext">下一行 ▶</button>
+        <button id="btnWalkAuto" class="secondary">自动播放</button>
+        <button id="btnWalkReset" class="secondary">重置</button>
+        <label style="font-size:12px;color:#555;">速度</label>
+        <input type="range" id="walkSpeed" min="200" max="2000" step="100" value="700">
+        <div class="progress"><div class="bar" id="walkProgress"></div></div>
+        <span class="step-idx" id="walkIdx">0 / 0</span>
+    </div>
+
+    <details class="glossary" style="margin-top:14px;">
+        <summary>阅读演示的方法（点击展开）</summary>
+        <dl>
+            <dt>行号高亮</dt>
+            <dd>代码面板中<b>当前正在执行</b>的那一行会用亮黄色高亮 + 左侧竖条。</dd>
+            <dt>调用栈 (call stack)</dt>
+            <dd>右下方橙色框：展示递归的深度和每一层正在处理的节点。栈顶（最内层）用深色加粗。</dd>
+            <dt>实时变量</dt>
+            <dd>右侧蓝色状态框：<code>best.d</code>（当前最优距离）、<code>d(Q,c)</code>（查询点到当前球心的距离）、<code>下界 = d(Q,c) − r</code>（剪枝判据）等。</dd>
+            <dt>画布颜色</dt>
+            <dd>
+                灰色圆 = 已构建的球；紫色实心圆 = <b>当前正在处理</b>的球；黄色环 = 已访问过的球；
+                绿色圆 + 绿色虚线 = 当前最优 + 搜索半径；<b>红色斜纹遮罩</b> = 被剪枝的球（内部所有点整体跳过）。
+            </dd>
+            <dt>事件类型</dt>
+            <dd>右侧叙述框顶部的彩色标签：<span class="kind kind-enter" style="color:#fff">enter</span>（进入球）、<span class="kind kind-check" style="color:#fff">check</span>（计算下界判断剪枝）、<span class="kind kind-leaf" style="color:#fff">leaf</span>（扫描叶点）、<span class="kind kind-update" style="color:#fff">update</span>（更新 best）、<span class="kind kind-prune" style="color:#fff">prune</span>（剪枝跳过）、<span class="kind kind-return" style="color:#fff">return</span>（递归返回）。</dd>
+        </dl>
+    </details>
+</section>
+
+<!-- ============================================================
+     7. 复杂度与性能
+     ============================================================ -->
+<section>
+    <h2>7. 复杂度与性能</h2>
+
+    <h3>7.1 复杂度总表</h3>
+    <table class="complexity">
+        <thead>
+            <tr><th>操作</th><th>Ball Tree（K-D construction）</th><th>VP-Tree</th><th>出处 / 说明</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>构建</td>
+                <td>O(N log N · D)</td>
+                <td>O(N log N · D)</td>
+                <td>每层 O(ND)：算方差/中位距离 + partition。Omohundro 1989 的 anchors / agglomerative 变体为 O(N²)。</td>
+            </tr>
+            <tr>
+                <td>查询（低维 D ≤ 10）</td>
+                <td>O(log N)</td>
+                <td>O(log N)</td>
+                <td>剪枝有效；但相同数据下常略慢于 KD-Tree（每次剪枝要多算一次距离）。</td>
+            </tr>
+            <tr>
+                <td>查询（中维 10 &lt; D &lt; 100）</td>
+                <td>≈ O(N<sup>1−1/D</sup>)</td>
+                <td>≈ O(N<sup>1−1/D</sup>)</td>
+                <td>Ball Tree 优于 KD-Tree（球比盒子更贴合数据分布）。</td>
+            </tr>
+            <tr>
+                <td>查询（高维 D ≥ 100）</td>
+                <td>≈ O(N)</td>
+                <td>≈ O(N)</td>
+                <td>球体几乎完全重叠、下界永远为负。Weber-Schek-Blott VLDB 1998 严格证明所有 space-partition 方法都会退化。</td>
+            </tr>
+            <tr>
+                <td>空间</td>
+                <td>O(N · D)</td>
+                <td>O(N · D)</td>
+                <td>每节点存 <b>球心 (D floats) + 半径 (1 float)</b>，比 KD-Tree 多 O(D)。</td>
+            </tr>
+            <tr>
+                <td>动态插入 / 删除</td>
+                <td>不友好，需重建</td>
+                <td>不友好</td>
+                <td>需要动态更新时改用 M-Tree（Ciaccia-Patella-Zezula VLDB 1997）。</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>7.2 与 KD-Tree、暴力扫描的性能对比（示意）</h3>
+    <p>以下是同一数据集（N=100k, D=32, 欧氏距离，k=10）在 sklearn 上典型的构建 / 查询时间量级——具体数字随硬件、数据分布浮动，重点看<b>相对关系</b>：</p>
+    <table class="complexity">
+        <thead>
+            <tr><th>算法</th><th>构建时间</th><th>单次查询时间</th><th>剪枝率</th><th>内存</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>Brute-force 顺序扫描</td><td>0（无索引）</td><td>~10 ms（O(N·D)）</td><td>0%</td><td>1x</td></tr>
+            <tr><td>KD-Tree（leaf=40）</td><td>~250 ms</td><td>~2.5 ms</td><td>~70%（D=32 时开始吃力）</td><td>~1.05x</td></tr>
+            <tr><td>Ball Tree（leaf=40）</td><td>~350 ms</td><td>~1.8 ms</td><td>~85%</td><td>~1.3x（多存球心 D floats）</td></tr>
+            <tr><td>VP-Tree（Python 版）</td><td>~450 ms</td><td>~2.2 ms</td><td>~80%</td><td>~1.2x</td></tr>
+        </tbody>
+    </table>
+    <p style="font-size:0.9rem; color:#555;">
+        <b>结论：</b>D=32 是 Ball Tree 的舒适区，它比 KD-Tree 剪枝更强、查询更快，但构建慢 40%、内存多 25%。当 D→8 时优势反转（KD-Tree 更好），D→128 时都会输给 Annoy/HNSW。
+    </p>
+
+    <h3>7.3 高维退化的直觉解释</h3>
+    <p>高维空间有个反直觉现象：<b>所有点到"球心"的距离趋近相等</b>（"距离集中现象"，distance concentration）。这意味着：</p>
+    <ul>
+        <li>球的<b>半径 r</b> 接近点集内最大距离，几乎覆盖整个空间。</li>
+        <li>下界 <code>d(q, c) − r</code> 几乎总是负数 → 剪枝条件永远不成立。</li>
+        <li>每次查询都要扫描接近 100% 的点，Ball Tree 退化为 O(N)。</li>
+    </ul>
+    <p>这也是为什么 D ≥ 100 时必须放弃精确算法、转向近似方法（Annoy、HNSW、IVF-PQ）的根本原因。</p>
+</section>
+
+<!-- ============================================================
+     8. 工程实践与选型指南
+     ============================================================ -->
+<section>
+    <h2>8. 工程实践与选型指南</h2>
+
+    <h3>8.1 选型决策树</h3>
+    <pre class="code" style="background:#fafbfd;color:#333;border:1px solid #e6e8eb;">要用 Ball Tree/VP-Tree 吗？
+│
+├── 数据规模 &lt; 10 万，追求精确 K-NN？
+│    │
+│    ├── 维度 D ≤ 10 → 用 <b>KD-Tree</b>（更快、更省内存）
+│    ├── 10 &lt; D &lt; 100，欧氏距离 → 用 <b>Ball Tree</b> ★
+│    └── 非欧度量（编辑距离 / Hamming / Jaccard）→ 用 <b>VP-Tree</b> ★
+│
+├── 数据规模 10 万-100 万？
+│    ├── 维度 &lt; 50，追求精确 → Ball Tree（构建可能 &gt; 10 s）
+│    └── 维度 ≥ 50 或数据 &gt; 100 万 → 转 <b>Annoy / HNSW</b>
+│
+├── 需要动态插入 / 删除？
+│    └── → <b>M-Tree</b>（VLDB 1997）或 <b>HNSW</b>（支持增量插入）
+│
+└── 高维向量（D ≥ 100）+ 大规模（&gt; 100 万）？
+     └── → <b>HNSW / IVF-PQ / ScaNN</b>（放弃 Ball Tree）</pre>
+
+    <h3>8.2 典型工程场景</h3>
+    <ul>
+        <li><b>中等维度 embedding 检索（20~100 维）</b>：word2vec-50、doc2vec-100、老式图像 HOG 特征。sklearn <code>NearestNeighbors(algorithm='auto')</code> 在 D &gt; 15 时自动切换到 ball_tree。</li>
+        <li><b>DNA / 蛋白质序列比对</b>：VP-Tree + Levenshtein 距离用于同源基因近邻搜索，是 BLAST 之前的辅助数据结构。</li>
+        <li><b>字符串去重 / 拼写纠错</b>：VP-Tree + edit distance——Elasticsearch fuzzy query、Redis 模糊匹配、Postgres <code>pg_trgm</code> 都用类似思路。</li>
+        <li><b>集合相似度（Jaccard 距离）</b>：VP-Tree 是 MinHash-LSH 之前的经典结构。</li>
+        <li><b>核密度估计（KDE）</b>：sklearn <code>KernelDensity(algorithm='ball_tree')</code> 对高维核估计明显优于 KD-Tree。</li>
+        <li><b>非欧度量的图像检索</b>：EMD (Earth Mover's Distance)、chi-squared 距离仍满足三角不等式，可用 Ball Tree 加速。</li>
+        <li><b>地理数据（Haversine 距离）</b>：sklearn <code>BallTree(metric='haversine')</code> 是"找附近 K 个用户"的标配。</li>
+    </ul>
+
+    <h3>8.3 参数速查表</h3>
+    <table class="param-hint-table">
+        <thead><tr><th>参数</th><th>调大的影响</th><th>调小的影响</th><th>调节建议</th></tr></thead>
+        <tbody>
+            <tr>
+                <td>leaf_size</td>
+                <td>树浅、节点少；但叶内暴力扫描代价 O(leaf_size · D) 上升</td>
+                <td>树深、节点多；剪枝更精细但递归开销大</td>
+                <td>sklearn 默认 40；SIMD 友好实现可到 100+。本页演示用 3 便于观察嵌套结构。</td>
+            </tr>
+            <tr>
+                <td>k（K-NN 大小）</td>
+                <td>找更多邻居，堆顶（第 k 近距离）更大，剪枝阈值更宽松，访问节点数上升</td>
+                <td>k=1 时剪枝最狠，速度最快</td>
+                <td>推荐系统 k=10~50；图像检索 k=5~20；聚类初始化 k=1</td>
+            </tr>
+            <tr>
+                <td>Ball vs VP 模式</td>
+                <td colspan="2">—</td>
+                <td>Ball Tree 适合欧氏空间与稠密向量；VP-Tree 更擅长非欧度量（如编辑距离、Hamming）</td>
+            </tr>
+            <tr>
+                <td>切分策略</td>
+                <td colspan="2">本演示采用<b>方差最大维度</b>（Omohundro K-D construction）</td>
+                <td>大数据集可用采样启发式加速 median 计算；bisecting k-means 质量更高但更慢</td>
+            </tr>
+            <tr>
+                <td>metric（度量选择）</td>
+                <td colspan="2">sklearn 支持 <code>euclidean</code>、<code>manhattan</code>、<code>chebyshev</code>、<code>minkowski</code>、<code>haversine</code>、<code>hamming</code>、<code>jaccard</code>、<code>mahalanobis</code>…</td>
+                <td>务必确认度量满足三角不等式；<code>cosine</code> 需先归一化再用欧氏（或用 sklearn <code>metric='cosine'</code> 内置转换）</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>8.4 代码调用示例</h3>
+
+    <h4 style="color:#7b3fd7;">a) scikit-learn BallTree（Python，最常用）</h4>
+    <pre class="code"><span class="kw">from</span> sklearn.neighbors <span class="kw">import</span> BallTree
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+X = np.<span class="fn">random</span>.<span class="fn">rand</span>(<span class="num">5000</span>, <span class="num">50</span>)                <span class="cmt"># 5000 个 50 维点</span>
+tree = <span class="fn">BallTree</span>(X, leaf_size=<span class="num">40</span>, metric=<span class="str">'euclidean'</span>)
+
+<span class="cmt"># K-NN 查询</span>
+dist, ind = tree.<span class="fn">query</span>(X[:<span class="num">1</span>], k=<span class="num">10</span>)              <span class="cmt"># 前 10 近邻</span>
+
+<span class="cmt"># 范围查询：找 X[0] 距离半径 0.3 内的所有点</span>
+counts = tree.<span class="fn">query_radius</span>(X[:<span class="num">1</span>], r=<span class="num">0.3</span>, count_only=<span class="kw">True</span>)
+
+<span class="cmt"># 支持度量：euclidean / manhattan / chebyshev / minkowski</span>
+<span class="cmt">#          haversine (球面) / hamming / canberra / jaccard / mahalanobis 等</span></pre>
+
+    <h4 style="color:#7b3fd7;">b) NearestNeighbors 统一接口（自动选算法）</h4>
+    <pre class="code"><span class="kw">from</span> sklearn.neighbors <span class="kw">import</span> NearestNeighbors
+nn = <span class="fn">NearestNeighbors</span>(algorithm=<span class="str">'auto'</span>, leaf_size=<span class="num">40</span>, n_neighbors=<span class="num">10</span>)
+nn.<span class="fn">fit</span>(X)
+d, i = nn.<span class="fn">kneighbors</span>(X[:<span class="num">1</span>])
+<span class="cmt"># auto 会根据 D、N 自动选 kd_tree / ball_tree / brute</span></pre>
+
+    <h4 style="color:#7b3fd7;">c) VP-Tree（Python 第三方库 vptree）</h4>
+    <pre class="code"><span class="kw">import</span> vptree
+<span class="kw">from</span> Levenshtein <span class="kw">import</span> distance <span class="kw">as</span> edit_dist
+
+words = [<span class="str">"hello"</span>, <span class="str">"help"</span>, <span class="str">"world"</span>, <span class="str">"word"</span>]
+tree = vptree.<span class="fn">VPTree</span>(words, dist_fn=edit_dist)   <span class="cmt"># 编辑距离</span>
+neighbors = tree.<span class="fn">get_n_nearest_neighbors</span>(<span class="str">"helo"</span>, <span class="num">3</span>)
+<span class="cmt"># [(1, 'hello'), (2, 'help'), (3, 'word')]</span></pre>
+
+    <h4 style="color:#7b3fd7;">d) 数据库集成（M-Tree / SP-GiST）</h4>
+    <pre class="code"><span class="cmt"># PostgreSQL 的 pg_trgm 扩展在字符串场景用类似 M-Tree 的索引</span>
+CREATE INDEX idx_word ON words USING gist(word gist_trgm_ops);
+SELECT word FROM words WHERE word %&gt; <span class="str">'helo'</span> LIMIT <span class="num">5</span>;
+
+<span class="cmt"># Elasticsearch 的 fuzzy query 底层是 automaton + Levenshtein</span>
+GET /my_index/_search
+{"query": {"fuzzy": {"word": {"value": "helo", "fuzziness": 2}}}}</pre>
+
+    <h3>8.5 常见误区</h3>
+    <div class="pitfall">
+        <h4>初学者容易踩的四个坑</h4>
+        <ol>
+            <li><b>把余弦相似度直接扔给 Ball Tree——错。</b> <code>cosine similarity</code> 不满足三角不等式，剪枝下界不成立。正确做法：① 对向量做 L2 归一化后用欧氏距离（此时欧氏距离 ≈ 单调递减于 cosine）；② 或转成 <b>angular distance = arccos(cosine)</b>（这是真度量）。sklearn 的 <code>metric='cosine'</code> 在 Ball Tree 下内部就是做的类似转换。</li>
+            <li><b>VP-Tree 不是 Ball Tree 的"简化版"，是另一种选枢方式。</b> Ball Tree 用质心 + 覆盖半径定义球；VP-Tree 用真实数据点 + 距离中位数。两者剪枝下界公式相似但树的几何形状与构建代价不同——VP-Tree 每次距离计算能复用 vp，构建更省，但对 vp 选择敏感。</li>
+            <li><b>内存占用比 KD-Tree 大得多。</b> 每节点存<b>球心 D floats + 半径 1 float</b>；D=768（BERT）时单节点多存 3 KB。总内存约 KD-Tree 的 1.3~2×。低维场景 KD-Tree 仍是首选。</li>
+            <li><b>高维（&gt; 100）依然退化，不要迷信"球比盒子好"。</b> Weber-Schek-Blott 1998 的证明对所有 space-partition 都成立。此时应改用 Annoy / HNSW / IVF-PQ 等真正的 ANN 方法。</li>
+        </ol>
+    </div>
+
+    <h3>8.6 下一步学什么</h3>
+    <div class="next-steps">
+        <p><b>推荐路径：</b>Ball Tree 能扛住中等维度（20~100），但维度继续升高或数据量突破百万，就必须放弃"精确性"来换"速度"。</p>
+        <ul>
+            <li><b>近似 ANN 入门：</b> <a href="./annoy.html">Annoy 随机投影树森林</a>——不再追求精确解，用"随机 + 集成"以概率覆盖真近邻。是 Ball Tree "轴对齐 → 任意方向"的自然演进。</li>
+            <li><b>动态更新：</b> M-Tree（Ciaccia VLDB 1997）——Ball Tree 的 B-Tree 化，支持插入分裂。</li>
+            <li><b>形式化保证：</b> Cover Tree（Beygelzimer ICML 2006）——严格证明 O(c<sup>D</sup> log N) 查询复杂度（D=intrinsic dim）。</li>
+            <li><b>非欧度量的现代方案：</b> pynndescent（Dong WWW 2011）——用 K-NN Graph 代替度量树，能处理任意度量 + 大数据。</li>
+            <li><b>大规模向量检索：</b> <code>HNSW</code>（分层小世界图）、<code>IVF-PQ</code>（倒排 + 乘积量化）、<code>ScaNN</code>（各向异性量化），用于亿级向量。</li>
+        </ul>
+    </div>
+
+    <h3>8.7 参考文献</h3>
+    <ol style="font-size:0.92rem;color:#333;">
+        <li>Omohundro, S. M. (1989). <b>"Five Balltree Construction Algorithms"</b>. ICSI Technical Report TR-89-063.
+            <span style="color:#888;">→ Ball Tree 原始论文，列出五种构建方案</span></li>
+        <li>Uhlmann, J. K. (1991). <b>"Satisfying general proximity/similarity queries with metric trees"</b>. <i>Information Processing Letters</i>, 40(4).
+            <span style="color:#888;">→ VP-Tree（metric tree）雏形</span></li>
+        <li>Yianilos, P. N. (1993). <b>"Data structures and algorithms for nearest neighbor search in general metric spaces"</b>. <i>ACM-SIAM SODA 1993</i>.
+            <span style="color:#888;">→ VP-Tree 完整算法与理论分析</span></li>
+        <li>Bozkaya, T., &amp; Ozsoyoglu, M. (1997). <b>"Distance-Based Indexing for High-Dimensional Metric Spaces"</b>. <i>SIGMOD 1997</i>.
+            <span style="color:#888;">→ MVP-Tree，多参照点变体</span></li>
+        <li>Ciaccia, P., Patella, M., &amp; Zezula, P. (1997). <b>"M-tree: An Efficient Access Method for Similarity Search in Metric Spaces"</b>. <i>VLDB 1997</i>.
+            <span style="color:#888;">→ 支持动态更新的 Ball Tree 变体，数据库集成经典</span></li>
+        <li>Weber, R., Schek, H. J., &amp; Blott, S. (1998). <b>"A Quantitative Analysis and Performance Study for Similarity-Search Methods in High-Dimensional Spaces"</b>. <i>VLDB 1998</i>.
+            <span style="color:#888;">→ 高维空间下所有度量树都退化的严格证明</span></li>
+        <li>Moore, A. W. (2000). <b>"The Anchors Hierarchy: Using the Triangle Inequality to Survive High Dimensional Data"</b>. <i>UAI 2000</i>.
+            <span style="color:#888;">→ Anchors 版 Ball Tree，构建方式改进</span></li>
+        <li>Beygelzimer, A., Kakade, S., &amp; Langford, J. (2006). <b>"Cover Trees for Nearest Neighbor"</b>. <i>ICML 2006</i>.
+            <span style="color:#888;">→ 形式化保证 O(c<sup>D</sup> log N) 查询复杂度的度量树</span></li>
+        <li>Dong, W., Charikar, M., &amp; Li, K. (2011). <b>"Efficient K-Nearest Neighbor Graph Construction for Generic Similarity Measures"</b>. <i>WWW 2011</i>.
+            <span style="color:#888;">→ K-NN Graph（NN-Descent），Ball Tree 的现代竞争者</span></li>
+        <li>scikit-learn <code>BallTree</code> 源码：<code>sklearn/neighbors/_ball_tree.pyx</code>（默认 K-D construction 策略，与本页展示一致）</li>
+    </ol>
+</section>
+
+</main>
+
+<footer>ANN 教学演示 · Ball Tree / VP-Tree · 纯 HTML5 Canvas + SVG 实现</footer>
+
+<script>
+"use strict";
+
+/* ============================================================
+ * 距离与随机
+ * ============================================================ */
+function dist(a, b) { const dx=a[0]-b[0], dy=a[1]-b[1]; return Math.sqrt(dx*dx+dy*dy); }
+function centroid(pts) {
+    let sx=0, sy=0;
+    for (const p of pts) { sx+=p[0]; sy+=p[1]; }
+    return [sx/pts.length, sy/pts.length];
+}
+function radius(pts, c) {
+    let r=0; for (const p of pts) r = Math.max(r, dist(p, c));
+    return r;
+}
+function variance(pts, axis) {
+    let m=0; for (const p of pts) m += p[axis]; m /= pts.length;
+    let v=0; for (const p of pts) v += (p[axis]-m)**2; return v;
+}
+
+/* ============================================================
+ * Ball Tree
+ * ============================================================ */
+class BallNode {
+    constructor() {
+        this.center=null; this.radius=0; this.points=[];
+        this.left=null; this.right=null; this.isLeaf=false; this.depth=0;
+    }
+}
+function buildBallTree(points, leafSize, depth=0) {
+    const node = new BallNode();
+    node.center = centroid(points);
+    node.radius = radius(points, node.center);
+    node.depth = depth;
+    if (points.length <= leafSize) {
+        node.isLeaf = true;
+        node.points = points.slice();
+        return node;
+    }
+    const vX = variance(points, 0), vY = variance(points, 1);
+    const axis = vX >= vY ? 0 : 1;
+    const sorted = points.slice().sort((a,b)=>a[axis]-b[axis]);
+    const mid = Math.floor(sorted.length/2);
+    const leftPts = sorted.slice(0, mid);
+    const rightPts = sorted.slice(mid);
+    node.left  = buildBallTree(leftPts, leafSize, depth+1);
+    node.right = buildBallTree(rightPts, leafSize, depth+1);
+    return node;
+}
+
+/* ============================================================
+ * VP-Tree
+ * ============================================================ */
+class VPNode {
+    constructor() {
+        this.vp=null; this.mu=0; this.left=null; this.right=null;
+        this.points=null; this.isLeaf=false; this.center=null; this.radius=0;
+        this.depth=0;
+    }
+}
+function buildVPTree(points, leafSize, depth=0, seed) {
+    const node = new VPNode();
+    node.depth = depth;
+    node.center = centroid(points);
+    node.radius = radius(points, node.center);
+    if (points.length <= leafSize) {
+        node.isLeaf = true; node.points = points.slice();
+        return node;
+    }
+    // 用伪随机（基于 seed 稳定）
+    seed = seed || 1;
+    const vpIdx = Math.floor((Math.sin(seed*997.123)*0.5+0.5) * points.length) % points.length;
+    node.vp = points[vpIdx];
+    const rest = points.filter((_,i)=>i!==vpIdx);
+    const dists = rest.map(p => dist(p, node.vp)).sort((a,b)=>a-b);
+    node.mu = dists[Math.floor(dists.length/2)];
+    const inner = rest.filter(p => dist(p, node.vp) < node.mu);
+    const outer = rest.filter(p => dist(p, node.vp) >= node.mu);
+    node.left  = buildVPTree(inner, leafSize, depth+1, seed*2+1);
+    node.right = buildVPTree(outer, leafSize, depth+1, seed*2+3);
+    return node;
+}
+
+/* ============================================================
+ * KNN 查询（Ball Tree）
+ * ============================================================ */
+function knnBall(root, q, K, trace) {
+    const best = [];
+    function pushBest(p, d) {
+        if (best.length < K) { best.push({p, d}); best.sort((a,b)=>b.d-a.d); }
+        else if (d < best[0].d) { best[0]={p,d}; best.sort((a,b)=>b.d-a.d); }
+    }
+    function worst() { return best.length<K ? Infinity : best[0].d; }
+    function recurse(node) {
+        if (!node) return;
+        const dc = dist(q, node.center);
+        if (dc - node.radius >= worst()) {
+            trace.pruned.push(node); return;
+        }
+        trace.visited.push(node);
+        if (node.isLeaf) {
+            for (const p of node.points) pushBest(p, dist(q, p));
+            return;
+        }
+        // 优先近的子球
+        const children = [node.left, node.right].filter(x=>x);
+        children.sort((a,b)=>dist(q,a.center)-dist(q,b.center));
+        for (const c of children) recurse(c);
+    }
+    recurse(root);
+    return best.sort((a,b)=>a.d-b.d);
+}
+
+/* KNN 查询（VP-Tree），也用同样的接口，将球看作 center=vp, radius=mu */
+function knnVP(root, q, K, trace) {
+    const best = [];
+    function pushBest(p, d) {
+        if (best.length < K) { best.push({p, d}); best.sort((a,b)=>b.d-a.d); }
+        else if (d < best[0].d) { best[0]={p,d}; best.sort((a,b)=>b.d-a.d); }
+    }
+    function worst() { return best.length<K ? Infinity : best[0].d; }
+    function recurse(node) {
+        if (!node) return;
+        // 近似剪枝：使用 center+radius
+        const dc = dist(q, node.center);
+        if (dc - node.radius >= worst()) {
+            trace.pruned.push(node); return;
+        }
+        trace.visited.push(node);
+        if (node.isLeaf) {
+            for (const p of node.points) pushBest(p, dist(q, p));
+            return;
+        }
+        if (node.vp) pushBest(node.vp, dist(q, node.vp));
+        // 用 vp 距离决定优先
+        const d_vp = dist(q, node.vp);
+        const near = d_vp < node.mu ? node.left  : node.right;
+        const far  = d_vp < node.mu ? node.right : node.left;
+        recurse(near);
+        if (Math.abs(d_vp - node.mu) < worst()) recurse(far);
+        else if (far) trace.pruned.push(far);
+    }
+    recurse(root);
+    return best.sort((a,b)=>a.d-b.d);
+}
+
+/* ============================================================
+ * 主画布
+ * ============================================================ */
+const bCanvas = document.getElementById('ballCanvas');
+const bCtx = bCanvas.getContext('2d');
+const treeSvg = document.getElementById('treeSvg');
+
+let bPoints = [];
+let bQuery = [280, 220];
+let bMode = 'ball';
+let bLeafSize = 3;
+let bDepthLimit = 0;
+let bK = 1;
+let bRoot = null;
+
+function randomPoints() {
+    bPoints = [];
+    for (let i = 0; i < 25; i++)
+        bPoints.push([30 + Math.random()*(bCanvas.width-60),
+                      30 + Math.random()*(bCanvas.height-60)]);
+    rebuildBall();
+}
+function clusteredPoints() {
+    bPoints = [];
+    const centers = [
+        [130, 110], [400, 130], [220, 320], [400, 320]
+    ];
+    centers.forEach(c=>{
+        for (let i = 0; i < 8; i++) {
+            const a = Math.random()*Math.PI*2;
+            const r = Math.random()*50;
+            bPoints.push([c[0]+Math.cos(a)*r, c[1]+Math.sin(a)*r]);
+        }
+    });
+    rebuildBall();
+}
+function rebuildBall() {
+    if (bPoints.length === 0) { bRoot=null; drawBall(); drawTreeSvg(); return; }
+    bRoot = bMode === 'ball'
+        ? buildBallTree(bPoints, bLeafSize)
+        : buildVPTree(bPoints, bLeafSize, 0, 17);
+    drawBall();
+    drawTreeSvg();
+}
+
+function drawBall() {
+    bCtx.clearRect(0,0,bCanvas.width, bCanvas.height);
+    if (!bRoot) return;
+
+    // 收集查询轨迹
+    const trace = { visited: [], pruned: [] };
+    const nbs = bMode === 'ball'
+        ? knnBall(bRoot, bQuery, bK, trace)
+        : knnVP(bRoot, bQuery, bK, trace);
+
+    // 绘制球
+    const drawnDepths = new Set();
+    function drawBalls(node, isPruned=false) {
+        if (!node) return;
+        if (bDepthLimit && node.depth > bDepthLimit) return;
+        const color = isPruned
+            ? 'rgba(200,200,200,0.35)'
+            : trace.visited.includes(node)
+                ? 'rgba(123,63,215,0.28)'
+                : 'rgba(180,180,180,0.15)';
+        const stroke = isPruned
+            ? '#bbbbbb'
+            : trace.visited.includes(node)
+                ? '#7b3fd7'
+                : '#c8ced6';
+        bCtx.strokeStyle = stroke;
+        bCtx.fillStyle = 'transparent';
+        bCtx.lineWidth = 1;
+        bCtx.beginPath();
+        bCtx.arc(node.center[0], node.center[1], node.radius, 0, Math.PI*2);
+        bCtx.stroke();
+        if (!node.isLeaf) {
+            drawBalls(node.left, isPruned || trace.pruned.includes(node.left));
+            drawBalls(node.right, isPruned || trace.pruned.includes(node.right));
+        }
+    }
+    drawBalls(bRoot);
+
+    // 数据点
+    for (const p of bPoints) {
+        bCtx.fillStyle = '#3b7ddd';
+        bCtx.beginPath();
+        bCtx.arc(p[0], p[1], 4, 0, Math.PI*2);
+        bCtx.fill();
+    }
+
+    // KNN
+    nbs.forEach(nb => {
+        bCtx.strokeStyle = '#2e9d5a';
+        bCtx.lineWidth = 2.5;
+        bCtx.beginPath();
+        bCtx.arc(nb.p[0], nb.p[1], 8, 0, Math.PI*2);
+        bCtx.stroke();
+        bCtx.strokeStyle = 'rgba(46,157,90,0.4)';
+        bCtx.beginPath();
+        bCtx.moveTo(bQuery[0], bQuery[1]);
+        bCtx.lineTo(nb.p[0], nb.p[1]);
+        bCtx.stroke();
+    });
+
+    // 搜索半径圆
+    if (nbs.length > 0) {
+        bCtx.strokeStyle = 'rgba(46,157,90,0.35)';
+        bCtx.setLineDash([4,4]);
+        bCtx.beginPath();
+        bCtx.arc(bQuery[0], bQuery[1], nbs[nbs.length-1].d, 0, Math.PI*2);
+        bCtx.stroke();
+        bCtx.setLineDash([]);
+    }
+
+    // 查询点
+    bCtx.fillStyle = '#d93025';
+    bCtx.beginPath();
+    bCtx.arc(bQuery[0], bQuery[1], 6, 0, Math.PI*2);
+    bCtx.fill();
+
+    // Info
+    const totalNodes = countNodes(bRoot);
+    document.getElementById('stepInfo').innerHTML =
+        `<b>模式：</b>${bMode==='ball'?'Ball Tree':'VP-Tree'}` +
+        `　<b>访问球：</b>${trace.visited.length}/${totalNodes}` +
+        `　<b>剪枝球：</b>${trace.pruned.length}` +
+        (nbs[0] ? `　<b>最近距离：</b>${nbs[0].d.toFixed(1)}` : '');
+}
+
+function countNodes(n) { return n ? 1 + countNodes(n.left) + countNodes(n.right) : 0; }
+function countLeaves(n) { if(!n)return 0; if(n.isLeaf)return 1; return countLeaves(n.left)+countLeaves(n.right); }
+
+/* SVG 树结构 */
+function drawTreeSvg() {
+    treeSvg.innerHTML='';
+    if (!bRoot) return;
+    const total = countNodes(bRoot);
+    let idx = 0;
+    const W = 640;
+    function layout(n, d) {
+        if (!n) return;
+        layout(n.left, d+1);
+        n._x = (idx+0.5)*(W/total);
+        n._y = 30 + d*46;
+        idx++;
+        layout(n.right, d+1);
+    }
+    layout(bRoot, 0);
+
+    function draw(n) {
+        if (!n) return;
+        if (n.left)  { addLine(n._x,n._y,n.left._x,n.left._y);  draw(n.left); }
+        if (n.right) { addLine(n._x,n._y,n.right._x,n.right._y); draw(n.right); }
+        const color = n.isLeaf ? '#2e9d5a' : '#7b3fd7';
+        addCircle(n._x, n._y, color, n.isLeaf ? 'L' : 'B');
+        const label = 'r=' + n.radius.toFixed(0);
+        addLabel(n._x, n._y+22, label);
+    }
+    function addLine(x1,y1,x2,y2) {
+        const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+        l.setAttribute('x1',x1); l.setAttribute('y1',y1);
+        l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+        l.setAttribute('stroke','#c0c6cf');
+        treeSvg.appendChild(l);
+    }
+    function addCircle(x, y, color, text) {
+        const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+        c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',11);
+        c.setAttribute('fill',color); treeSvg.appendChild(c);
+        const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+        t.setAttribute('x',x); t.setAttribute('y',y+4); t.setAttribute('text-anchor','middle');
+        t.setAttribute('font-size',10); t.setAttribute('fill','white');
+        t.textContent=text; treeSvg.appendChild(t);
+    }
+    function addLabel(x, y, text) {
+        const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+        t.setAttribute('x',x); t.setAttribute('y',y); t.setAttribute('text-anchor','middle');
+        t.setAttribute('font-size',9); t.setAttribute('fill','#555');
+        t.textContent=text; treeSvg.appendChild(t);
+    }
+    draw(bRoot);
+}
+
+/* 事件 */
+bCanvas.addEventListener('click', (e)=>{
+    const r = bCanvas.getBoundingClientRect();
+    const x = e.clientX-r.left, y = e.clientY-r.top;
+    if (Math.abs(x-bQuery[0])<12 && Math.abs(y-bQuery[1])<12) return;
+    bPoints.push([x,y]); rebuildBall();
+});
+let bDragging=false;
+bCanvas.addEventListener('mousedown',(e)=>{
+    const r=bCanvas.getBoundingClientRect();
+    const x=e.clientX-r.left, y=e.clientY-r.top;
+    if (Math.abs(x-bQuery[0])<14 && Math.abs(y-bQuery[1])<14) bDragging=true;
+});
+bCanvas.addEventListener('mousemove',(e)=>{
+    if (!bDragging) return;
+    const r=bCanvas.getBoundingClientRect();
+    bQuery=[e.clientX-r.left, e.clientY-r.top]; drawBall();
+});
+window.addEventListener('mouseup', ()=>bDragging=false);
+
+document.getElementById('btnRandom').onclick = randomPoints;
+document.getElementById('btnClusters').onclick = clusteredPoints;
+document.getElementById('btnClear').onclick = ()=>{bPoints=[]; rebuildBall();};
+document.getElementById('modeSelect').onchange = (e)=>{ bMode=e.target.value; rebuildBall(); };
+document.getElementById('leafSize').oninput = (e)=>{
+    bLeafSize = parseInt(e.target.value); document.getElementById('leafVal').textContent = bLeafSize;
+    rebuildBall();
+};
+document.getElementById('depthLimit').oninput = (e)=>{
+    bDepthLimit = parseInt(e.target.value);
+    document.getElementById('depthVal').textContent = bDepthLimit===0?'全部':bDepthLimit;
+    drawBall();
+};
+document.getElementById('kInput').oninput = (e)=>{
+    bK = parseInt(e.target.value);
+    document.getElementById('kVal').textContent = bK;
+    drawBall();
+};
+
+clusteredPoints();
+
+/* ============================================================
+ * 对比画布：同一批数据分别用 Ball Tree 与 VP-Tree
+ * ============================================================ */
+const cmpBallCv = document.getElementById('cmpBall');
+const cmpVPCv = document.getElementById('cmpVP');
+let cmpPoints = [];
+function genCmp() {
+    cmpPoints = [];
+    const centers = [[110,90],[330,110],[200,270]];
+    centers.forEach(c => {
+        for (let i = 0; i < 12; i++) {
+            const a = Math.random()*Math.PI*2;
+            const r = Math.random()*45;
+            cmpPoints.push([c[0]+Math.cos(a)*r, c[1]+Math.sin(a)*r]);
+        }
+    });
+    drawCmp();
+}
+function drawCmp() {
+    const ballRoot = buildBallTree(cmpPoints, 2);
+    const vpRoot   = buildVPTree(cmpPoints, 2, 0, 7);
+    drawCmpCanvas(cmpBallCv.getContext('2d'), ballRoot);
+    drawCmpCanvas(cmpVPCv.getContext('2d'), vpRoot);
+}
+function drawCmpCanvas(ctx, node) {
+    ctx.clearRect(0,0,460,360);
+    function paint(n, depth) {
+        if (!n) return;
+        const hue = (depth*47) % 360;
+        ctx.strokeStyle = `hsla(${hue}, 70%, 45%, 0.55)`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(n.center[0], n.center[1], n.radius, 0, Math.PI*2);
+        ctx.stroke();
+        if (!n.isLeaf) { paint(n.left, depth+1); paint(n.right, depth+1); }
+    }
+    paint(node, 0);
+    for (const p of cmpPoints) {
+        ctx.fillStyle = '#3b7ddd';
+        ctx.beginPath(); ctx.arc(p[0],p[1],3,0,Math.PI*2); ctx.fill();
+    }
+}
+document.getElementById('cmpRegen').onclick = genCmp;
+genCmp();
+
+/* ============================================================
+ * 案例逐步讲解 —— 代码 + 可视化 并排单步执行
+ * ============================================================ */
+(function walkthrough() {
+
+// ---------- 数据 ----------
+const demo = [
+    [90, 80],  [140, 130], [80, 200],  [170, 260], [240, 100],
+    [300, 220], [350, 300], [420, 130], [400, 240], [280, 340]
+];
+const demoLabels = ['A','B','C','D','E','F','G','H','I','J'];
+const demoQuery = [380, 150];
+const LEAF_SIZE = 2;
+
+// ---------- 伪代码（左侧显示，每行有编号） ----------
+// 用 [行号, 缩进, HTML片段] 三元组存储；缩进用于视觉层级
+const codeLines = [
+    // 构建函数
+    ['B1',  0, '<span class="kw">def</span> <span class="fn">build_ball_tree</span>(points, depth=<span class="num">0</span>):'],
+    ['B2',  1, '<span class="cmt"># 1. 计算包围球：center + radius</span>'],
+    ['B3',  1, 'c = <span class="fn">centroid</span>(points)'],
+    ['B4',  1, 'r = <span class="fn">max</span>(<span class="fn">dist</span>(p, c) <span class="kw">for</span> p <span class="kw">in</span> points)'],
+    ['B5',  1, 'node = <span class="fn">Node</span>(center=c, radius=r, depth=depth)'],
+    ['B6',  1, '<span class="cmt"># 2. 若点数 ≤ leaf_size，作为叶节点</span>'],
+    ['B7',  1, '<span class="kw">if</span> <span class="fn">len</span>(points) &lt;= LEAF_SIZE:'],
+    ['B8',  2, 'node.points = points'],
+    ['B9',  2, '<span class="kw">return</span> node'],
+    ['B10', 1, '<span class="cmt"># 3. 选方差最大的维度切分</span>'],
+    ['B11', 1, 'axis = <span class="fn">argmax_var</span>(points)'],
+    ['B12', 1, 'sorted = <span class="fn">sort</span>(points, key=axis)'],
+    ['B13', 1, 'mid = <span class="fn">len</span>(sorted) // <span class="num">2</span>'],
+    ['B14', 1, 'node.left  = <span class="fn">build_ball_tree</span>(sorted[:mid], depth+<span class="num">1</span>)'],
+    ['B15', 1, 'node.right = <span class="fn">build_ball_tree</span>(sorted[mid:], depth+<span class="num">1</span>)'],
+    ['B16', 1, '<span class="kw">return</span> node'],
+    // 空行
+    ['',   0, ''],
+    // 查询函数
+    ['Q1',  0, '<span class="kw">def</span> <span class="fn">nn</span>(node, target, best):'],
+    ['Q2',  1, '<span class="cmt"># --- 剪枝判定（关键） ---</span>'],
+    ['Q3',  1, 'd_c   = <span class="fn">dist</span>(node.center, target)'],
+    ['Q4',  1, 'lower = d_c - node.radius     <span class="cmt"># 球内任一点到 target 的下界</span>'],
+    ['Q5',  1, '<span class="kw">if</span> lower &gt;= best.dist:'],
+    ['Q6',  2, '<span class="kw">return</span> best             <span class="cmt"># ✂ 整个球剪枝跳过</span>'],
+    ['Q7',  1, ''],
+    ['Q8',  1, '<span class="kw">if</span> node.is_leaf:'],
+    ['Q9',  2, '<span class="kw">for</span> p <span class="kw">in</span> node.points:'],
+    ['Q10', 3, 'd = <span class="fn">dist</span>(p, target)'],
+    ['Q11', 3, '<span class="kw">if</span> d &lt; best.dist:'],
+    ['Q12', 4, 'best = <span class="fn">Best</span>(p, d)'],
+    ['Q13', 2, '<span class="kw">return</span> best'],
+    ['Q14', 1, ''],
+    ['Q15', 1, '<span class="cmt"># 内部节点：先访问离 target 近的子球</span>'],
+    ['Q16', 1, 'near, far = (node.left, node.right) <span class="kw">if</span> <span class="fn">dist</span>(target, node.left.center) &lt; <span class="fn">dist</span>(target, node.right.center) <span class="kw">else</span> (node.right, node.left)'],
+    ['Q17', 1, 'best = <span class="fn">nn</span>(near, target, best)'],
+    ['Q18', 1, 'best = <span class="fn">nn</span>(far,  target, best)'],
+    ['Q19', 1, '<span class="kw">return</span> best'],
+];
+
+// 行号 -> 数组索引 的快速表
+const lineIndex = {};
+codeLines.forEach((row, i) => { if (row[0]) lineIndex[row[0]] = i; });
+
+// 渲染代码面板
+const codePane = document.getElementById('codePane');
+codeLines.forEach((row, i) => {
+    const [ln, indent, html] = row;
+    const div = document.createElement('div');
+    div.className = 'code-line';
+    div.dataset.ln = ln;
+    div.innerHTML =
+        '<span class="ln">' + ln + '</span>' +
+        '<span>' + '  '.repeat(indent) + html + '</span>';
+    codePane.appendChild(div);
+});
+
+// ---------- 构建 + 查询（先真跑一遍，收集事件序列） ----------
+function dist2d(a, b) { return Math.hypot(a[0]-b[0], a[1]-b[1]); }
+function centroid2d(pts) {
+    let sx=0, sy=0;
+    for (const p of pts) { sx+=p[0]; sy+=p[1]; }
+    return [sx/pts.length, sy/pts.length];
+}
+function radiusOf(pts, c) {
+    let r = 0;
+    for (const p of pts) r = Math.max(r, dist2d(p, c));
+    return r;
+}
+function varianceOf(pts, axis) {
+    let m = 0;
+    for (const p of pts) m += p[axis];
+    m /= pts.length;
+    let v = 0;
+    for (const p of pts) v += (p[axis]-m)**2;
+    return v;
+}
+
+const allBalls = []; // 构建过程中所有球（用于绘制"已构建"背景）
+let nodeIdCounter = 0;
+function build(pts, depth) {
+    const id = ++nodeIdCounter;
+    const c = centroid2d(pts);
+    const r = radiusOf(pts, c);
+    const node = { id, c, r, depth, pts: pts.slice() };
+    allBalls.push(node);
+    if (pts.length <= LEAF_SIZE) {
+        node.isLeaf = true;
+        return node;
+    }
+    const vx = varianceOf(pts, 0), vy = varianceOf(pts, 1);
+    const axis = vx >= vy ? 0 : 1;
+    const sorted = pts.slice().sort((a,b) => a[axis]-b[axis]);
+    const mid = Math.floor(sorted.length/2);
+    node.axis = axis;
+    node.left  = build(sorted.slice(0, mid), depth+1);
+    node.right = build(sorted.slice(mid),    depth+1);
+    return node;
+}
+const root = build(demo, 0);
+
+// ---------- 事件生成 ----------
+// 每个事件包含：activeLine, kind, narration, snapshot(visited/pruned/best/current/stack)
+const events = [];
+const visited = new Set();   // 球 id -> 已访问
+const prunedIds = new Set(); // 球 id -> 被剪枝
+const callStack = [];        // 递归调用栈快照
+let best = { p: null, d: Infinity };
+let currentNode = null;
+let lastLower = null;
+let lastDc = null;
+
+function pushEv(activeLine, kind, narration) {
+    events.push({
+        activeLine,
+        kind,
+        narration,
+        visited: new Set(visited),
+        pruned:  new Set(prunedIds),
+        best:    best ? { p: best.p, d: best.d } : { p: null, d: Infinity },
+        current: currentNode,
+        stack:   callStack.slice(),
+        dc:      lastDc,
+        lower:   lastLower,
+    });
+}
+
+// --- 构建阶段的事件（简化：每个球构建时高亮 B3/B4） ---
+allBalls.forEach((n, i) => {
+    currentNode = n;
+    pushEv('B3', 'build',
+        '构建球 <b>#' + n.id + '</b>（深度 ' + n.depth + '，含 ' + n.pts.length +
+        ' 个点）：先算<b>质心</b> center=(' + n.c[0].toFixed(0) + ',' + n.c[1].toFixed(0) + ')');
+    pushEv('B4', 'build',
+        '再算<b>半径</b> = max(dist(p, center)) = ' + n.r.toFixed(1) +
+        '（这就是包住所有点的最小球）');
+    if (n.isLeaf) {
+        pushEv('B7', 'build',
+            '点数 ' + n.pts.length + ' ≤ leaf_size=' + LEAF_SIZE + '，作为<b>叶节点</b>存点数组');
+    }
+});
+currentNode = null;
+pushEv('B16', 'build', '构建完成，共 <b>' + allBalls.length + '</b> 个球（' + allBalls.filter(n=>n.isLeaf).length + ' 个叶）。下面开始查询。');
+
+// --- 查询阶段（模拟真实递归，产生细粒度事件） ---
+function stepNN(node) {
+    currentNode = node;
+    const stackFrame = { id: node.id, depth: node.depth, isLeaf: !!node.isLeaf };
+    callStack.push(stackFrame);
+
+    // Q1: 进入函数
+    pushEv('Q1', 'enter',
+        '进入 nn(球 <b>#' + node.id + '</b>)，深度 ' + node.depth +
+        '，' + (node.isLeaf ? '<b>叶节点</b>' : '内部节点') +
+        '，含 ' + node.pts.length + ' 个点');
+
+    // Q3: 算 d_c
+    lastDc = dist2d(node.c, demoQuery);
+    pushEv('Q3', 'check',
+        '计算 <code>d_c = dist(球心, Q) = dist((' + node.c[0].toFixed(0) + ',' + node.c[1].toFixed(0) + '), Q) = ' + lastDc.toFixed(1) + '</code>');
+
+    // Q4: 算 lower
+    lastLower = lastDc - node.r;
+    pushEv('Q4', 'check',
+        '计算<b>下界</b> <code>lower = d_c − r = ' + lastDc.toFixed(1) + ' − ' + node.r.toFixed(1) + ' = ' + lastLower.toFixed(1) + '</code>。<br>' +
+        '<i>三角不等式保证：球内任何点到 Q 的距离都 ≥ lower</i>');
+
+    // Q5: 剪枝判定
+    if (lastLower >= best.d) {
+        // 剪枝
+        prunedIds.add(node.id);
+        pushEv('Q5', 'prune',
+            '判断 <code>lower (' + lastLower.toFixed(1) + ') ≥ best.d (' + best.d.toFixed(1) + ')</code> — <b>成立！</b>');
+        pushEv('Q6', 'prune',
+            '<b style="color:#dc2626">✂ 剪枝！</b> 整个球 <b>#' + node.id + '</b> 及其所有子孙点都不可能超过当前最优，直接 return。<br>' +
+            '<i>这一步跳过了 ' + node.pts.length + ' 个候选点的距离计算。</i>');
+        callStack.pop();
+        currentNode = null;
+        return;
+    } else {
+        pushEv('Q5', 'check',
+            '判断 <code>lower (' + lastLower.toFixed(1) + ') ≥ best.d (' + (best.d === Infinity ? '∞' : best.d.toFixed(1)) + ')</code> — <b>不成立</b>，需要进入球内部搜索');
+    }
+
+    visited.add(node.id);
+
+    if (node.isLeaf) {
+        pushEv('Q8', 'leaf',
+            '<b>叶节点</b>：逐个计算 Q 到叶内每个点的真实距离');
+        for (let i = 0; i < node.pts.length; i++) {
+            const p = node.pts[i];
+            const lbl = demoLabels[demo.findIndex(x => x[0]===p[0] && x[1]===p[1])];
+            const d = dist2d(p, demoQuery);
+            pushEv('Q10', 'leaf',
+                '叶内第 ' + (i+1) + ' 个点 <b>' + lbl + '</b>=(' + p[0] + ',' + p[1] + ')，d = ' + d.toFixed(1));
+            if (d < best.d) {
+                const oldD = best.d === Infinity ? '∞' : best.d.toFixed(1);
+                best = { p, d, lbl };
+                pushEv('Q12', 'update',
+                    '<b style="color:#16a34a">更新 best！</b> 原来的 best.d=' + oldD + ' → 新 best = {p: ' + lbl + ', d: ' + d.toFixed(1) + '}');
+            } else {
+                pushEv('Q11', 'leaf',
+                    'd=' + d.toFixed(1) + ' ≥ best.d=' + best.d.toFixed(1) + '，不更新');
+            }
+        }
+        pushEv('Q13', 'return', '叶节点扫描结束，return best');
+        callStack.pop();
+        currentNode = null;
+        return;
+    }
+
+    // 内部节点：选 near / far
+    const dL = dist2d(demoQuery, node.left.c);
+    const dR = dist2d(demoQuery, node.right.c);
+    const near = dL < dR ? node.left  : node.right;
+    const far  = dL < dR ? node.right : node.left;
+    pushEv('Q16', 'check',
+        '内部节点。计算查询点到<b>两个子球心</b>的距离：left=' + dL.toFixed(1) + '，right=' + dR.toFixed(1) +
+        '。先访问较近的子球 <b>#' + near.id + '</b>');
+
+    pushEv('Q17', 'enter', '递归调用 nn(near = 球 #' + near.id + ')');
+    stepNN(near);
+
+    // 从 near 返回后，当前节点回到本层
+    currentNode = node;
+    pushEv('Q18', 'enter',
+        '从 near 返回。此时 best.d = ' + best.d.toFixed(1) +
+        '。继续递归 nn(far = 球 <b>#' + far.id + '</b>)');
+    stepNN(far);
+
+    currentNode = node;
+    pushEv('Q19', 'return', 'return best（回到父节点）');
+    callStack.pop();
+}
+
+pushEv('Q1', 'enter', '<b>开始查询</b>：调用 nn(root, Q, best={d: ∞})');
+stepNN(root);
+pushEv('Q19', 'done',
+    '<b>查询完成！</b> 最近邻 = <b>' + best.lbl + '</b>(' + best.p[0] + ',' + best.p[1] + ')，距离 = ' + best.d.toFixed(2) +
+    '。访问 <b>' + visited.size + '</b> 个球，剪枝 <b>' + prunedIds.size + '</b> 个球。');
+
+// ---------- 绘制 ----------
+const canvas = document.getElementById('walkCanvas');
+const ctx = canvas.getContext('2d');
+
+function drawEvent(ev) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. 所有已构建的球（浅色背景）
+    allBalls.forEach(n => {
+        const isCur = ev.current && ev.current.id === n.id;
+        const isPruned = ev.pruned.has(n.id);
+        const isVisited = ev.visited.has(n.id);
+
+        // 剪枝球：红色斜纹
+        if (isPruned) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(n.c[0], n.c[1], n.r, 0, Math.PI*2);
+            ctx.clip();
+            ctx.fillStyle = 'rgba(220, 38, 38, 0.10)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = 'rgba(220, 38, 38, 0.45)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            const step = 10;
+            for (let d = -canvas.height; d < canvas.width; d += step) {
+                ctx.moveTo(d, 0);
+                ctx.lineTo(d + canvas.height, canvas.height);
+            }
+            ctx.stroke();
+            ctx.restore();
+            ctx.strokeStyle = '#dc2626';
+            ctx.setLineDash([6, 4]);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(n.c[0], n.c[1], n.r, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#dc2626';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.fillText('✂ 剪枝 #'+n.id, n.c[0]-n.r+4, n.c[1]-n.r+12);
+            return;
+        }
+
+        // 当前节点：紫色实心+发光
+        if (isCur) {
+            ctx.save();
+            ctx.shadowColor = '#7b3fd7';
+            ctx.shadowBlur = 15;
+            ctx.strokeStyle = '#7b3fd7';
+            ctx.fillStyle = 'rgba(123, 63, 215, 0.10)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(n.c[0], n.c[1], n.r, 0, Math.PI*2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        } else if (isVisited) {
+            // 已访问：黄色
+            ctx.strokeStyle = 'rgba(217, 119, 6, 0.65)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(n.c[0], n.c[1], n.r, 0, Math.PI*2);
+            ctx.stroke();
+        } else {
+            // 未处理：灰色淡
+            ctx.strokeStyle = `hsla(${(n.depth*57)%360},50%,55%,0.28)`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(n.c[0], n.c[1], n.r, 0, Math.PI*2);
+            ctx.stroke();
+        }
+
+        // 球心小点
+        ctx.fillStyle = isCur ? '#7b3fd7' : `hsla(${(n.depth*57)%360},60%,45%,0.5)`;
+        ctx.beginPath();
+        ctx.arc(n.c[0], n.c[1], isCur ? 4 : 2, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    // 2. 数据点
+    demo.forEach((p, i) => {
+        ctx.fillStyle = '#1e40af';
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], 5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#111';
+        ctx.font = '11px sans-serif';
+        ctx.fillText(demoLabels[i], p[0]+7, p[1]-6);
+    });
+
+    // 3. 查询点 Q
+    ctx.fillStyle = '#d93025';
+    ctx.beginPath();
+    ctx.arc(demoQuery[0], demoQuery[1], 6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('Q', demoQuery[0]+9, demoQuery[1]-6);
+
+    // 4. 当前 best 与搜索半径
+    if (ev.best.p) {
+        ctx.strokeStyle = '#16a34a';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(ev.best.p[0], ev.best.p[1], 10, 0, Math.PI*2);
+        ctx.stroke();
+        // 搜索半径圆
+        ctx.strokeStyle = 'rgba(22, 163, 74, 0.55)';
+        ctx.fillStyle = 'rgba(22, 163, 74, 0.06)';
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(demoQuery[0], demoQuery[1], ev.best.d, 0, Math.PI*2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#16a34a';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('r='+ev.best.d.toFixed(1), demoQuery[0]+ev.best.d+4, demoQuery[1]-4);
+    }
+
+    // 5. 若正在检查球（Q3/Q4），画 dc 线段
+    if ((ev.activeLine === 'Q3' || ev.activeLine === 'Q4' || ev.activeLine === 'Q5') && ev.current) {
+        ctx.strokeStyle = '#0ea5e9';
+        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(demoQuery[0], demoQuery[1]);
+        ctx.lineTo(ev.current.c[0], ev.current.c[1]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // 标注 dc
+        const mx = (demoQuery[0]+ev.current.c[0])/2;
+        const my = (demoQuery[1]+ev.current.c[1])/2;
+        ctx.fillStyle = '#0284c7';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('d_c='+ev.dc.toFixed(1), mx+4, my-4);
+    }
+}
+
+// ---------- UI 绑定 ----------
+const codeLinesEls = codePane.querySelectorAll('.code-line');
+const walkTextEl   = document.getElementById('walkText');
+const narrationEl  = document.getElementById('walkNarration');
+const stateStep    = document.getElementById('stateStep');
+const statePhase   = document.getElementById('statePhase');
+const stateVisited = document.getElementById('stateVisited');
+const statePruned  = document.getElementById('statePruned');
+const stateBestD   = document.getElementById('stateBestD');
+const stateBestP   = document.getElementById('stateBestP');
+const stateNodeC   = document.getElementById('stateNodeC');
+const stateNodeR   = document.getElementById('stateNodeR');
+const stateDc      = document.getElementById('stateDc');
+const stateLower   = document.getElementById('stateLower');
+const callStackEl  = document.getElementById('callStack');
+const progressBar  = document.getElementById('walkProgress');
+const walkIdxEl    = document.getElementById('walkIdx');
+
+let curIdx = 0;
+
+function render() {
+    const ev = events[curIdx];
+    // 高亮代码行
+    codeLinesEls.forEach(el => el.classList.remove('active'));
+    if (ev.activeLine && lineIndex[ev.activeLine] !== undefined) {
+        const el = codeLinesEls[lineIndex[ev.activeLine]];
+        el.classList.add('active');
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    // 画布
+    drawEvent(ev);
+    // 叙述
+    narrationEl.className = 'step-narration';
+    const kindLabel = { build:'build', enter:'enter', check:'check', leaf:'leaf', update:'update', prune:'prune', return:'return', done:'done' };
+    walkTextEl.parentElement.innerHTML =
+        '<span class="kind kind-' + ev.kind + '">' + kindLabel[ev.kind] + '</span>' +
+        '<span id="walkText">' + ev.narration + '</span>';
+    // 状态
+    stateStep.textContent = (curIdx+1) + ' / ' + events.length;
+    statePhase.textContent = ev.activeLine || '-';
+    stateVisited.textContent = ev.visited.size;
+    statePruned.textContent = ev.pruned.size;
+    if (ev.best.d === Infinity) {
+        stateBestD.textContent = '∞';
+        stateBestP.textContent = 'null';
+    } else {
+        stateBestD.textContent = ev.best.d.toFixed(2);
+        const lbl = ev.best.p ? demoLabels[demo.findIndex(x=>x[0]===ev.best.p[0]&&x[1]===ev.best.p[1])] : '?';
+        stateBestP.textContent = lbl + '(' + ev.best.p[0] + ',' + ev.best.p[1] + ')';
+    }
+    if (ev.current) {
+        stateNodeC.textContent = '(' + ev.current.c[0].toFixed(0) + ',' + ev.current.c[1].toFixed(0) + ')';
+        stateNodeR.textContent = ev.current.r.toFixed(1);
+    } else {
+        stateNodeC.textContent = '-';
+        stateNodeR.textContent = '-';
+    }
+    stateDc.textContent    = ev.dc    == null ? '-' : ev.dc.toFixed(1);
+    stateLower.textContent = ev.lower == null ? '-' : ev.lower.toFixed(1);
+    // 调用栈
+    if (ev.stack.length === 0) {
+        callStackEl.innerHTML = '<div class="frame">调用栈：空</div>';
+    } else {
+        let html = '';
+        ev.stack.forEach((f, i) => {
+            const isTop = i === ev.stack.length - 1;
+            html += '<div class="frame' + (isTop ? ' top' : '') + '">' +
+                    '&nbsp;&nbsp;'.repeat(i) + '↳ nn(球 #' + f.id + ', depth=' + f.depth + (f.isLeaf ? ', LEAF' : '') + ')' +
+                    '</div>';
+        });
+        callStackEl.innerHTML = html;
+    }
+    // 进度
+    progressBar.style.width = ((curIdx+1) / events.length * 100).toFixed(1) + '%';
+    walkIdxEl.textContent = (curIdx+1) + ' / ' + events.length;
+}
+
+document.getElementById('btnWalkNext').onclick = () => { if (curIdx < events.length-1) { curIdx++; render(); } };
+document.getElementById('btnWalkPrev').onclick = () => { if (curIdx > 0) { curIdx--; render(); } };
+document.getElementById('btnWalkReset').onclick = () => { curIdx = 0; stopAuto(); render(); };
+
+let autoTimer = null;
+function stopAuto() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    document.getElementById('btnWalkAuto').textContent = '自动播放';
+}
+document.getElementById('btnWalkAuto').onclick = () => {
+    if (autoTimer) { stopAuto(); return; }
+    document.getElementById('btnWalkAuto').textContent = '暂停 ⏸';
+    autoTimer = setInterval(() => {
+        if (curIdx < events.length-1) { curIdx++; render(); }
+        else stopAuto();
+    }, parseInt(document.getElementById('walkSpeed').value, 10));
+};
+document.getElementById('walkSpeed').oninput = () => {
+    if (autoTimer) {
+        stopAuto();
+        document.getElementById('btnWalkAuto').click();
+    }
+};
+
+render();
+
+})();
+</script>
+</body>
+</html>

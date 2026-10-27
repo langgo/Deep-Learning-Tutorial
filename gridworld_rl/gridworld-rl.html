@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>网格世界：策略迭代与价值迭代可视化</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d9deea;
+      --line-dark: #9aa4b8;
+      --blue: #246bfe;
+      --green: #0f9f6e;
+      --amber: #d17b00;
+      --red: #d33b3b;
+      --shadow: 0 14px 34px rgba(23, 32, 51, 0.08);
+      --radius: 8px;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(520px, 0.98fr) minmax(420px, 0.72fr);
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: calc(100vh - 36px);
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .segmented {
+      display: inline-grid;
+      grid-template-columns: 1fr 1fr;
+      border: 1px solid var(--line-dark);
+      border-radius: 7px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .segmented button {
+      border: 0;
+      border-right: 1px solid var(--line-dark);
+      background: #fff;
+      color: var(--ink);
+      padding: 9px 13px;
+      font-weight: 650;
+      cursor: pointer;
+      min-width: 94px;
+    }
+
+    .segmented button:last-child { border-right: 0; }
+    .segmented button.active { background: var(--blue); color: white; }
+
+    button.action {
+      border: 1px solid var(--line-dark);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--ink);
+      padding: 9px 12px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    button.action.primary {
+      background: var(--ink);
+      color: white;
+      border-color: var(--ink);
+    }
+
+    button.action:disabled {
+      color: #98a2b3;
+      border-color: #e4e7ec;
+      cursor: not-allowed;
+    }
+
+    label.control {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    input[type="number"] {
+      width: 64px;
+      border: 1px solid var(--line-dark);
+      border-radius: 6px;
+      padding: 8px 7px;
+      color: var(--ink);
+    }
+
+    .main {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-content: start;
+      gap: 14px;
+      padding: 18px 20px 20px;
+      overflow: auto;
+    }
+
+    .statusbar {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 10px 12px;
+      min-height: 66px;
+    }
+
+    .stat .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+
+    .stat .value {
+      font-size: 18px;
+      font-weight: 750;
+    }
+
+    .board-wrap {
+      display: grid;
+      grid-template-columns: minmax(380px, 520px) 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      aspect-ratio: 1 / 1;
+      border: 2px solid #303846;
+      background: #303846;
+      width: min(100%, 520px);
+    }
+
+    .cell {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      background: #fff;
+      border: 1px solid #303846;
+      display: grid;
+      grid-template-rows: 22px 1fr 28px;
+      padding: 5px;
+      cursor: pointer;
+      transition: background 120ms ease, outline 120ms ease;
+    }
+
+    .cell:hover { background: #f9fbff; }
+    .cell.selected {
+      outline: 4px solid rgba(36, 107, 254, 0.28);
+      outline-offset: -4px;
+      background: #f4f8ff;
+    }
+
+    .cell.special-a { background: #fff8e7; }
+    .cell.special-b { background: #eef9f2; }
+    .cell.selected.special-a { background: #fff2c7; }
+    .cell.selected.special-b { background: #dcf6e8; }
+
+    .cell-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-width: 0;
+      gap: 4px;
+    }
+
+    .tag {
+      font-size: 12px;
+      line-height: 1;
+      font-weight: 800;
+      color: var(--ink);
+    }
+
+    .coords {
+      color: #7a8599;
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .v {
+      display: grid;
+      place-items: center;
+      font-size: clamp(18px, 3.3vw, 34px);
+      font-weight: 780;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0;
+    }
+
+    .policy {
+      display: flex;
+      align-items: end;
+      justify-content: center;
+      gap: 2px;
+      min-height: 26px;
+      font-size: clamp(16px, 2.1vw, 24px);
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .legend {
+      display: grid;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .legend-box {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 12px;
+      background: #fbfcff;
+    }
+
+    .legend strong { color: var(--ink); }
+
+    .side {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      min-height: calc(100vh - 36px);
+      overflow: hidden;
+    }
+
+    .side-head {
+      padding: 18px 18px 12px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
+    }
+
+    .side-title {
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tabs button {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--muted);
+      padding: 8px 10px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    .tabs button.active {
+      color: var(--blue);
+      border-color: rgba(36, 107, 254, 0.45);
+      background: #f2f6ff;
+    }
+
+    .detail {
+      overflow: auto;
+      padding: 16px 18px 18px;
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+
+    .note {
+      padding: 12px;
+      border-radius: 7px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .formula {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 12px;
+      background: #fff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 8px 7px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th:first-child, td:first-child { text-align: left; }
+    tr:last-child td { border-bottom: 0; }
+    th { color: var(--muted); font-weight: 750; background: #f8fafc; }
+    tr.best td { background: #edf8f3; color: #087443; font-weight: 760; }
+
+    .history {
+      display: grid;
+      gap: 8px;
+      max-height: 360px;
+      overflow: auto;
+    }
+
+    .history-item {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 10px 12px;
+      background: #fff;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .history-item b { color: var(--ink); }
+    .green { color: var(--green); }
+    .amber { color: var(--amber); }
+    .red { color: var(--red); }
+
+    @media (max-width: 1050px) {
+      .app { grid-template-columns: 1fr; }
+      .workspace, .side { min-height: auto; }
+      .board-wrap { grid-template-columns: 1fr; }
+      .statusbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 620px) {
+      .app { padding: 10px; }
+      .header, .main, .side-head, .detail { padding-left: 12px; padding-right: 12px; }
+      .statusbar { grid-template-columns: 1fr; }
+      .segmented { width: 100%; }
+      .segmented button { min-width: 0; }
+      .controls button.action { flex: 1 1 120px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="panel workspace">
+      <header class="header">
+        <div>
+          <h1>5×5 网格世界：策略迭代与价值迭代</h1>
+          <div class="subtitle">
+            例子与图中一致：A 状态任意动作跳到 A' 并获得 +10，B 状态任意动作跳到 B' 并获得 +5；普通状态越界留在原地并获得 -1，其他普通移动奖励为 0。默认折扣因子 γ = 0.9。
+          </div>
+        </div>
+        <div class="controls">
+          <div class="segmented" aria-label="算法模式">
+            <button id="modePolicy" class="active" type="button">策略迭代</button>
+            <button id="modeValue" type="button">价值迭代</button>
+          </div>
+          <button id="stepBtn" class="action primary" type="button">迭代一步</button>
+          <button id="multiBtn" class="action" type="button">迭代多步</button>
+          <button id="roundBtn" class="action" type="button">完整一轮</button>
+          <button id="resetBtn" class="action" type="button">重置</button>
+          <label class="control">步数 <input id="stepsInput" type="number" min="2" max="200" value="10" /></label>
+          <label class="control">γ <input id="gammaInput" type="number" min="0" max="0.99" step="0.01" value="0.90" /></label>
+        </div>
+      </header>
+
+      <div class="main">
+        <div class="statusbar">
+          <div class="stat">
+            <div class="label">当前算法</div>
+            <div id="modeStat" class="value">策略迭代</div>
+          </div>
+          <div class="stat">
+            <div class="label">下一步将执行</div>
+            <div id="phaseStat" class="value">策略评估</div>
+          </div>
+          <div class="stat">
+            <div class="label">迭代次数</div>
+            <div id="iterStat" class="value">0</div>
+          </div>
+          <div class="stat">
+            <div class="label">本步最大变化</div>
+            <div id="deltaStat" class="value">0.000</div>
+          </div>
+        </div>
+
+        <div class="board-wrap">
+          <div id="grid" class="grid" aria-label="网格世界"></div>
+          <div class="legend">
+            <div class="legend-box">
+              <strong>怎么看格子</strong><br />
+              中间的大数字是当前价值 V(s)。底部箭头是当前策略：策略迭代显示当前 π，价值迭代显示由当前 V 贪心得到的动作。
+            </div>
+            <div class="legend-box">
+              <strong>策略迭代</strong><br />
+              单步会先做一次“策略评估扫描”。当变化足够小后，下一步会做“策略改进”：计算每个动作的 Q(s,a)，把策略改成 Q 最大的动作。
+            </div>
+            <div class="legend-box">
+              <strong>价值迭代</strong><br />
+              每一步直接使用 V(s) ← maxₐ [R(s,a)+γV(s')]。整张 V 表更新完成后，再用新的 V 表为每格提取贪心箭头；箭头不参与本步 V_new 的加权计算。
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel side">
+      <div class="side-head">
+        <div class="side-title">本步计算过程</div>
+        <div class="subtitle">点击任意格子，可以查看该状态在最近一次更新里的完整动作计算。</div>
+      </div>
+      <div class="tabs">
+        <button id="tabCalc" class="active" type="button">选中格子</button>
+        <button id="tabHistory" type="button">步骤记录</button>
+      </div>
+      <div id="detail" class="detail"></div>
+    </aside>
+  </main>
+
+  <script>
+    const N = 5;
+    const ACTIONS = [
+      { key: "U", name: "上", arrow: "↑", dr: -1, dc: 0 },
+      { key: "D", name: "下", arrow: "↓", dr: 1, dc: 0 },
+      { key: "L", name: "左", arrow: "←", dr: 0, dc: -1 },
+      { key: "R", name: "右", arrow: "→", dr: 0, dc: 1 }
+    ];
+    const A = { r: 0, c: 1, toR: 4, toC: 1, reward: 10, label: "A", toLabel: "A'" };
+    const B = { r: 0, c: 3, toR: 2, toC: 3, reward: 5, label: "B", toLabel: "B'" };
+    const EPS = 0.001;
+
+    let mode = "policy";
+    let phase = "eval";
+    let gamma = 0.9;
+    let V = zeros();
+    let policy = uniformPolicy();
+    let selected = { r: 0, c: 0 };
+    let iter = 0;
+    let policySweeps = 0;
+    let lastDelta = 0;
+    let lastDetails = makeEmptyDetails();
+    let history = [];
+    let currentTab = "calc";
+
+    const gridEl = document.getElementById("grid");
+    const detailEl = document.getElementById("detail");
+    const modePolicyBtn = document.getElementById("modePolicy");
+    const modeValueBtn = document.getElementById("modeValue");
+    const stepBtn = document.getElementById("stepBtn");
+    const multiBtn = document.getElementById("multiBtn");
+    const roundBtn = document.getElementById("roundBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const stepsInput = document.getElementById("stepsInput");
+    const gammaInput = document.getElementById("gammaInput");
+    const modeStat = document.getElementById("modeStat");
+    const phaseStat = document.getElementById("phaseStat");
+    const iterStat = document.getElementById("iterStat");
+    const deltaStat = document.getElementById("deltaStat");
+    const tabCalc = document.getElementById("tabCalc");
+    const tabHistory = document.getElementById("tabHistory");
+
+    function zeros() {
+      return Array.from({ length: N }, () => Array(N).fill(0));
+    }
+
+    function uniformPolicy() {
+      return Array.from({ length: N }, () =>
+        Array.from({ length: N }, () => ACTIONS.map(() => 0.25))
+      );
+    }
+
+    function makeEmptyDetails() {
+      return Array.from({ length: N }, () =>
+        Array.from({ length: N }, () => ({ actions: [], result: 0, oldValue: 0, text: "尚未执行更新。" }))
+      );
+    }
+
+    function cloneValues(values) {
+      return values.map(row => row.slice());
+    }
+
+    function isAt(pos, r, c) {
+      return pos.r === r && pos.c === c;
+    }
+
+    function stateLabel(r, c) {
+      if (isAt(A, r, c)) return "A";
+      if (r === A.toR && c === A.toC) return "A'";
+      if (isAt(B, r, c)) return "B";
+      if (r === B.toR && c === B.toC) return "B'";
+      return "";
+    }
+
+    function transition(r, c, action) {
+      if (isAt(A, r, c)) return { r: A.toR, c: A.toC, reward: A.reward, special: "A→A'" };
+      if (isAt(B, r, c)) return { r: B.toR, c: B.toC, reward: B.reward, special: "B→B'" };
+
+      const nr = r + action.dr;
+      const nc = c + action.dc;
+      if (nr < 0 || nr >= N || nc < 0 || nc >= N) {
+        return { r, c, reward: -1, special: "越界，留在原格" };
+      }
+      return { r: nr, c: nc, reward: 0, special: "普通移动" };
+    }
+
+    function actionRows(r, c, baseV) {
+      return ACTIONS.map((action, index) => {
+        const t = transition(r, c, action);
+        const nextValue = baseV[t.r][t.c];
+        const q = t.reward + gamma * nextValue;
+        return {
+          index,
+          action,
+          prob: policy[r][c][index],
+          to: t,
+          nextValue,
+          q
+        };
+      });
+    }
+
+    function bestActionIndexes(rows) {
+      const maxQ = Math.max(...rows.map(row => row.q));
+      return rows
+        .map((row, index) => Math.abs(row.q - maxQ) < 1e-10 ? index : -1)
+        .filter(index => index >= 0);
+    }
+
+    function policyEvaluationSweep() {
+      const oldV = cloneValues(V);
+      const newV = zeros();
+      const details = makeEmptyDetails();
+      let delta = 0;
+
+      for (let r = 0; r < N; r += 1) {
+        for (let c = 0; c < N; c += 1) {
+          const rows = actionRows(r, c, oldV);
+          const value = rows.reduce((sum, row) => sum + row.prob * row.q, 0);
+          newV[r][c] = value;
+          delta = Math.max(delta, Math.abs(value - oldV[r][c]));
+          details[r][c] = {
+            kind: "policy-eval",
+            actions: rows,
+            oldValue: oldV[r][c],
+            result: value,
+            text: "策略评估：固定当前策略，对四个动作的结果按策略概率求加权平均。"
+          };
+        }
+      }
+
+      V = newV;
+      lastDetails = details;
+      lastDelta = delta;
+      policySweeps += 1;
+      iter += 1;
+      const converged = delta < EPS;
+      history.unshift({
+        title: `策略评估第 ${policySweeps} 次扫描`,
+        body: converged
+          ? `使用贝尔曼期望方程同步更新所有格子，最大变化 Δ=${fmt(delta)}，本轮策略评估已收敛。下一步将执行策略改进。`
+          : `使用贝尔曼期望方程同步更新所有格子，最大变化 Δ=${fmt(delta)}，下一步继续策略评估。`,
+        tone: converged ? "green" : "amber"
+      });
+
+      if (converged) phase = "improve";
+    }
+
+    function improvePolicy() {
+      const oldPolicy = policy.map(row => row.map(cell => cell.slice()));
+      const newPolicy = uniformPolicy();
+      const details = makeEmptyDetails();
+      let changed = 0;
+
+      for (let r = 0; r < N; r += 1) {
+        for (let c = 0; c < N; c += 1) {
+          const rows = actionRows(r, c, V);
+          const best = bestActionIndexes(rows);
+          const probs = ACTIONS.map((_, index) => best.includes(index) ? 1 / best.length : 0);
+          newPolicy[r][c] = probs;
+          if (probs.some((p, index) => Math.abs(p - oldPolicy[r][c][index]) > 1e-10)) changed += 1;
+          details[r][c] = {
+            kind: "policy-improve",
+            actions: rows,
+            best,
+            oldValue: V[r][c],
+            result: V[r][c],
+            text: "策略改进：不改变 V，只比较各动作 Q(s,a)，把策略改成 Q 最大的动作。"
+          };
+        }
+      }
+
+      policy = newPolicy;
+      lastDetails = details;
+      lastDelta = 0;
+      iter += 1;
+      history.unshift({
+        title: "策略改进",
+        body: changed === 0
+          ? "所有状态的策略都没有改变，策略迭代已经收敛。"
+          : `共有 ${changed} 个格子的策略发生变化。本步是策略改进，下一步将重新评估新策略。`,
+        tone: changed === 0 ? "green" : "amber"
+      });
+
+      phase = changed === 0 ? "done" : "eval";
+      if (changed > 0) policySweeps = 0;
+    }
+
+    function valueIterationSweep() {
+      const oldV = cloneValues(V);
+      const newV = zeros();
+      const details = makeEmptyDetails();
+      let delta = 0;
+
+      for (let r = 0; r < N; r += 1) {
+        for (let c = 0; c < N; c += 1) {
+          const rows = actionRows(r, c, oldV);
+          const best = bestActionIndexes(rows);
+          const value = rows[best[0]].q;
+          newV[r][c] = value;
+          delta = Math.max(delta, Math.abs(value - oldV[r][c]));
+          details[r][c] = {
+            kind: "value-iter",
+            actions: rows,
+            best,
+            oldValue: oldV[r][c],
+            result: value,
+            text: "价值迭代：先用旧价值表计算 V_new；整张新价值表写入后，再从当前 V 表中提取网格箭头。"
+          };
+        }
+      }
+
+      V = newV;
+      for (let r = 0; r < N; r += 1) {
+        for (let c = 0; c < N; c += 1) {
+          const greedyAfter = actionRowsForValues(r, c, V);
+          details[r][c].greedyAfter = greedyAfter;
+          details[r][c].greedyAfterBest = bestActionIndexes(greedyAfter);
+        }
+      }
+      policy = greedyPolicyFromV(V);
+      lastDetails = details;
+      lastDelta = delta;
+      iter += 1;
+      history.unshift({
+        title: `价值迭代第 ${iter} 次扫描`,
+        body: `使用贝尔曼最优方程同步更新所有格子，最大变化 Δ=${fmt(delta)}。`,
+        tone: delta < EPS ? "green" : "amber"
+      });
+
+      if (delta < EPS) phase = "done";
+    }
+
+    function greedyPolicyFromV(values) {
+      return Array.from({ length: N }, (_, r) =>
+        Array.from({ length: N }, (_, c) => {
+          const rows = actionRowsForValues(r, c, values);
+          const best = bestActionIndexes(rows);
+          return ACTIONS.map((_, index) => best.includes(index) ? 1 / best.length : 0);
+        })
+      );
+    }
+
+    function actionRowsForValues(r, c, values) {
+      return ACTIONS.map((action, index) => {
+        const t = transition(r, c, action);
+        const nextValue = values[t.r][t.c];
+        return {
+          index,
+          action,
+          prob: policy[r][c][index],
+          to: t,
+          nextValue,
+          q: t.reward + gamma * nextValue
+        };
+      });
+    }
+
+    function step() {
+      gamma = readGamma();
+      if (mode === "policy") {
+        if (phase === "done") return;
+        if (phase === "improve") improvePolicy();
+        else policyEvaluationSweep();
+      } else {
+        if (phase === "done") return;
+        valueIterationSweep();
+      }
+      render();
+    }
+
+    function multiStep() {
+      const count = clamp(Number(stepsInput.value) || 10, 2, 200);
+      for (let i = 0; i < count; i += 1) {
+        if (phase === "done") break;
+        stepWithoutRender();
+      }
+      render();
+    }
+
+    function stepWithoutRender() {
+      gamma = readGamma();
+      if (mode === "policy") {
+        if (phase === "done") return;
+        if (phase === "improve") improvePolicy();
+        else policyEvaluationSweep();
+      } else {
+        if (phase === "done") return;
+        valueIterationSweep();
+      }
+    }
+
+    function completeRound() {
+      gamma = readGamma();
+      if (mode === "policy") {
+        if (phase === "done") return render();
+        let guard = 0;
+        while (phase === "eval" && guard < 1000) {
+          policyEvaluationSweep();
+          guard += 1;
+        }
+        if (phase === "improve") improvePolicy();
+      } else {
+        let guard = 0;
+        while (phase !== "done" && guard < 1000) {
+          valueIterationSweep();
+          guard += 1;
+        }
+        if (phase !== "done") {
+          history.unshift({
+            title: "已达到单次执行上限",
+            body: "价值迭代执行了 1000 次仍未达到收敛阈值。可以继续点击“迭代到收敛”，或调低 γ 观察更快收敛的情况。",
+            tone: "amber"
+          });
+        }
+      }
+      render();
+    }
+
+    function reset(nextMode = mode) {
+      mode = nextMode;
+      gamma = readGamma();
+      V = zeros();
+      policy = uniformPolicy();
+      selected = { r: 0, c: 0 };
+      iter = 0;
+      policySweeps = 0;
+      lastDelta = 0;
+      lastDetails = makeEmptyDetails();
+      history = [{
+        title: "已重置",
+        body: mode === "policy"
+          ? "策略初始化为四个方向等概率，价值全部为 0。"
+          : "价值全部初始化为 0，每步将直接做最大化更新。",
+        tone: "green"
+      }];
+      phase = mode === "policy" ? "eval" : "value";
+      render();
+    }
+
+    function render() {
+      renderGrid();
+      renderStats();
+      renderDetail();
+      modePolicyBtn.classList.toggle("active", mode === "policy");
+      modeValueBtn.classList.toggle("active", mode === "value");
+      roundBtn.textContent = mode === "policy" ? "完整一轮" : "迭代到收敛";
+      stepBtn.disabled = phase === "done";
+      multiBtn.disabled = phase === "done";
+      roundBtn.disabled = phase === "done";
+    }
+
+    function renderGrid() {
+      gridEl.innerHTML = "";
+      for (let r = 0; r < N; r += 1) {
+        for (let c = 0; c < N; c += 1) {
+          const cell = document.createElement("button");
+          cell.type = "button";
+          cell.className = "cell";
+          if (isAt(A, r, c)) cell.classList.add("special-a");
+          if (isAt(B, r, c)) cell.classList.add("special-b");
+          if (selected.r === r && selected.c === c) cell.classList.add("selected");
+          cell.addEventListener("click", () => {
+            selected = { r, c };
+            currentTab = "calc";
+            render();
+          });
+
+          const top = document.createElement("div");
+          top.className = "cell-top";
+          const tag = document.createElement("div");
+          tag.className = "tag";
+          tag.textContent = stateLabel(r, c);
+          const coords = document.createElement("div");
+          coords.className = "coords";
+          coords.textContent = `s${r * N + c + 1}`;
+          top.append(tag, coords);
+
+          const value = document.createElement("div");
+          value.className = "v";
+          value.textContent = fmt(V[r][c], 1);
+          value.style.color = colorForValue(V[r][c]);
+
+          const pol = document.createElement("div");
+          pol.className = "policy";
+          pol.textContent = arrowsForPolicy(policy[r][c]);
+
+          cell.append(top, value, pol);
+          gridEl.appendChild(cell);
+        }
+      }
+    }
+
+    function renderStats() {
+      modeStat.textContent = mode === "policy" ? "策略迭代" : "价值迭代";
+      if (mode === "policy") {
+        phaseStat.textContent = phase === "eval" ? "策略评估" : phase === "improve" ? "策略改进" : "已收敛";
+      } else {
+        phaseStat.textContent = phase === "done" ? "已收敛" : "最优备份";
+      }
+      iterStat.textContent = String(iter);
+      deltaStat.textContent = fmt(lastDelta, 3);
+    }
+
+    function renderDetail() {
+      tabCalc.classList.toggle("active", currentTab === "calc");
+      tabHistory.classList.toggle("active", currentTab === "history");
+      if (currentTab === "history") return renderHistory();
+
+      const r = selected.r;
+      const c = selected.c;
+      const info = lastDetails[r][c];
+      const rows = info.actions || [];
+      const label = stateLabel(r, c) || `s${r * N + c + 1}`;
+      const formula = detailFormula(label, info, rows);
+
+      detailEl.innerHTML = `
+        <div class="note">
+          当前选中：<b>${label}</b>，坐标第 ${r + 1} 行第 ${c + 1} 列。${escapeHtml(info.text || "")}
+        </div>
+        <div class="formula">${escapeHtml(formula)}</div>
+        ${rows.length ? actionTable(rows, info) : ""}
+      `;
+    }
+
+    function renderHistory() {
+      const items = history.slice(0, 80).map(item => `
+        <div class="history-item">
+          <b class="${item.tone || ""}">${escapeHtml(item.title)}</b><br />
+          ${escapeHtml(item.body)}
+        </div>
+      `).join("");
+      detailEl.innerHTML = `
+        <div class="note">最近的计算记录会显示在最上方。策略迭代中，“完整一轮”表示评估到近似收敛后再改进一次策略。</div>
+        <div class="history">${items || ""}</div>
+      `;
+    }
+
+    function detailFormula(label, info, rows) {
+      if (!rows.length) return "还没有执行更新。点击“迭代一步”开始。";
+
+      if (info.kind === "policy-eval") {
+        const terms = rows.map(row => {
+          return `${fmt(row.prob, 2)}×(${row.to.reward} + ${fmt(gamma, 2)}×${fmt(row.nextValue, 3)})`;
+        }).join(" + ");
+        return [
+          `策略评估使用贝尔曼期望方程：`,
+          `V_new(${label}) = Σ_a π(a|s)[R(s,a)+γV_old(s')]`,
+          `= ${terms}`,
+          `= ${fmt(info.result, 3)}`,
+          `旧值 V_old(${label}) = ${fmt(info.oldValue, 3)}，变化量 = ${fmt(Math.abs(info.result - info.oldValue), 3)}`
+        ].join("\n");
+      }
+
+      if (info.kind === "policy-improve") {
+        const bestNames = (info.best || []).map(index => ACTIONS[index].name).join("、");
+        return [
+          `策略改进先计算每个动作的 Q：`,
+          `Q(${label},a) = R(s,a)+γV(s')`,
+          `然后选择最大的动作：π_new(${label}) = argmax_a Q(${label},a)`,
+          `本格最优动作：${bestNames}`
+        ].join("\n");
+      }
+
+      const bestNames = (info.best || []).map(index => ACTIONS[index].name).join("、");
+      const expanded = rows.map(row => {
+        const toLabel = stateLabel(row.to.r, row.to.c) || `s${row.to.r * N + row.to.c + 1}`;
+        return `${row.action.name}: 到 ${toLabel}，Q = ${row.to.reward} + ${fmt(gamma, 2)}×${fmt(row.nextValue, 3)} = ${fmt(row.q, 3)}`;
+      }).join("\n");
+      const afterRows = info.greedyAfter || [];
+      const afterBest = info.greedyAfterBest || [];
+      const afterNames = afterBest.map(index => ACTIONS[index].name).join("、");
+      const afterExpanded = afterRows.map(row => {
+        const toLabel = stateLabel(row.to.r, row.to.c) || `s${row.to.r * N + row.to.c + 1}`;
+        return `${row.action.name}: 到 ${toLabel}，${row.to.reward} + ${fmt(gamma, 2)}×${fmt(row.nextValue, 3)} = ${fmt(row.q, 3)}`;
+      }).join("\n");
+      return [
+        `价值迭代使用贝尔曼最优方程：`,
+        `V_new(${label}) = max_a [R(s,a)+γV_old(s')]`,
+        `第一步：用旧价值表 V_old 计算本格新的价值。`,
+        `逐个动作展开：`,
+        expanded,
+        `最大值来自：${bestNames}`,
+        `V_new(${label}) = ${fmt(info.result, 3)}`,
+        ``,
+        `第二步：整张网格的 V_new 都写入后，才更新底部箭头。`,
+        `箭头来自当前价值表 V_current 的贪心动作：argmax_a [R(s,a)+γV_current(s')]`,
+        afterExpanded ? afterExpanded : `本次还没有箭头提取记录。`,
+        afterNames ? `所以当前箭头指向：${afterNames}` : `所以当前箭头暂未变化。`,
+        ``,
+        `例如重置后第一次价值迭代结束时，A 的价值先变成 10。随后用这张新表提取 s1 的箭头：右移到 A 的分数是 0 + ${fmt(gamma, 2)}×10 = ${fmt(gamma * 10, 3)}，高于下移的 0，所以 s1 的箭头会在第一次扫描结束后变成“右”。第二次扫描时，s1 的 V 才会被更新成 ${fmt(gamma * 10, 3)}。`
+      ].join("\n");
+    }
+
+    function actionTable(rows, info) {
+      const best = info.best || bestActionIndexes(rows);
+      const body = rows.map((row, index) => {
+        const bestClass = best.includes(index) ? " class=\"best\"" : "";
+        const toLabel = stateLabel(row.to.r, row.to.c) || `s${row.to.r * N + row.to.c + 1}`;
+        const formula = `${row.to.reward} + ${fmt(gamma, 2)}×${fmt(row.nextValue, 3)} = ${fmt(row.q, 3)}`;
+        return `
+          <tr${bestClass}>
+            <td>${row.action.arrow} ${row.action.name}</td>
+            <td>${info.kind === "value-iter" ? "不使用" : fmt(row.prob, 2)}</td>
+            <td>${escapeHtml(toLabel)}</td>
+            <td>${row.to.reward}</td>
+            <td>${fmt(row.nextValue, 3)}</td>
+            <td>${escapeHtml(formula)}</td>
+            <td>${fmt(row.q, 3)}</td>
+          </tr>
+        `;
+      }).join("");
+
+      return `
+        <table>
+          <thead>
+            <tr>
+              <th>动作</th>
+              <th>π</th>
+              <th>到达</th>
+              <th>奖励</th>
+              <th>V_old(s')</th>
+              <th>展开计算</th>
+              <th>Q</th>
+            </tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>
+      `;
+    }
+
+    function arrowsForPolicy(probs) {
+      const arrows = probs
+        .map((p, index) => p > 1e-10 ? ACTIONS[index].arrow : "")
+        .filter(Boolean)
+        .join("");
+      return arrows || "·";
+    }
+
+    function colorForValue(value) {
+      if (value >= 20) return "#0f6b4d";
+      if (value >= 8) return "#16784f";
+      if (value >= 1) return "#2459a7";
+      if (value <= -1) return "#b42318";
+      return "#172033";
+    }
+
+    function fmt(value, digits = 3) {
+      if (!Number.isFinite(value)) return "0";
+      return Number(value).toFixed(digits);
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function readGamma() {
+      const parsed = Number(gammaInput.value);
+      const safe = Number.isFinite(parsed) ? parsed : 0.9;
+      const bounded = clamp(safe, 0, 0.99);
+      gammaInput.value = bounded.toFixed(2);
+      return bounded;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    modePolicyBtn.addEventListener("click", () => reset("policy"));
+    modeValueBtn.addEventListener("click", () => reset("value"));
+    stepBtn.addEventListener("click", step);
+    multiBtn.addEventListener("click", multiStep);
+    roundBtn.addEventListener("click", completeRound);
+    resetBtn.addEventListener("click", () => reset(mode));
+    gammaInput.addEventListener("change", () => reset(mode));
+    tabCalc.addEventListener("click", () => { currentTab = "calc"; render(); });
+    tabHistory.addEventListener("click", () => { currentTab = "history"; render(); });
+
+    reset("policy");
+  </script>
+</body>
+</html>

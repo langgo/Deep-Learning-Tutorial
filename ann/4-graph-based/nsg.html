@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>NSG / NSSG - Navigating Spreading-out Graph</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    background: #f5f7fa;
+    color: #2c3e50;
+    line-height: 1.7;
+    padding: 24px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  header {
+    background: linear-gradient(135deg, #22c55e 0%, #10b981 100%);
+    color: #fff;
+    padding: 32px;
+    border-radius: 14px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 16px rgba(34, 197, 94, 0.25);
+  }
+  header h1 { font-size: 30px; margin-bottom: 8px; }
+  header p { opacity: 0.92; font-size: 15px; }
+  .back-link {
+    display: inline-block;
+    margin-bottom: 12px;
+    color: #fff;
+    text-decoration: none;
+    font-size: 14px;
+    opacity: 0.9;
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.18);
+    border-radius: 6px;
+  }
+  .back-link:hover { opacity: 1; background: rgba(255,255,255,0.28); }
+  .card {
+    background: #fff;
+    padding: 22px 26px;
+    margin-bottom: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  }
+  .card h2 {
+    font-size: 22px;
+    color: #10b981;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #dcfce7;
+    margin-bottom: 14px;
+  }
+  .card h3 { font-size: 17px; color: #34495e; margin: 14px 0 8px; }
+  p, li { font-size: 14.5px; color: #4a5568; }
+  ul, ol { padding-left: 22px; margin: 8px 0; }
+  li { margin-bottom: 4px; }
+  code {
+    background: #dcfce7;
+    color: #059669;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 13px;
+  }
+  pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 10px 0;
+  }
+  .analogy {
+    background: #fff8e6;
+    border-left: 4px solid #f0b429;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+  }
+  .tip {
+    background: #ecfdf5;
+    border-left: 4px solid #10b981;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+  }
+  .demo-area {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 18px;
+  }
+  @media (max-width: 900px) { .demo-area { grid-template-columns: 1fr; } }
+  .canvas-wrap {
+    background: #fafbfd;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px;
+    position: relative;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    background: #fff;
+    border-radius: 8px;
+    cursor: crosshair;
+  }
+  .controls {
+    background: #f8fafc;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+  }
+  .param { margin-bottom: 12px; }
+  .param label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 4px;
+  }
+  .param label span.val { color: #10b981; font-family: monospace; }
+  .param input[type=range] { width: 100%; accent-color: #10b981; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  button {
+    background: #10b981;
+    color: #fff;
+    border: 0;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+  button:hover { background: #059669; transform: translateY(-1px); }
+  button.ghost { background: #fff; color: #10b981; border: 1px solid #10b981; }
+  button.ghost:hover { background: #ecfdf5; }
+  button.warn { background: #f97316; }
+  button.warn:hover { background: #ea580c; }
+  .status {
+    background: #1e293b;
+    color: #86efac;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 12.5px;
+    margin-top: 10px;
+    min-height: 90px;
+    max-height: 220px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+  .status .hi { color: #fbbf24; }
+  .status .ok { color: #34d399; }
+  .status .rej { color: #f87171; }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: #475569;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  .legend .line { display: inline-block; width: 22px; height: 3px; border-radius: 2px; }
+  table.compare {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 13.5px;
+  }
+  table.compare th, table.compare td {
+    padding: 8px 10px;
+    border: 1px solid #e2e8f0;
+    text-align: left;
+  }
+  table.compare th { background: #dcfce7; color: #059669; }
+  table.compare tr:nth-child(even) td { background: #f8fafc; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  .pill {
+    display: inline-block;
+    background: #dcfce7;
+    color: #059669;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-size: 12px;
+    margin-right: 4px;
+  }
+  .rule-box {
+    background: #fef3c7;
+    border: 2px dashed #f59e0b;
+    padding: 14px 18px;
+    border-radius: 10px;
+    margin: 10px 0;
+    font-size: 14px;
+  }
+  .rule-box b { color: #d97706; }
+  footer { text-align: center; color: #94a3b8; font-size: 13px; padding: 20px 0; }
+  .tabbar { display: flex; gap: 6px; margin-bottom: 10px; }
+  .tabbar button {
+    background: #fff;
+    color: #10b981;
+    border: 1px solid #10b981;
+    font-weight: 600;
+  }
+  .tabbar button.active {
+    background: #10b981; color: #fff;
+  }
+  /* --- 教学增强样式 --- */
+  .prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+  .prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+  .glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+  .glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+  .glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+  .glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+  .new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+  .pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+  .pitfall h4 { color: #92400e; margin-top: 0; }
+  .next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+  .next-steps a { color: #047857; font-weight: 600; }
+  .intuition-box { background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+  .intuition-box h4 { color: #6d28d9; margin-top: 0; }
+  .symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+  .symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+  .symbol-table th { background: #f9fafb; color: #374151; }
+  .legend-guide { background: #f0fdf4; border-left: 3px solid #10b981; padding: 10px 14px; margin: 12px 0; border-radius: 4px; font-size: 0.9rem; }
+  .legend-guide .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<a href="../index.html" class="back-link">返回上级目录</a>
+
+<header>
+  <h1>NSG / NSSG - Navigating Spreading-out Graph</h1>
+  <p>单层的可导航图 — Fu 等人（浙江大学 &amp; 阿里巴巴）2019 年发表于 VLDB 的图索引方法。核心贡献：MRNG 选边规则 + Navigating Point 入口</p>
+</header>
+
+<!-- 前置阅读 -->
+<div class="prereq-bar">
+  <b>前置：</b>
+  <span class="pill"><a href="hnsw.html" style="color:#1e40af;text-decoration:none">HNSW（必读，理解多层图）</a></span>
+  <br>
+  <b>建议顺序：</b> <a class="pill" href="hnsw.html">HNSW</a> → NSG <b>(当前)</b> → <a class="pill" href="diskann.html">DiskANN</a> → <a class="pill" href="spann.html">SPANN</a>
+</div>
+
+<!-- 关键术语速查 -->
+<details class="glossary" open>
+  <summary>关键术语速查（点击展开/折叠）</summary>
+  <dl>
+    <dt>MRNG（Monotonic RNG）</dt>
+    <dd>NSG 使用的选边规则。保证任意源节点到任意查询点存在<b>单调路径</b>：沿路走距离目标点距离单调递减。</dd>
+    <dt>RNG（Relative Neighborhood Graph，相对邻近图）</dt>
+    <dd>经典邻近图：边 (u, v) 存在 ⇔ 不存在第三点 w 使得 d(u,w) &lt; d(u,v) 且 d(v,w) &lt; d(u,v)。RNG 图稀疏但可导航性差，MRNG 是其改进。</dd>
+    <dt>Navigating Point（导航点）</dt>
+    <dd>NSG 图的唯一入口，通常是数据集的 medoid（质心最近的实际点）。所有查询从这里出发。</dd>
+    <dt>medoid（中位点）</dt>
+    <dd>数据集里距离全体质心最近的实际数据点。相对 centroid（连续质心），medoid 一定在数据集中。</dd>
+    <dt>KGraph（初始 KNN 图）</dt>
+    <dd>NSG 构建的第一步：先近似算出每个点的 top-K 邻居图。作为 MRNG 选边的候选池来源。构建成本大（O(N<sup>1.14</sup>)）。</dd>
+    <dt>lune（月牙）</dt>
+    <dd>两个圆的交集区域。MRNG 里定义为：以 p 为圆心 R=|pv|、以 v 为圆心 R=|pv| 的两圆交集——即"同时比 p 近、又比 v 近"的点集合。</dd>
+    <dt>单调路径</dt>
+    <dd>从任意起点走到目标 q 的一条路径，路径上每一步到 q 的距离严格递减。MRNG 保证这样的路径存在，因此贪心永远不会"绕远"。</dd>
+  </dl>
+</details>
+
+<!-- 新手引导 -->
+<div class="new-user-tip">
+  <b>新手引导（按顺序操作）：</b>
+  <ol style="margin:6px 0 0 22px">
+    <li>先切到【MRNG 规则详解】Tab，点【播放规则演示】—— 理解为什么某些邻居会被剪掉（月牙 lune 里存在已选邻居 u）</li>
+    <li>切到【构建 NSG】Tab，点【构建 NSG】按钮，观察 KGraph → 选边 → DFS 连通 的过程</li>
+    <li>切到【查询演示】Tab，点画布任意位置作为查询点，看从 NP（Navigating Point）出发的单层贪心搜索</li>
+    <li>调 R / L 观察图密度与召回的权衡</li>
+  </ol>
+</div>
+
+<section class="card">
+  <h2>一、直观理解：为什么单层？</h2>
+  <p style="color:#64748b;font-size:13.5px;margin-bottom:8px">
+    <b>本方案解决了什么问题：</b> HNSW 用多层图承担"从远到近"的导航，代价是每个上层节点都要额外的边和内存。NSG 换思路——若图本身就"处处可导航"，就不需要多层。<br>
+    如果不知道 HNSW 是什么，请先看 <a href="hnsw.html" style="color:#10b981">HNSW 页面</a>。
+  </p>
+  <p>HNSW 用多层来加速"从远到近"的导航，NSG 换了个思路：<b>如果单层图本身就"可导航"，就不需要多层</b>。可导航的意思是：从任意节点出发，通过贪心走邻居，能收敛到查询点的真正最近邻。</p>
+
+  <div class="analogy">
+    <b>类比：</b> 想象一张城市地图。HNSW 像"高速+省道+县道"三层网络；NSG 像一张"精心规划的道路网"——每个路口的道路方向经过设计，从任何地方出发按"离目的地更近"的方向走都能到。
+  </div>
+
+  <div class="analogy">
+    <b>类比 2：</b> RNG（Relative Neighborhood Graph，相对邻近图）保证图连通且无冗余边，但可导航性差。<b>MRNG（Monotonic RNG）</b>做了改进：对每个节点 p 和目标 q，都存在一条 <i>单调递减距离</i> 的路径。NSG 用 MRNG 的近似作为图。
+  </div>
+
+  <div class="tip">
+    <b>核心思想：</b> 好的图 = 少的边 + 正确方向。NSG 的选边规则同时实现"稀疏"和"覆盖所有方向"。
+  </div>
+
+  <div class="intuition-box">
+    <h4>直觉：什么叫"单调路径"？</h4>
+    <p>任给起点 s 和目标 p，存在一条依次经过若干中间点的路径 <code>s → x₁ → x₂ → ... → p</code>，且<b>每一步到 p 的距离都严格变小</b>——永远不"绕远"。</p>
+    <p>这在 MRNG 图上有理论保证：贪心搜索永远不会走冤枉路，因此单层单入口的贪心也能收敛到真最近邻。</p>
+  </div>
+</section>
+
+<section class="card">
+  <h2>二、算法原理</h2>
+
+  <h3>2.1 构建三步</h3>
+  <ol>
+    <li><b>Init Graph</b>：先用 KGraph（近似 KNN graph）作为初始图。</li>
+    <li><b>选 Navigating Point</b>：全体数据的质心（centroid）位置最近的点，作为唯一入口。</li>
+    <li><b>MRNG Edge Selection</b>：从每个节点出发做贪心搜索得到候选集，用 MRNG 规则筛选出 R 条边。</li>
+    <li><b>DFS Connect</b>：如果图不连通，从 navigating point 做 DFS，遇到不可达连通分量就补边。</li>
+  </ol>
+
+  <h3>2.2 MRNG 选边规则（本页面核心演示）</h3>
+  <div class="rule-box">
+    <b>规则：</b> 对于节点 <code>p</code>，候选邻居 <code>C</code> 按距 p 升序处理每个 <code>v ∈ C</code>：
+    <br>
+    如果<u>已选</u>邻居 <code>u</code> 使得<br>
+    &emsp;<code>d(p, u) &lt; d(p, v)</code> 且 <code>d(u, v) &lt; d(p, v)</code>
+    <br>
+    ——即 <code>u</code> 落在 <b>lune(p, v)</b>（月牙形）区域内，则<b>不选 v</b>；否则选入。
+    <br><br>
+    <b>lune 是什么：</b> lune(p, v) 是<b>以 p 为圆心 R=|pv| 的圆</b> 与 <b>以 v 为圆心 R=|pv| 的圆</b> 的<b>交集</b>——也就是"既比 p 到 v 近、又比 v 到 p 近"的所有点。若这个区域里已经有一条选好的邻居 u，那么走 <code>p→u→v</code> 一定比直接 <code>p→v</code> 更好（两段都比一段短），所以 <code>p→v</code> 这条边冗余。
+  </div>
+  <p>直观：如果去 v 的路径可以"经过 u 中转"（且中转比直达短），那 pv 这条边就冗余，删掉。这样每个"方向"最多保留一条边，保证多样性。</p>
+
+  <div class="intuition-box">
+    <h4>动画配色（对照下方交互）</h4>
+    <p>右侧动画中：<b>青色虚线圆</b> = 以 p 为圆心 R=|pv|；<b>紫色虚线圆</b> = 以 v 为圆心 R=|pv|；两圆<b>交集的浅蓝填充区</b> = <b>lune(p, v)</b>。</p>
+    <p>如果某个已选邻居 u 落在这个月牙里（红色光晕高亮），就会拒绝 v，并画一条红色虚线 u→v 表示"u 中转"。</p>
+  </div>
+
+  <h3>2.3 查询流程</h3>
+  <pre>function SEARCH(q, k, L):
+    candidates = priority_queue(size=L)
+    push(candidates, navigating_point)
+    while has_unvisited(candidates):
+        p = pop_nearest_unvisited(candidates)
+        mark p visited
+        for e in neighbors(p):
+            if e visited: continue
+            push(candidates, e)     # 保留 L 个最近
+    return top-k of candidates</pre>
+
+  <p>比 HNSW 简单：只有一层、只有一个候选队列（beam）、只有一个参数 L 控制精度。</p>
+</section>
+
+<section class="card">
+  <h2>三、交互式演示：MRNG 选边规则</h2>
+  <div class="legend-guide">
+    <b>三态可视化图例：</b>
+    <span><i class="dot" style="background:#94a3b8"></i> 已访问节点（灰色实心）</span>&nbsp;·&nbsp;
+    <span><i class="dot" style="background:#fde047;border:1px solid #eab308"></i> 候选队列 W（黄色空心）</span>&nbsp;·&nbsp;
+    <span><i class="dot" style="background:#ef4444;box-shadow:0 0 6px #ef4444"></i> 当前扩展节点（红色发光）</span>
+    <br>规则演示中：<b>橙色 p</b> = 中心点，<b>蓝色 v</b> = 当前判定的候选，<b>绿色</b> = 已选邻居，<b>红色</b> = 被拒绝的候选。青紫交集区即 lune(p, v)。
+  </div>
+  <div class="tabbar">
+    <button id="tab-rule" class="active">MRNG 规则详解</button>
+    <button id="tab-build">构建 NSG</button>
+    <button id="tab-search">查询演示</button>
+  </div>
+
+  <div class="demo-area">
+    <div>
+      <div class="canvas-wrap">
+        <canvas id="cv" width="820" height="560"></canvas>
+      </div>
+      <div class="legend">
+        <span><i class="dot" style="background:#334155"></i> 数据点</span>
+        <span><i class="dot" style="background:#f97316"></i> 中心 p</span>
+        <span><i class="dot" style="background:#10b981"></i> 已选邻居</span>
+        <span><i class="dot" style="background:#ef4444"></i> 被拒绝候选</span>
+        <span><i class="dot" style="background:#0ea5e9"></i> 待判定 v</span>
+        <span><i class="dot" style="background:#eab308"></i> 查询点</span>
+        <span><i class="line" style="background:#10b981"></i> MRNG 边</span>
+        <span><i class="line" style="background:#e2e8f0"></i> 候选边</span>
+      </div>
+      <div class="status" id="log"></div>
+    </div>
+
+    <div class="controls">
+      <h3 style="margin-top:0;color:#10b981;">参数控制</h3>
+
+      <div class="param">
+        <label>R (最大邻居数) <span class="val" id="Rv">8</span></label>
+        <input type="range" id="R" min="2" max="20" value="8">
+      </div>
+
+      <div class="param">
+        <label>L (候选队列) <span class="val" id="Lv">40</span></label>
+        <input type="range" id="L" min="8" max="120" value="40">
+      </div>
+
+      <div class="param">
+        <label>节点数 N <span class="val" id="Nv">80</span></label>
+        <input type="range" id="N" min="20" max="200" value="80">
+      </div>
+
+      <div class="param">
+        <label>动画速度 <span class="val" id="spdv">450 ms</span></label>
+        <input type="range" id="spd" min="80" max="1200" value="450">
+      </div>
+
+      <div class="btn-row">
+        <button id="regen">重生成点</button>
+        <button id="build">构建 NSG</button>
+      </div>
+      <div class="btn-row">
+        <button class="ghost" id="step">下一步</button>
+        <button class="warn" id="playRule">播放规则演示</button>
+      </div>
+      <div class="btn-row">
+        <button class="ghost" id="query">开始查询</button>
+        <button class="ghost" id="reset">重置</button>
+      </div>
+
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:12.5px;color:#64748b">
+        <b>Tip:</b> 点画布空白区域可放置新点；在"查询"tab 下点画布触发查询。
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>四、参数解释</h2>
+  <table class="compare">
+    <tr><th>参数</th><th>作用</th><th>典型取值</th><th>调大后果</th></tr>
+    <tr><td><code>R</code></td><td>每节点最大出边数</td><td>16 ~ 64</td><td>内存 ↑, 召回 ↑, 每步邻居扫描 ↑</td></tr>
+    <tr><td><code>L</code></td><td>候选队列大小（构建+查询）</td><td>50 ~ 200</td><td>时延 ↑, 召回 ↑</td></tr>
+    <tr><td><code>C</code></td><td>构建时候选池大小</td><td>500 ~ 1000</td><td>构建慢, 图更优</td></tr>
+  </table>
+  <div class="tip">
+    <b>NSSG 改进：</b> 在 NSG 基础上，NSSG（Navigating Satellite System Graph）用局部 KNN 替换全局 KGraph 初始化，进一步降低构建时间。参数 <code>Angle</code> 替代 lune 判断，形式上更简洁。
+  </div>
+
+  <h3>符号速查表</h3>
+  <table class="symbol-table">
+    <tr><th>符号</th><th>含义</th><th>默认量级</th></tr>
+    <tr><td><code>R</code></td><td>每节点最大出边数（对应 HNSW 的 M）</td><td>16 ~ 64</td></tr>
+    <tr><td><code>L</code></td><td>候选队列大小（对应 HNSW 的 ef，构建+查询共用）</td><td>50 ~ 200</td></tr>
+    <tr><td><code>K</code></td><td>初始 KGraph 的 top-K 邻居数</td><td>≈ 2R ~ 200</td></tr>
+    <tr><td><code>C</code></td><td>构建时候选池大小上限</td><td>500 ~ 1000</td></tr>
+    <tr><td>Navigating Point（NP）</td><td>唯一入口，通常为 medoid</td><td>—</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>五、复杂度</h2>
+  <table class="compare">
+    <tr><th>指标</th><th>值</th><th>说明</th></tr>
+    <tr><td>构建时间</td><td>O(N · L · R)</td><td>需要预先算 KGraph，成本更高</td></tr>
+    <tr><td>查询时间</td><td>O(L · R)</td><td>单层贪心，每步扫描 R 邻居</td></tr>
+    <tr><td>内存占用</td><td>N · R · 4 字节 + 向量</td><td>比 HNSW 略少（无多层开销）</td></tr>
+    <tr><td>是否可导航</td><td>是（近似 MRNG）</td><td>MRNG 图保证任意节点单调路径</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>六、优缺点 &amp; 适用场景</h2>
+  <div class="grid2">
+    <div>
+      <h3>优点</h3>
+      <ul>
+        <li><span class="pill">图小</span>比 HNSW 边数少 30%~50%</li>
+        <li><span class="pill">查询快</span>同精度下 CPU 缓存友好</li>
+        <li><span class="pill">单一入口</span>无需多层维护</li>
+        <li><span class="pill">理论保证</span>MRNG 有可导航性证明</li>
+      </ul>
+    </div>
+    <div>
+      <h3>缺点</h3>
+      <ul>
+        <li><span class="pill">构建重</span>依赖 KGraph 预处理</li>
+        <li><span class="pill">难增量</span>不擅长在线插入</li>
+        <li><span class="pill">全量重建</span>数据变化需重建 KGraph</li>
+        <li><span class="pill">工业化</span>比 HNSW 少</li>
+      </ul>
+    </div>
+  </div>
+  <h3>适用场景</h3>
+  <ul>
+    <li>静态数据集（一次构建、多次查询）</li>
+    <li>对内存带宽敏感的场景（图小 = cache miss 少）</li>
+    <li>科研 / benchmark 环境</li>
+  </ul>
+</section>
+
+<section class="pitfall">
+  <h4>常见误区</h4>
+  <ol>
+    <li><b>MRNG 保证单调路径但不保证是最短路径</b>：贪心不会走"回头路"，但也不代表跳数最少；有时会绕一大圈到达。</li>
+    <li><b>构建极慢</b>：KGraph 初始化本身要 O(N<sup>1.14</sup>)。生产上百亿数据集通常等一整天。</li>
+    <li><b>不友好的动态更新</b>：MRNG 边选依赖全局邻居分布，插入/删除后局部邻居会打破单调性——通常做法是攒批后离线重建。</li>
+    <li><b>只有单入口</b>：Navigating Point 若被删除或分布极端不均，全图查询都受影响；这也是 SPTAG/DiskANN 用 medoid 但辅以图导航的原因。</li>
+  </ol>
+</section>
+
+<section class="next-steps">
+  <h4>下一步学什么</h4>
+  <ul>
+    <li>→ <a href="diskann.html">DiskANN / Vamana</a>：把 NSG 思想搬到 SSD，用 alpha 松弛剪枝换取更少 IO</li>
+    <li>→ <a href="spann.html">SPANN</a>：完全放弃图结构，改用 IVF + 磁盘倒排</li>
+  </ul>
+</section>
+
+<footer>NSG 交互式演示 · 基于 Fu et al. VLDB 2019 - "Fast Approximate Nearest Neighbor Search With The Navigating Spreading-out Graph"</footer>
+
+</div>
+
+<script>
+"use strict";
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const logEl = document.getElementById('log');
+
+function log(msg, cls='') {
+  const line = document.createElement('div');
+  line.innerHTML = cls ? `<span class="${cls}">${msg}</span>` : msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() { logEl.innerHTML = ''; }
+
+function dist(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+// ---------- 状态 ----------
+let nodes = [];
+let graph = [];   // NSG 图（构建后）
+let candidates = [];
+let R = 8, Ldef = 40, N = 80;
+let animSpeed = 450;
+let mode = 'rule'; // rule / build / search
+let anim = null;
+let queryPoint = null;
+let navPoint = -1;
+
+// ---------- 生成点 ----------
+function generatePoints(n) {
+  nodes = [];
+  // 生成聚簇分布
+  const clusters = 3 + Math.floor(Math.random()*2);
+  const cs = [];
+  for (let i = 0; i < clusters; i++) {
+    cs.push({ x: 150 + Math.random() * (cv.width - 300),
+              y: 120 + Math.random() * (cv.height - 240) });
+  }
+  for (let i = 0; i < n; i++) {
+    const c = cs[i % clusters];
+    let x = c.x + (Math.random() - 0.5) * 200;
+    let y = c.y + (Math.random() - 0.5) * 160;
+    x = Math.max(30, Math.min(cv.width - 30, x));
+    y = Math.max(30, Math.min(cv.height - 30, y));
+    nodes.push({ id: i, x, y });
+  }
+  graph = nodes.map(() => []);
+  navPoint = -1;
+}
+
+// ---------- KNN Init ----------
+function knnInit(k) {
+  const g = nodes.map(() => []);
+  for (let i = 0; i < nodes.length; i++) {
+    const dists = [];
+    for (let j = 0; j < nodes.length; j++) {
+      if (i === j) continue;
+      dists.push({ id: j, d: dist(nodes[i], nodes[j]) });
+    }
+    dists.sort((a,b) => a.d - b.d);
+    g[i] = dists.slice(0, k);
+  }
+  return g;
+}
+
+// ---------- MRNG 选边（同步版本，用于构建） ----------
+function mrngSelect(pIdx, candidates, maxR) {
+  const p = nodes[pIdx];
+  const sorted = candidates.slice().sort((a,b) => a.d - b.d);
+  const selected = [];
+  for (const v of sorted) {
+    if (selected.length >= maxR) break;
+    let good = true;
+    for (const u of selected) {
+      const duv = dist(nodes[u.id], nodes[v.id]);
+      // 若 u 位于 p→v 的"更近方向"，则 v 冗余
+      if (duv < v.d) { good = false; break; }
+    }
+    if (good) selected.push(v);
+  }
+  return selected;
+}
+
+// ---------- 找 Navigating Point (质心最近点) ----------
+function findNavigatingPoint() {
+  let cx = 0, cy = 0;
+  for (const n of nodes) { cx += n.x; cy += n.y; }
+  cx /= nodes.length; cy /= nodes.length;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < nodes.length; i++) {
+    const d = dist({x:cx,y:cy}, nodes[i]);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+
+// ---------- 构建 NSG ----------
+function buildNSG() {
+  clearLog();
+  log('<span class="hi">构建 NSG:</span>', 'hi');
+  log('步骤 1: 构建 K-NN 初始图 (k=2R)');
+  const initG = knnInit(Math.min(nodes.length - 1, 2 * R));
+  log('步骤 2: 查找 Navigating Point (质心最近点)');
+  navPoint = findNavigatingPoint();
+  log(`  Navigating Point = 节点 ${navPoint}`, 'ok');
+
+  log('步骤 3: 对每个节点用 MRNG 规则选边');
+  graph = nodes.map(() => []);
+  for (let i = 0; i < nodes.length; i++) {
+    // 从 KNN 中 + navigating point 出发做贪心，得到候选池
+    const pool = new Map();
+    for (const nb of initG[i]) pool.set(nb.id, nb.d);
+    // 简化：candidate pool 是 kNN 邻居 + 邻居的邻居
+    for (const nb of initG[i]) {
+      for (const nb2 of initG[nb.id]) {
+        if (nb2.id === i || pool.has(nb2.id)) continue;
+        pool.set(nb2.id, dist(nodes[i], nodes[nb2.id]));
+      }
+    }
+    const cand = [...pool.entries()].map(([id,d]) => ({id, d}));
+    const sel = mrngSelect(i, cand, R);
+    graph[i] = sel.map(x => x.id);
+  }
+  log(`  完成: 平均出度 = ${(graph.reduce((a,x)=>a+x.length,0)/graph.length).toFixed(2)}`, 'ok');
+  log('步骤 4: DFS 补边确保连通');
+  ensureConnected();
+  log('构建完成 ', 'ok');
+  draw();
+}
+
+function ensureConnected() {
+  const visited = new Set();
+  const stack = [navPoint];
+  while (stack.length) {
+    const c = stack.pop();
+    if (visited.has(c)) continue;
+    visited.add(c);
+    for (const n of graph[c]) stack.push(n);
+  }
+  if (visited.size < nodes.length) {
+    const unreached = nodes.filter(n => !visited.has(n.id));
+    log(`  发现 ${unreached.length} 个不可达节点, 补边...`, 'rej');
+    for (const u of unreached) {
+      // 找 u 最近的可达节点连过去
+      let best = -1, bd = Infinity;
+      for (const v of visited) {
+        const d = dist(u, nodes[v]);
+        if (d < bd) { bd = d; best = v; }
+      }
+      if (best >= 0) {
+        graph[best].push(u.id);
+      }
+    }
+  }
+}
+
+// ---------- MRNG 规则演示（步进） ----------
+function startRuleDemo() {
+  if (nodes.length < 8) return;
+  // 随机挑一个 p
+  const pIdx = Math.floor(Math.random() * nodes.length);
+  // 取前 12 近邻作为候选
+  const dists = [];
+  for (let j = 0; j < nodes.length; j++) {
+    if (j === pIdx) continue;
+    dists.push({ id: j, d: dist(nodes[pIdx], nodes[j]) });
+  }
+  dists.sort((a,b) => a.d - b.d);
+  const cands = dists.slice(0, Math.min(12, dists.length));
+
+  anim = {
+    kind: 'rule',
+    p: pIdx,
+    cands,
+    step: 0,
+    selected: [],
+    rejected: [],
+    currentBlock: null // 拒绝的原因 u
+  };
+  clearLog();
+  log(`<span class="hi">MRNG 规则演示 - 中心 p = 节点 ${pIdx}</span>`);
+  log(`候选 (按距 p 升序): ${cands.map(c=>`${c.id}(${c.d.toFixed(0)})`).join(', ')}`);
+  draw();
+  stepRuleAnim();
+}
+
+function stepRuleAnim() {
+  if (!anim || anim.kind !== 'rule') return;
+  if (anim.step >= anim.cands.length || anim.selected.length >= R) {
+    log(`<span class="ok">MRNG 完成: 选出 ${anim.selected.length} 条边: [${anim.selected.map(x=>x.id).join(', ')}]</span>`, 'ok');
+    // 保存到图
+    graph[anim.p] = anim.selected.map(x=>x.id);
+    return;
+  }
+  const v = anim.cands[anim.step];
+  // 检查是否被已选邻居"挡住"
+  let blocker = null;
+  for (const u of anim.selected) {
+    const duv = dist(nodes[u.id], nodes[v.id]);
+    if (duv < v.d) { blocker = u; break; }
+  }
+  anim.currentV = v;
+  anim.currentBlock = blocker;
+  draw();
+  setTimeout(() => {
+    if (!anim) return;
+    if (blocker) {
+      log(`  ✗ 候选 ${v.id}: 被已选 ${blocker.id} 遮蔽 (d(${blocker.id},${v.id})=${dist(nodes[blocker.id],nodes[v.id]).toFixed(0)} &lt; d(p,${v.id})=${v.d.toFixed(0)})`, 'rej');
+      anim.rejected.push({...v, blocker: blocker.id});
+    } else {
+      log(`  ✓ 候选 ${v.id}: 选中 (无遮蔽者)`, 'ok');
+      anim.selected.push(v);
+    }
+    anim.step++;
+    anim.currentV = null;
+    anim.currentBlock = null;
+    draw();
+    setTimeout(stepRuleAnim, animSpeed);
+  }, animSpeed);
+}
+
+// ---------- 查询演示 ----------
+function startQuery(qx, qy) {
+  if (graph.length === 0 || navPoint < 0) {
+    log('请先"构建 NSG"', 'rej');
+    return;
+  }
+  queryPoint = { x: qx, y: qy };
+  clearLog();
+  log(`<span class="hi">查询 q=(${qx.toFixed(0)}, ${qy.toFixed(0)}), L=${Ldef}</span>`);
+
+  const L = Ldef;
+  const visited = new Set();
+  const heap = [];  // 简化：数组 + 排序
+  const initD = dist(queryPoint, nodes[navPoint]);
+  heap.push({ id: navPoint, d: initD, visited: false });
+  const path = [];   // 访问顺序
+
+  anim = {
+    kind: 'search',
+    heap, visited, path,
+    step: 0, currentEdges: [], done: false
+  };
+  log(`入口 = navigating point ${navPoint}`, 'ok');
+  draw();
+  runSearchStep();
+}
+
+function runSearchStep() {
+  if (!anim || anim.kind !== 'search') return;
+  const heap = anim.heap;
+  const visited = anim.visited;
+  // 找出 heap 中未访问的最近节点
+  heap.sort((a,b) => a.d - b.d);
+  const idx = heap.findIndex(x => !x.visited);
+  if (idx < 0 || anim.step > 60) {
+    // 完成
+    const topK = heap.slice(0, 5);
+    log(`<span class="ok">完成: top-5 = ${topK.map(x=>`${x.id}(${x.d.toFixed(0)})`).join(', ')}</span>`, 'ok');
+    anim.done = true;
+    draw();
+    return;
+  }
+  const c = heap[idx];
+  c.visited = true;
+  visited.add(c.id);
+  anim.path.push(c.id);
+  // 扩展邻居
+  anim.currentEdges = [];
+  for (const nb of graph[c.id]) {
+    if (visited.has(nb)) continue;
+    const d = dist(queryPoint, nodes[nb]);
+    heap.push({ id: nb, d, visited: false });
+    anim.currentEdges.push({from: c.id, to: nb});
+    visited.add(nb);
+  }
+  // 只保留最近 L 个
+  heap.sort((a,b) => a.d - b.d);
+  heap.length = Math.min(heap.length, Ldef);
+  log(`步骤 ${anim.step+1}: 访问 ${c.id}(d=${c.d.toFixed(0)}), 扩展 ${anim.currentEdges.length} 邻居, 队列大小 ${heap.length}`);
+  anim.step++;
+  draw();
+  setTimeout(runSearchStep, animSpeed);
+}
+
+// ---------- 绘制 ----------
+function draw() {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  // 构建/搜索模式下的边
+  if (mode === 'build' || mode === 'search') {
+    ctx.strokeStyle = 'rgba(16,185,129,0.28)';
+    ctx.lineWidth = 1.1;
+    for (let i = 0; i < graph.length; i++) {
+      for (const j of graph[i]) {
+        if (j < i) continue;
+        ctx.beginPath();
+        ctx.moveTo(nodes[i].x, nodes[i].y);
+        ctx.lineTo(nodes[j].x, nodes[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // 搜索路径
+  if (anim && anim.kind === 'search') {
+    ctx.strokeStyle = 'rgba(59,130,246,0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const p = anim.path;
+    if (p.length > 0) {
+      ctx.moveTo(nodes[p[0]].x, nodes[p[0]].y);
+      for (let i = 1; i < p.length; i++) {
+        ctx.lineTo(nodes[p[i]].x, nodes[p[i]].y);
+      }
+      if (queryPoint) ctx.lineTo(queryPoint.x, queryPoint.y);
+      ctx.stroke();
+    }
+    // 当前扩展边
+    ctx.strokeStyle = '#f97316';
+    ctx.lineWidth = 2.5;
+    for (const e of (anim.currentEdges || [])) {
+      ctx.beginPath();
+      ctx.moveTo(nodes[e.from].x, nodes[e.from].y);
+      ctx.lineTo(nodes[e.to].x, nodes[e.to].y);
+      ctx.stroke();
+    }
+    // heap 中未访问节点用小圈
+    for (const h of anim.heap) {
+      if (h.visited) continue;
+      ctx.strokeStyle = 'rgba(59,130,246,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(nodes[h.id].x, nodes[h.id].y, 8, 0, Math.PI*2);
+      ctx.stroke();
+    }
+  }
+
+  // MRNG 规则演示
+  if (anim && anim.kind === 'rule') {
+    const p = nodes[anim.p];
+    // 已选边 - 绿
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 2;
+    for (const u of anim.selected) {
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(nodes[u.id].x, nodes[u.id].y);
+      ctx.stroke();
+    }
+    // 被拒边 - 红虚线
+    ctx.strokeStyle = 'rgba(239,68,68,0.6)';
+    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 1.2;
+    for (const r of anim.rejected) {
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(nodes[r.id].x, nodes[r.id].y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // 当前候选 v - 蓝
+    if (anim.currentV) {
+      const v = nodes[anim.currentV.id];
+      const R = anim.currentV.d; // |pv|
+      // pv 线
+      ctx.strokeStyle = '#0ea5e9';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y); ctx.lineTo(v.x, v.y);
+      ctx.stroke();
+
+      // === 画 lune（月牙）：以 p 为圆心 R=|pv| 与 以 v 为圆心 R=|pv| 两圆的交集 ===
+      // 首先用裁剪(clip)绘制交集区域的填充色（半透明青紫），形成"月牙"
+      ctx.save();
+      // 用两次 clip：先 p 的圆内，再 v 的圆内，最终 fill 只会出现在交集
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R, 0, Math.PI*2);
+      ctx.clip();
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, R, 0, Math.PI*2);
+      ctx.clip();
+      // 交集区域填充（月牙色）
+      ctx.fillStyle = 'rgba(14,165,233,0.18)';
+      ctx.fillRect(
+        Math.min(p.x, v.x) - R - 5,
+        Math.min(p.y, v.y) - R - 5,
+        Math.abs(p.x - v.x) + 2*R + 10,
+        Math.abs(p.y - v.y) + 2*R + 10
+      );
+      ctx.restore();
+
+      // p 圆：虚线蓝
+      ctx.strokeStyle = 'rgba(14,165,233,0.55)';
+      ctx.setLineDash([4,4]);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R, 0, Math.PI*2);
+      ctx.stroke();
+
+      // v 圆：虚线粉紫（区分于 p）
+      ctx.strokeStyle = 'rgba(168,85,247,0.55)';
+      ctx.setLineDash([4,4]);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, R, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // "lune" 文字标注（在两圆连线中点上方）
+      const midx = (p.x + v.x) / 2;
+      const midy = (p.y + v.y) / 2;
+      ctx.fillStyle = 'rgba(14,165,233,0.85)';
+      ctx.font = 'bold 11px "SF Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('lune (p,v)', midx, midy - 6);
+      ctx.textAlign = 'left';
+
+      // 若被 blocker u 遮蔽, 画 u-v 红虚线并高亮 u 在 lune 内
+      if (anim.currentBlock) {
+        const u = nodes[anim.currentBlock.id];
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(u.x, u.y);
+        ctx.lineTo(v.x, v.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // 高亮 u（在 lune 内的证据）：外圈红光晕
+        ctx.strokeStyle = 'rgba(239,68,68,0.6)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(u.x, u.y, 11, 0, Math.PI*2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // 绘制所有节点
+  for (const n of nodes) {
+    let col = '#334155', r = 3.5;
+    if (anim && anim.kind === 'rule') {
+      if (n.id === anim.p) { col = '#f97316'; r = 8; }
+      else if (anim.selected.find(x=>x.id===n.id)) { col = '#10b981'; r = 6; }
+      else if (anim.rejected.find(x=>x.id===n.id)) { col = '#ef4444'; r = 5; }
+      else if (anim.currentV && n.id === anim.currentV.id) { col = '#0ea5e9'; r = 7; }
+      else if (anim.cands.find(c=>c.id===n.id)) { col = '#94a3b8'; r = 4; }
+    }
+    if (anim && anim.kind === 'search') {
+      if (anim.path.includes(n.id)) { col = '#3b82f6'; r = 5; }
+      if (anim.heap.some(h => h.id === n.id && !h.visited)) { col = '#0ea5e9'; r = 4.5; }
+    }
+    if (n.id === navPoint) { col = '#f97316'; r = 7; }
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // 查询点
+  if (queryPoint) {
+    ctx.fillStyle = '#eab308';
+    ctx.beginPath();
+    ctx.arc(queryPoint.x, queryPoint.y, 8, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = '#eab308'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(queryPoint.x-13, queryPoint.y);
+    ctx.lineTo(queryPoint.x+13, queryPoint.y);
+    ctx.moveTo(queryPoint.x, queryPoint.y-13);
+    ctx.lineTo(queryPoint.x, queryPoint.y+13);
+    ctx.stroke();
+  }
+
+  // NP 标记
+  if (navPoint >= 0) {
+    const np = nodes[navPoint];
+    ctx.strokeStyle = '#f97316';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(np.x, np.y, 12, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.fillStyle = '#f97316';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('NP', np.x+14, np.y-8);
+  }
+
+  // 信息
+  ctx.fillStyle = '#64748b';
+  ctx.font = '11px monospace';
+  const info = `N=${nodes.length}  R=${R}  L=${Ldef}  mode=${mode}`;
+  ctx.fillText(info, 10, 16);
+}
+
+// ---------- 绑定 ----------
+function bindSlider(id, valId, cb, suffix='') {
+  const s = document.getElementById(id);
+  const v = document.getElementById(valId);
+  s.oninput = () => {
+    v.textContent = s.value + suffix;
+    if (cb) cb();
+  };
+}
+bindSlider('R', 'Rv', () => { R = parseInt(document.getElementById('R').value); });
+bindSlider('L', 'Lv', () => { Ldef = parseInt(document.getElementById('L').value); });
+bindSlider('N', 'Nv');
+bindSlider('spd', 'spdv', () => { animSpeed = parseInt(document.getElementById('spd').value); document.getElementById('spdv').textContent = animSpeed + ' ms'; });
+document.getElementById('spdv').textContent = '450 ms';
+
+document.getElementById('regen').onclick = () => {
+  N = parseInt(document.getElementById('N').value);
+  generatePoints(N);
+  anim = null; queryPoint = null;
+  clearLog();
+  log(`生成 ${N} 个点`);
+  draw();
+};
+document.getElementById('build').onclick = () => {
+  mode = 'build';
+  setTab('build');
+  buildNSG();
+};
+document.getElementById('playRule').onclick = () => {
+  mode = 'rule';
+  setTab('rule');
+  startRuleDemo();
+};
+document.getElementById('step').onclick = () => {
+  if (!anim) return;
+  if (anim.kind === 'rule') stepRuleAnim();
+  else if (anim.kind === 'search') runSearchStep();
+};
+document.getElementById('query').onclick = () => {
+  if (navPoint < 0) { log('请先构建 NSG', 'rej'); return; }
+  mode = 'search';
+  setTab('search');
+  log('点画布任意位置作为查询点', 'hi');
+};
+document.getElementById('reset').onclick = () => {
+  anim = null; queryPoint = null;
+  clearLog(); draw();
+};
+
+document.getElementById('tab-rule').onclick = () => setTab('rule');
+document.getElementById('tab-build').onclick = () => setTab('build');
+document.getElementById('tab-search').onclick = () => setTab('search');
+function setTab(t) {
+  mode = t;
+  ['rule','build','search'].forEach(x => {
+    document.getElementById(`tab-${x}`).classList.toggle('active', x === t);
+  });
+  draw();
+}
+
+cv.addEventListener('click', (e) => {
+  const rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (cv.width / rect.width);
+  const y = (e.clientY - rect.top) * (cv.height / rect.height);
+  if (mode === 'search') {
+    startQuery(x, y);
+  } else {
+    // 添加点
+    nodes.push({ id: nodes.length, x, y });
+    graph.push([]);
+    log(`加点 ${nodes.length-1} at (${x.toFixed(0)},${y.toFixed(0)})`);
+    draw();
+  }
+});
+
+// 初始化
+generatePoints(80);
+draw();
+log('提示: 点"构建 NSG"生成图，点"播放规则演示"看 MRNG 规则如何选边', 'hi');
+
+</script>
+</body>
+</html>

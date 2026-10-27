@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>OPQ - 优化乘积量化 (Optimized Product Quantization)</title>
+<style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --border: #e3e6ee;
+  --text: #1f2933;
+  --muted: #6b7280;
+  --primary: #4f46e5;
+  --primary-light: #eef2ff;
+  --accent: #059669;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --code-bg: #f3f4f6;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.7;
+}
+.top-nav {
+  background: var(--card); border-bottom: 1px solid var(--border);
+  padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.top-nav a { color: var(--primary); text-decoration: none; font-weight: 500; }
+.top-nav a:hover { text-decoration: underline; }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+h1 { font-size: 28px; margin: 0 0 8px 0; }
+h2 { font-size: 22px; margin: 32px 0 12px 0; padding-left: 12px; border-left: 4px solid var(--primary); }
+h3 { font-size: 18px; margin: 20px 0 10px 0; color: var(--primary); }
+p, li { font-size: 15px; color: var(--text); }
+.subtitle { color: var(--muted); font-size: 15px; margin-bottom: 20px; }
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px; margin: 16px 0; box-shadow: var(--shadow);
+}
+.card.blue { background: #f0f7ff; border-color: #bfdbfe; }
+.card.green { background: #ecfdf5; border-color: #a7f3d0; }
+.card.yellow { background: #fffbeb; border-color: #fcd34d; }
+.formula {
+  background: var(--code-bg); padding: 12px 16px; border-radius: 6px;
+  font-family: "SF Mono", Consolas, monospace; font-size: 14px; overflow-x: auto;
+  margin: 8px 0; border-left: 3px solid var(--primary);
+}
+code {
+  background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
+  font-family: "SF Mono", Consolas, monospace; font-size: 13px;
+}
+pre {
+  background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: 6px;
+  overflow-x: auto; font-size: 13px; line-height: 1.5;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+.controls {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px; margin: 16px 0;
+}
+.control { display: flex; flex-direction: column; gap: 6px; }
+.control label { font-size: 13px; color: var(--muted); font-weight: 500; }
+.control .val { color: var(--primary); font-weight: 600; font-family: "SF Mono", Consolas, monospace; }
+.control input[type="range"] { width: 100%; }
+.btn {
+  background: var(--primary); color: white; border: none; padding: 8px 16px;
+  border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;
+}
+.btn:hover { background: #4338ca; }
+.btn.secondary { background: white; color: var(--primary); border: 1px solid var(--primary); }
+.btn.secondary:hover { background: var(--primary-light); }
+.btn.warn { background: var(--warn); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+canvas { background: white; border: 1px solid var(--border); border-radius: 4px; display: block; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 14px; }
+th, td { padding: 8px 12px; border: 1px solid var(--border); text-align: left; }
+th { background: #f9fafb; font-weight: 600; }
+tr:nth-child(even) td { background: #fafbfc; }
+.pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.pros-cons ul { padding-left: 20px; }
+.pros-cons .pros li { color: var(--accent); }
+.pros-cons .cons li { color: var(--danger); }
+.step-box {
+  padding: 12px 16px; background: var(--primary-light); border-radius: 6px;
+  min-height: 60px; margin: 12px 0; font-size: 14px;
+}
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.hl { background: #fff59d; padding: 1px 4px; border-radius: 3px; }
+.viz-container { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin: 16px 0; }
+.viz-block { border: 1px solid var(--border); border-radius: 6px; padding: 8px; background: #fafbfc; }
+.viz-block h4 { margin: 0 0 6px 0; font-size: 13px; color: var(--muted); text-align: center; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; margin: 8px 0; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.metric-row {
+  display: flex; gap: 16px; margin: 12px 0; font-size: 14px;
+}
+.metric {
+  background: #f1f5f9; padding: 8px 14px; border-radius: 6px;
+  display: flex; flex-direction: column;
+}
+.metric b { color: var(--primary); font-size: 18px; font-family: "SF Mono", Consolas, monospace; }
+.prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+.prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+.glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+.glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+.glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+.glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+.new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.pitfall h4 { color: #92400e; margin-top: 0; }
+.next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.next-steps a { color: #047857; font-weight: 600; }
+.intuition-box { background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.intuition-box h4 { color: #6d28d9; margin-top: 0; }
+.symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+.symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+.symbol-table th { background: #f9fafb; color: #374151; }
+</style>
+</head>
+<body>
+
+<div class="top-nav">
+  <div><strong>ANN 算法可视化</strong> · Optimized Product Quantization (OPQ)</div>
+  <a href="../index.html">← 返回目录</a>
+</div>
+
+<div class="container">
+
+<h1>OPQ · 优化乘积量化 (Optimized Product Quantization)</h1>
+<p class="subtitle">在 PQ 之前先"旋转"数据，把子空间调成互相独立且能量均衡，把量化误差进一步压下去。</p>
+
+<div class="prereq-bar">
+  <b>前置阅读：</b>
+  <span class="pill">前置：<a href="pq.html" style="color:inherit;text-decoration:none">PQ（必读）</a> · 线性代数基础（正交矩阵、SVD）</span>
+  <span class="pill">建议顺序：<a href="sq.html" style="color:inherit;text-decoration:none">SQ</a> → <a href="pq.html" style="color:inherit;text-decoration:none">PQ</a> → <a href="ivf-pq.html" style="color:inherit;text-decoration:none">IVF-PQ</a> → OPQ (当前，最难)</span>
+</div>
+
+<details class="glossary">
+<summary>关键术语速查（点击展开）</summary>
+<dl>
+  <dt>正交矩阵 (Orthogonal Matrix)</dt>
+  <dd>满足 <code>R<sup>T</sup>R = I</code> 的方阵。几何意义：<b>不改变距离和角度的纯旋转（或镜像）</b>——你把点云拿起来转一下，两两距离完全不变。</dd>
+  <dt>Procrustes 问题</dt>
+  <dd>给两朵点云 X 和 X̂，找一个正交矩阵 R 使得 R·X 尽量对齐 X̂，即 <code>min ‖RX − X̂‖<sup>2</sup></code>。有闭式解（用 SVD 求）。</dd>
+  <dt>SVD（奇异值分解 Singular Value Decomposition）</dt>
+  <dd>任意矩阵可分解为 <code>A = U Σ V<sup>T</sup></code>，U 和 V 是正交矩阵，Σ 是对角矩阵（奇异值）。是 Procrustes 的求解工具。</dd>
+  <dt>PCA（主成分分析 Principal Component Analysis）</dt>
+  <dd>找数据方差最大的方向作为第一主轴。用协方差矩阵的特征向量作为新坐标系。</dd>
+  <dt>白化 (Whitening)</dt>
+  <dd>先 PCA 转到主轴，再各维除以对应标准差，使各维方差都等于 1。</dd>
+  <dt>参数化 OPQ (P-OPQ)</dt>
+  <dd>假设数据服从多元正态，一次 PCA + 方差重排就能算出最优 R，无需迭代。快但表达力受限。</dd>
+  <dt>非参数化 OPQ (NP-OPQ)</dt>
+  <dd>不假设分布，"固定 R 训 PQ ↔ 固定 PQ 求 R"交替迭代 T 轮。慢但精度更高。</dd>
+</dl>
+</details>
+
+<div class="new-user-tip">
+<b>新手引导 · 建议按顺序体验：</b>
+<ol style="margin:6px 0 0 20px">
+  <li>先拉动 <b>数据倾斜角度</b> 到 30~45°，让数据云斜着长（更容易看清 OPQ 的好处）。</li>
+  <li>观察左右两图：<b>左 = 原始 PQ（格子横平竖直）</b>，<b>右 = OPQ 旋转后（格子沿数据主轴对齐）</b>。看"平均量化误差"数字对比。</li>
+  <li>拉动 <b>OPQ 迭代次数 T 从 0 到 20</b>，看下方误差曲线是否单调下降/收敛。</li>
+  <li>拉动 <b>K</b>（每段簇数）观察 K 越大格子越密，OPQ 相对 PQ 的收益变化。</li>
+</ol>
+</div>
+
+<h2>一、直观理解</h2>
+<div class="card blue">
+<h3>类比：把长方形西瓜放进正方形冰格</h3>
+<p>PQ 分段就像把西瓜切块放冰格：如果西瓜是<b>沿着某个斜方向的长条</b>，直接横切竖切会切出很多"半空的块"（能量集中在少数格子）；
+如果你能先<b>把西瓜转正</b>（找到主轴对齐坐标轴），再切就整齐得多。</p>
+<p>OPQ 就是学习一个正交矩阵 <code>R</code>，先做 <code>x → Rx</code>，让每段子向量的能量更均衡、彼此更独立，然后再做标准 PQ。</p>
+</div>
+
+<div class="card green">
+<h3>为什么 PQ 会失效？</h3>
+<p>PQ 假设"子空间之间独立"、"每段能量差不多"。如果数据在 128 维空间沿某几个方向的方差远大于其它方向 (例如 PCA 后一半维度几乎无信息)，
+PQ 会：</p>
+<ul>
+  <li>某些段的信息量太大，K=256 中心不够用 → 误差大</li>
+  <li>某些段几乎不携带信息 → K 个中心浪费</li>
+</ul>
+<p>OPQ 的目标 = 学一个旋转 R，让 <b>各段能量均衡 + 段间相关性低</b>，从而每段的 K-Means 都发挥满效果。</p>
+</div>
+
+<h2>二、算法原理</h2>
+
+<h3>符号速查表</h3>
+<table class="symbol-table">
+  <tr><th>符号</th><th>含义</th><th>典型取值</th></tr>
+  <tr><td>D</td><td>向量维度</td><td>128</td></tr>
+  <tr><td>N</td><td>数据库向量数</td><td>10<sup>6</sup>（本页基线）</td></tr>
+  <tr><td>R</td><td>正交矩阵（旋转），满足 R<sup>T</sup>R = I</td><td>D×D</td></tr>
+  <tr><td>M, K, d</td><td>PQ 段数、每段簇数、每段维度 d=D/M</td><td>M=8, K=256</td></tr>
+  <tr><td>x, Rx</td><td>原始向量、旋转后向量</td><td>D 维</td></tr>
+  <tr><td>q(x)</td><td>PQ 量化重构 = 拼接的 M 段中心</td><td>D 维</td></tr>
+  <tr><td>T</td><td>OPQ 交替迭代轮数</td><td>5 ~ 25</td></tr>
+</table>
+
+<p><b>本页统一基线：</b>下文分析以 <code>D=128, N=100 万, M=8, K=256</code> 为例。R 矩阵额外占 <code>D²×4B = 64 KB</code> 一次性存储。</p>
+
+<div class="intuition-box">
+<h4>核心直觉：为什么要"先旋转再量化"？</h4>
+<p>PQ 把 D 维向量切成 M 段横平竖直地量化。<b>但如果数据是一朵斜着躺的西瓜形状</b>，横切竖切会切出很多"半空的块"——能量集中在少数格子，其它格子浪费。</p>
+<p>我们想找一个<b>不改变距离的"纯旋转"</b>（不能拉伸、不能镜像），使得旋转后各段方差更均衡。这种旋转在数学里叫 <b>正交矩阵</b>（满足 <code>R<sup>T</sup>R = I</code>）。</p>
+<p style="margin-bottom:0"><b>形象比喻：</b>你有一颗西瓜形数据点云横躺着，直接切 M 段会切得很不均匀；先把它<b>转正</b>让长轴对齐坐标轴，再切段就均匀多了。转的过程不改变任何两点距离——这一点是数学上的黄金：距离不变意味着"检索问题的答案"完全一样，只是<b>更好切段</b>。</p>
+</div>
+
+<h3>2.1 目标函数</h3>
+<p>OPQ 联合优化 <b>正交矩阵 R</b> 和 <b>码本 {C<sub>m</sub>}</b> 与 <b>编码 {q(x)}</b>：</p>
+<div class="formula">
+  min<sub>R,C,q</sub>  Σ<sub>x∈X</sub> ‖ R·x − [c<sub>1,q₁(x)</sub>; c<sub>2,q₂(x)</sub>; ...; c<sub>M,q<sub>M</sub>(x)</sub>] ‖²
+  &nbsp;&nbsp; s.t.  RᵀR = I
+</div>
+
+<h3>2.2 交替优化 (Non-parametric OPQ)</h3>
+
+<div class="intuition-box">
+<h4>Procrustes 问题直觉</h4>
+<p>想象两朵点云：<b>X = 原始数据</b>（斜着躺的西瓜），<b>X̂ = PQ 量化重构的数据</b>（横平竖直格子上的点）。我们想找一个旋转 R，让 R·X 尽量重合到 X̂ 上。</p>
+<p>这在数学里叫 <b>Procrustes 问题</b>（普罗克鲁斯忒斯问题），来自希腊神话——一个把旅客拉伸压缩到床长的强盗；但正交版本<b>不允许拉伸</b>，只准旋转。</p>
+<p style="margin-bottom:0"><b>闭式解：</b>计算 <code>M = X · X̂<sup>T</sup></code>，做 SVD 得 <code>M = U Σ V<sup>T</sup></code>，则最优 <code>R = V U<sup>T</sup></code>（或写作 <code>U V<sup>T</sup></code>，取决于左右乘约定）。一次 SVD 就完事，不需要梯度下降。</p>
+</div>
+
+<div class="card">
+<b>初始化：</b>R = I 或 PCA 主成分排列 (平衡各段能量)。<br>
+<b>循环 T 次：</b>
+<ol>
+  <li><b>固定 R</b>，在 <code>Rx</code> 上做标准 PQ：每段独立 K-Means → 得到 {C<sub>m</sub>}、编码 q(x)。</li>
+  <li><b>固定 C, q</b>，用 Procrustes 求最优 R：<br>
+  设 Y = R·X (旋转后), Ŷ = 重构 = 拼接量化中心。<br>
+  求 <code>R = arg min ‖RX − Ŷ‖²</code>，闭式解 = SVD 分解 <code>X·Ŷᵀ = UΣVᵀ</code>，取 <code>R = VUᵀ</code>。</li>
+</ol>
+</div>
+
+<h3>2.3 编码 / 查询</h3>
+<p>训练完后，编码时 <code>x → R·x → PQ 编码</code>，查询时 <code>y → R·y → PQ LUT 查询</code>。<br>
+运行时开销：多一次 <code>D×D</code> 矩阵乘 = O(D²)。对 100 万条向量分摊到查询时可忽略。</p>
+
+<h3>2.4 伪代码</h3>
+<pre><code>def train_opq(X, M, K, T):
+    D = X.shape[1]
+    R = np.eye(D)                     # 或 PCA 平衡初始化
+    for t in range(T):
+        Y = X @ R.T                   # 旋转后的数据
+        # 步骤 1: 在 Y 上做 PQ
+        codebooks = []
+        assignments = np.zeros((X.shape[0], M), dtype=int)
+        for m in range(M):
+            Ym = Y[:, m*d:(m+1)*d]
+            Cm = kmeans(Ym, K)
+            assignments[:, m] = argmin(Ym, Cm)
+            codebooks.append(Cm)
+        # 步骤 2: 用 Procrustes 更新 R
+        Y_hat = reconstruct(assignments, codebooks)  # (N, D)
+        U, _, Vt = svd(X.T @ Y_hat)
+        R = (U @ Vt).T                # (D, D) 正交
+    return R, codebooks</code></pre>
+
+<h3>2.5 内存与复杂度</h3>
+<table>
+  <tr><th></th><th>训练额外开销</th><th>查询额外开销</th><th>存储</th></tr>
+  <tr><td>PQ</td><td>M 次 K-Means (dim=d)</td><td>MK 次距离</td><td>M 字节</td></tr>
+  <tr><td>OPQ</td><td>+ T 次 SVD (D×D)</td><td>+ D² 乘法 (旋转 y)</td><td>M 字节 + R 矩阵 (D² 浮点)</td></tr>
+</table>
+<p>典型场景 D=128：R 矩阵占 128×128×4B = 64KB，一次性开销；每次查询多 128² = 16384 次乘加，可忽略。</p>
+
+<h2>三、交互式演示 · 2D 分 2 段</h2>
+<div class="card">
+<p>下方展示 2D 数据在"未旋转"与"旋转后"两种情况下的 PQ 结果对比。数据被采样为斜向分布 (强相关维度)，
+可以看到直接 PQ 时"绿色格子"多在斜线之外浪费，OPQ 旋转后格子与数据主轴对齐、误差显著下降。</p>
+
+<div class="controls">
+  <div class="control">
+    <label>K · 每段簇数 <span class="val" id="opq-K-val">4</span></label>
+    <input type="range" id="opq-K" min="2" max="12" step="1" value="4">
+  </div>
+  <div class="control">
+    <label>数据倾斜角度 (°) <span class="val" id="opq-angle-val">35</span></label>
+    <input type="range" id="opq-angle" min="0" max="89" step="1" value="35">
+  </div>
+  <div class="control">
+    <label>主轴 : 次轴 长宽比 <span class="val" id="opq-aspect-val">4.0</span></label>
+    <input type="range" id="opq-aspect" min="1" max="10" step="0.5" value="4">
+  </div>
+  <div class="control">
+    <label>OPQ 迭代次数 <span class="val" id="opq-T-val">5</span></label>
+    <input type="range" id="opq-T" min="0" max="20" step="1" value="5">
+  </div>
+  <div class="control">
+    <label>N · 数据点 <span class="val" id="opq-N-val">400</span></label>
+    <input type="range" id="opq-N" min="100" max="1500" step="50" value="400">
+  </div>
+</div>
+<div class="btn-row">
+  <button class="btn" id="opq-btn-regen">重新采样数据</button>
+  <button class="btn secondary" id="opq-btn-run">重跑 OPQ 训练</button>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><span class="legend-dot" style="background:#94a3b8"></span>数据点</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#dc2626"></span>子码本中心</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#059669"></span>PQ 格子交点</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#4f46e5"></span>数据 → 量化重构</div>
+</div>
+
+<div class="viz-container">
+  <div class="viz-block">
+    <h4>原始 PQ (R = I)</h4>
+    <canvas id="opq-canvas-raw" width="440" height="440"></canvas>
+    <div class="metric-row">
+      <div class="metric"><span style="color:var(--muted);font-size:12px">平均量化误差</span><b id="opq-err-raw">-</b></div>
+    </div>
+  </div>
+  <div class="viz-block">
+    <h4>OPQ (学到旋转 R)</h4>
+    <canvas id="opq-canvas-opq" width="440" height="440"></canvas>
+    <div class="metric-row">
+      <div class="metric"><span style="color:var(--muted);font-size:12px">平均量化误差</span><b id="opq-err-opq">-</b></div>
+      <div class="metric"><span style="color:var(--muted);font-size:12px">当前旋转角</span><b id="opq-angle-cur">-</b></div>
+    </div>
+  </div>
+</div>
+
+<h3>训练进程</h3>
+<div class="viz-block" style="width:100%">
+  <h4>误差随迭代下降曲线 (OPQ)</h4>
+  <canvas id="opq-canvas-curve" width="900" height="200"></canvas>
+</div>
+
+<h3>案例逐步讲解</h3>
+<div class="btn-row">
+  <button class="btn secondary" id="opq-btn-prev">上一步</button>
+  <button class="btn" id="opq-btn-next">下一步 →</button>
+  <button class="btn secondary" id="opq-btn-reset">重置流程</button>
+</div>
+<div class="step-box" id="opq-step-box">点击"下一步"开始 OPQ 流程演示。</div>
+</div>
+
+<h2>四、OPQ 变体</h2>
+<div class="grid-2">
+  <div class="card">
+    <b>Non-Parametric OPQ (NP-OPQ)</b>
+    <p>上述交替优化，不假设 R 与 C 的具体形式。表达力强，训练成本较高。</p>
+  </div>
+  <div class="card">
+    <b>Parametric OPQ (P-OPQ)</b>
+    <p>假设数据服从多元高斯，直接用 PCA 后按方差平衡分组，闭式解一次得 R，无需迭代。快但表达力受限。</p>
+  </div>
+</div>
+
+<h2>五、优缺点 & 适用场景</h2>
+<div class="pros-cons">
+  <div>
+    <h3 style="color:var(--accent)">优点</h3>
+    <ul class="pros">
+      <li>召回率通常比 PQ 高 5-15%，同码率下误差更低</li>
+      <li>不改变查询接口，只多一次矩阵乘</li>
+      <li>可无缝叠加到 IVF-OPQ、HNSW-OPQ</li>
+    </ul>
+  </div>
+  <div>
+    <h3 style="color:var(--danger)">缺点</h3>
+    <ul class="cons">
+      <li>训练慢 (T 次 SVD)，D 大时代价高</li>
+      <li>额外 D×D 矩阵存储</li>
+      <li>对已经"白化"或维度独立的数据提升有限</li>
+    </ul>
+  </div>
+</div>
+<div class="card yellow">
+<b>适用场景：</b>PQ 效果不理想 (数据强相关、能量集中在少数方向)、追求最高召回率的检索系统。Faiss <code>IndexPreTransform + PQ</code>、<code>IndexIVFPQ + OPQMatrix</code>。
+</div>
+
+<div class="pitfall">
+<h4>常见误区</h4>
+<ul style="margin:0;padding-left:20px">
+  <li><b>训练很慢</b>：每轮 SVD 的复杂度是 O(D<sup>3</sup>)，D=768（BERT embedding）时每轮几秒到几十秒；再乘 T=25 迭代，总时间以分钟计。生产上一般先用 P-OPQ 快速初始化，再跑少量 NP-OPQ 迭代。</li>
+  <li><b>不能对新分布数据重新学 R</b>：R 是在训练集上学的旋转，如果<b>查询数据分布 ≠ 训练分布</b>并重新学 R，则数据侧和查询侧使用不同 R → 距离完全错误。R 必须<b>训练一次、终身固定</b>。</li>
+  <li><b>加了 OPQ 一定优于纯 PQ 吗？</b>不一定。如果数据本来就<b>已经白化 / 各维方差近似均衡</b>（例如做过 PCA 白化或 L2 归一），OPQ 收益很小甚至可能因为额外矩阵乘变慢。判断标准：先看原始数据的各维方差，如果最大方差/最小方差 > 5 才值得上 OPQ。</li>
+  <li><b>P-OPQ vs NP-OPQ 选错</b>：P-OPQ 只在数据近似多元高斯时有理论保证。真实嵌入常有多峰或长尾，此时必须 NP-OPQ。</li>
+</ul>
+</div>
+
+<div class="next-steps">
+<b>下一步学什么？</b>
+<ul style="margin:6px 0 0 20px">
+  <li>OPQ + IVF-PQ 的组合 → <b>IVF-OPQ-PQ</b>（Faiss <code>OPQMatrix + IndexIVFPQ</code>），亿级检索的性能天花板之一。</li>
+  <li>更强的一族：<b>ScaNN</b>（各向异性量化，Google 2020），对内积检索特殊优化，同码率下召回再高 3~5%。</li>
+  <li>2023+ 前沿：<b>RaBitQ</b>（1-bit 量化 + 理论误差界），冲击 128 倍压缩率而保持高召回。</li>
+</ul>
+</div>
+
+</div>
+
+<script>
+/* ================== 工具 ================== */
+function randn() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function sampleSkewed(n, angleDeg, aspect) {
+  const th = angleDeg * Math.PI / 180;
+  const cos = Math.cos(th), sin = Math.sin(th);
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = randn() * 0.28 * aspect / (aspect + 1) * 2;
+    const b = randn() * 0.28 / (aspect + 1) * 2;
+    let x = cos * a - sin * b + 0.5;
+    let y = sin * a + cos * b + 0.5;
+    x = Math.min(0.99, Math.max(0.01, x));
+    y = Math.min(0.99, Math.max(0.01, y));
+    pts.push([x, y]);
+  }
+  return pts;
+}
+function centerData(pts) {
+  let mx = 0, my = 0;
+  for (const [x, y] of pts) { mx += x; my += y; }
+  mx /= pts.length; my /= pts.length;
+  return { pts: pts.map(([x, y]) => [x - mx, y - my]), mx, my };
+}
+function rotate(pts, R) {
+  return pts.map(([x, y]) => [R[0][0] * x + R[0][1] * y, R[1][0] * x + R[1][1] * y]);
+}
+function invRotate(pts, R) {
+  // R 是正交 → R^-1 = Rᵀ
+  return pts.map(([x, y]) => [R[0][0] * x + R[1][0] * y, R[0][1] * x + R[1][1] * y]);
+}
+function kmeans1D(vals, K, iter) {
+  if (vals.length === 0) return new Array(K).fill(0);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  let centers = [];
+  for (let k = 0; k < K; k++) centers.push(min + (max - min) * (k + 0.5) / K);
+  for (let it = 0; it < iter; it++) {
+    const s = new Array(K).fill(0), c = new Array(K).fill(0);
+    for (const v of vals) {
+      let bk = 0, bd = Infinity;
+      for (let k = 0; k < K; k++) {
+        const d = Math.abs(v - centers[k]);
+        if (d < bd) { bd = d; bk = k; }
+      }
+      s[bk] += v; c[bk]++;
+    }
+    for (let k = 0; k < K; k++) if (c[k] > 0) centers[k] = s[k] / c[k];
+  }
+  centers.sort((a, b) => a - b);
+  return centers;
+}
+function argminIdx(centers, v) {
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < centers.length; i++) {
+    const d = Math.abs(centers[i] - v);
+    if (d < bd) { bd = d; bi = i; }
+  }
+  return bi;
+}
+/* 2x2 SVD 简单实现: 用于 Procrustes 找最优 R */
+function svd2(M) {
+  // M = [[a,b],[c,d]]
+  const a = M[0][0], b = M[0][1], c = M[1][0], d = M[1][1];
+  // 参考: Blinn 的 2x2 SVD
+  const E = (a + d) / 2, F = (a - d) / 2;
+  const G = (c + b) / 2, H = (c - b) / 2;
+  const Q = Math.sqrt(E * E + H * H);
+  const R = Math.sqrt(F * F + G * G);
+  const s1 = Q + R, s2 = Q - R;
+  const a1 = Math.atan2(G, F), a2 = Math.atan2(H, E);
+  const theta = (a2 - a1) / 2;
+  const phi = (a2 + a1) / 2;
+  const U = [[Math.cos(phi), -Math.sin(phi)], [Math.sin(phi), Math.cos(phi)]];
+  const S = [s1, s2];
+  const V = [[Math.cos(theta), -Math.sin(theta)], [Math.sin(theta), Math.cos(theta)]];
+  return { U, S, V };
+}
+function matMul2(A, B) {
+  return [
+    [A[0][0] * B[0][0] + A[0][1] * B[1][0], A[0][0] * B[0][1] + A[0][1] * B[1][1]],
+    [A[1][0] * B[0][0] + A[1][1] * B[1][0], A[1][0] * B[0][1] + A[1][1] * B[1][1]]
+  ];
+}
+function transpose2(A) {
+  return [[A[0][0], A[1][0]], [A[0][1], A[1][1]]];
+}
+
+/* ================== 状态 ================== */
+const S = {
+  K: 4, N: 400, angle: 35, aspect: 4, T: 5,
+  points: [], centered: [], mx: 0, my: 0,
+  R: [[1, 0], [0, 1]],
+  centersX_raw: [], centersY_raw: [],
+  centersX_opq: [], centersY_opq: [],
+  errCurve: [],
+  step: 0
+};
+
+const cvRaw = document.getElementById('opq-canvas-raw');
+const cvOpq = document.getElementById('opq-canvas-opq');
+const cvCurve = document.getElementById('opq-canvas-curve');
+
+function drawScene(canvas, points, centersX, centersY, R, isRotated) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  // 背景网格
+  ctx.strokeStyle = '#f1f5f9';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 10; i++) {
+    ctx.beginPath(); ctx.moveTo((W * i) / 10, 0); ctx.lineTo((W * i) / 10, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, (H * i) / 10); ctx.lineTo(W, (H * i) / 10); ctx.stroke();
+  }
+  const toScreen = ([x, y]) => [(x + 0.5) * W, (1 - (y + 0.5)) * H];
+
+  // 画 PQ 格子 (在旋转后的坐标系里 X/Y 划线, 逆旋转到原空间成斜线)
+  ctx.strokeStyle = '#059669';
+  ctx.setLineDash([4, 4]);
+  ctx.lineWidth = 1;
+  const range = 0.5;
+  // 竖线 (x = cx)
+  for (const cx of centersX) {
+    const p1 = invRotate([[cx, -range]], R)[0];
+    const p2 = invRotate([[cx, range]], R)[0];
+    const [sx1, sy1] = toScreen(p1);
+    const [sx2, sy2] = toScreen(p2);
+    ctx.beginPath();
+    ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+  }
+  for (const cy of centersY) {
+    const p1 = invRotate([[-range, cy]], R)[0];
+    const p2 = invRotate([[range, cy]], R)[0];
+    const [sx1, sy1] = toScreen(p1);
+    const [sx2, sy2] = toScreen(p2);
+    ctx.beginPath();
+    ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // 交点
+  for (const cx of centersX) {
+    for (const cy of centersY) {
+      const p = invRotate([[cx, cy]], R)[0];
+      const [sx, sy] = toScreen(p);
+      ctx.fillStyle = '#059669';
+      ctx.beginPath();
+      ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // 数据点 + 量化连线
+  let totalErr = 0;
+  for (const p of points) {
+    const [sx, sy] = toScreen(p);
+    ctx.fillStyle = '#94a3b8';
+    ctx.beginPath();
+    ctx.arc(sx, sy, 2.5, 0, Math.PI * 2); ctx.fill();
+    // 计算量化
+    const rp = rotate([p], R)[0];
+    const kx = argminIdx(centersX, rp[0]);
+    const ky = argminIdx(centersY, rp[1]);
+    const q = invRotate([[centersX[kx], centersY[ky]]], R)[0];
+    const [qx, qy] = toScreen(q);
+    ctx.strokeStyle = 'rgba(79,70,229,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy); ctx.lineTo(qx, qy); ctx.stroke();
+    totalErr += (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2;
+  }
+  // 子码本中心 (轴上位置)
+  const angleRad = Math.atan2(R[1][0], R[0][0]);
+  // 画旋转坐标轴
+  ctx.strokeStyle = '#94a3b8';
+  ctx.setLineDash([2, 3]);
+  const axLen = 0.42;
+  const p1 = invRotate([[-axLen, 0]], R)[0];
+  const p2 = invRotate([[axLen, 0]], R)[0];
+  ctx.beginPath();
+  ctx.moveTo(...toScreen(p1)); ctx.lineTo(...toScreen(p2)); ctx.stroke();
+  const p3 = invRotate([[0, -axLen]], R)[0];
+  const p4 = invRotate([[0, axLen]], R)[0];
+  ctx.beginPath();
+  ctx.moveTo(...toScreen(p3)); ctx.lineTo(...toScreen(p4)); ctx.stroke();
+  ctx.setLineDash([]);
+  return totalErr / points.length;
+}
+
+/* ================== 训练 ================== */
+function computePQ_forRotated(pts, R, K, iter) {
+  const rp = rotate(pts, R);
+  const xs = rp.map(p => p[0]);
+  const ys = rp.map(p => p[1]);
+  const cx = kmeans1D(xs, K, iter);
+  const cy = kmeans1D(ys, K, iter);
+  let err = 0;
+  const assigns = [];
+  for (const [x, y] of rp) {
+    const kx = argminIdx(cx, x);
+    const ky = argminIdx(cy, y);
+    assigns.push([kx, ky]);
+    err += (x - cx[kx]) ** 2 + (y - cy[ky]) ** 2;
+  }
+  return { cx, cy, err: err / rp.length, assigns, rp };
+}
+
+function trainOPQ() {
+  // Step 1: 中心化
+  const { pts, mx, my } = centerData(S.points);
+  S.centered = pts;
+  S.mx = mx; S.my = my;
+  // Step 2: 原始 PQ (R = I)
+  const eye = [[1, 0], [0, 1]];
+  const raw = computePQ_forRotated(pts, eye, S.K, 15);
+  S.centersX_raw = raw.cx;
+  S.centersY_raw = raw.cy;
+  // Step 3: OPQ 迭代
+  let R = [[1, 0], [0, 1]];
+  const curve = [];
+  let cx_opq = raw.cx, cy_opq = raw.cy;
+  for (let t = 0; t < S.T; t++) {
+    const res = computePQ_forRotated(pts, R, S.K, 15);
+    cx_opq = res.cx; cy_opq = res.cy;
+    curve.push(res.err);
+    // Procrustes: 用 rotated 数据 rp 与它们对应的码本重构 rhat, 求最优 R'
+    // 我们要新的 R' 使得 R' x ≈ rhat_i (相对当前 x, rhat_i 在旋转后空间)
+    // 等价: 累加 M = Σ x_i * rhat_iᵀ (但 rhat 在旋转空间, 需转回)
+    // 简化: 直接对 X_i 与 rhat_i(在原空间) 求 M
+    const rhat_rot = res.assigns.map(([kx, ky]) => [res.cx[kx], res.cy[ky]]);
+    const rhat_orig = invRotate(rhat_rot, R);
+    // M = Σ rhat_orig_i * x_i^T   (Procrustes: R = U V^T)
+    let M = [[0, 0], [0, 0]];
+    for (let i = 0; i < pts.length; i++) {
+      const x = pts[i], y = rhat_orig[i];
+      M[0][0] += y[0] * x[0];
+      M[0][1] += y[0] * x[1];
+      M[1][0] += y[1] * x[0];
+      M[1][1] += y[1] * x[1];
+    }
+    const { U, V } = svd2(M);
+    // R = U V^T
+    R = matMul2(U, transpose2(V));
+    // 保证 det(R) = 1 (无反射)
+    const det = R[0][0] * R[1][1] - R[0][1] * R[1][0];
+    if (det < 0) {
+      R = [[R[0][0], -R[0][1]], [R[1][0], -R[1][1]]];
+    }
+  }
+  S.R = R;
+  const final = computePQ_forRotated(pts, R, S.K, 15);
+  S.centersX_opq = final.cx;
+  S.centersY_opq = final.cy;
+  curve.push(final.err);
+  S.errCurve = curve;
+  // 渲染
+  const errRaw = drawScene(cvRaw, pts, S.centersX_raw, S.centersY_raw, [[1, 0], [0, 1]], false);
+  const errOpq = drawScene(cvOpq, pts, S.centersX_opq, S.centersY_opq, R, true);
+  document.getElementById('opq-err-raw').textContent = errRaw.toFixed(5);
+  document.getElementById('opq-err-opq').textContent = errOpq.toFixed(5);
+  const ang = Math.atan2(R[1][0], R[0][0]) * 180 / Math.PI;
+  document.getElementById('opq-angle-cur').textContent = ang.toFixed(1) + '°';
+  drawCurve();
+}
+
+function drawCurve() {
+  const ctx = cvCurve.getContext('2d');
+  const W = cvCurve.width, H = cvCurve.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = '#e5e7eb';
+  ctx.beginPath();
+  ctx.moveTo(40, 20); ctx.lineTo(40, H - 30); ctx.lineTo(W - 20, H - 30);
+  ctx.stroke();
+  if (S.errCurve.length === 0) return;
+  const mn = Math.min(...S.errCurve), mx = Math.max(...S.errCurve);
+  const pad = 0.001;
+  const yMax = mx + pad, yMin = Math.max(0, mn - pad);
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '11px monospace';
+  ctx.fillText(yMax.toFixed(5), 4, 24);
+  ctx.fillText(yMin.toFixed(5), 4, H - 26);
+  ctx.fillText('迭代', W / 2, H - 8);
+  ctx.strokeStyle = '#4f46e5';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < S.errCurve.length; i++) {
+    const x = 40 + i * (W - 60) / Math.max(1, S.errCurve.length - 1);
+    const y = 20 + (1 - (S.errCurve[i] - yMin) / (yMax - yMin + 1e-9)) * (H - 50);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#4f46e5';
+  for (let i = 0; i < S.errCurve.length; i++) {
+    const x = 40 + i * (W - 60) / Math.max(1, S.errCurve.length - 1);
+    const y = 20 + (1 - (S.errCurve[i] - yMin) / (yMax - yMin + 1e-9)) * (H - 50);
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#6b7280';
+    ctx.fillText(`t=${i}`, x - 8, H - 32);
+    ctx.fillStyle = '#4f46e5';
+  }
+}
+
+/* ================== 事件 ================== */
+function resample() {
+  S.points = sampleSkewed(S.N, S.angle, S.aspect).map(([x, y]) => [x - 0.5, y - 0.5]);
+  trainOPQ();
+}
+document.getElementById('opq-K').addEventListener('input', e => {
+  S.K = parseInt(e.target.value);
+  document.getElementById('opq-K-val').textContent = S.K;
+  trainOPQ();
+});
+document.getElementById('opq-angle').addEventListener('input', e => {
+  S.angle = parseInt(e.target.value);
+  document.getElementById('opq-angle-val').textContent = S.angle;
+  resample();
+});
+document.getElementById('opq-aspect').addEventListener('input', e => {
+  S.aspect = parseFloat(e.target.value);
+  document.getElementById('opq-aspect-val').textContent = S.aspect.toFixed(1);
+  resample();
+});
+document.getElementById('opq-T').addEventListener('input', e => {
+  S.T = parseInt(e.target.value);
+  document.getElementById('opq-T-val').textContent = S.T;
+  trainOPQ();
+});
+document.getElementById('opq-N').addEventListener('input', e => {
+  S.N = parseInt(e.target.value);
+  document.getElementById('opq-N-val').textContent = S.N;
+  resample();
+});
+document.getElementById('opq-btn-regen').onclick = resample;
+document.getElementById('opq-btn-run').onclick = trainOPQ;
+
+/* ================== 分步 ================== */
+const stepBox = document.getElementById('opq-step-box');
+const STEPS = [
+  { text: '<b>步骤 1</b>：观察左侧原始 PQ。数据沿斜方向拉长，绿色格子交点大量落在数据稀疏区域 → 量化误差大。' },
+  { text: '<b>步骤 2</b>：OPQ 目标 = 找一个正交旋转 R，让 R·x 后数据的能量在 X/Y 两段均衡分布。' },
+  { text: '<b>步骤 3</b>：初始化 R = I，在原空间做一遍 PQ。' },
+  { text: '<b>步骤 4</b>：固定量化编码 q(x)，用 Procrustes 求最优 R：R = U·Vᵀ (来自 SVD 分解 Σ x·q̂(x)ᵀ)。' },
+  { text: '<b>步骤 5</b>：在旋转后的空间 R·x 重新做 PQ (每段独立 K-Means)，更新码本。' },
+  { text: '<b>步骤 6</b>：重复 T 次交替，直到误差曲线收敛（下方曲线）。' },
+  { text: '<b>步骤 7</b>：右侧图展示学到的旋转坐标轴 (灰色虚线) 与新的 PQ 格子。可以看到格子已经沿数据主轴对齐，误差明显下降。' },
+  { text: '<b>步骤 8</b>：查询阶段：先 y → R·y，再做标准 PQ LUT。运行时只多一次 D×D 矩阵乘。' }
+];
+function renderStep() {
+  stepBox.innerHTML = STEPS[S.step].text;
+}
+document.getElementById('opq-btn-next').onclick = () => { S.step = Math.min(STEPS.length - 1, S.step + 1); renderStep(); };
+document.getElementById('opq-btn-prev').onclick = () => { S.step = Math.max(0, S.step - 1); renderStep(); };
+document.getElementById('opq-btn-reset').onclick = () => { S.step = 0; renderStep(); };
+
+/* ================== 初始化 ================== */
+resample();
+renderStep();
+</script>
+
+</body>
+</html>

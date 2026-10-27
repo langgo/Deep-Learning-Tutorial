@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ANN 算法可视化教程</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Approximate Nearest Neighbor</p>
+        <h1>ANN 算法可视化教程</h1>
+        <p class="intro">
+          用同一组二维向量，逐步观察 LSH、KD-Tree 与 HNSW 如何减少搜索范围，并用“近似”换取速度。
+        </p>
+      </div>
+      <div class="summary-card" aria-label="核心思想">
+        <span>核心权衡</span>
+        <strong>更少计算</strong>
+        <small>接受少量误差，换来大规模检索速度</small>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="side-panel" aria-label="算法选择与步骤控制">
+        <section>
+          <h2>选择算法</h2>
+          <div class="algo-tabs" role="tablist" aria-label="ANN 算法">
+            <button class="algo-tab active" data-algo="lsh" type="button">LSH</button>
+            <button class="algo-tab" data-algo="tree" type="button">KD-Tree</button>
+            <button class="algo-tab" data-algo="hnsw" type="button">HNSW</button>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-heading">
+            <h2 id="algo-title">LSH 局部敏感哈希</h2>
+            <span id="step-counter">1 / 6</span>
+          </div>
+          <p id="algo-description" class="muted"></p>
+        </section>
+
+        <section>
+          <div class="controls">
+            <button id="prev-step" class="icon-button" type="button" aria-label="上一步" title="上一步">
+              <span aria-hidden="true">←</span>
+            </button>
+            <button id="play-toggle" class="primary-button" type="button">播放</button>
+            <button id="next-step" class="icon-button" type="button" aria-label="下一步" title="下一步">
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          <input id="step-slider" class="step-slider" type="range" min="0" max="5" value="0" />
+        </section>
+
+        <section>
+          <h2>当前步骤</h2>
+          <ol id="step-list" class="step-list"></ol>
+        </section>
+      </aside>
+
+      <section class="stage-panel">
+        <div class="stage-topbar">
+          <div>
+            <h2 id="stage-title">用随机投影把向量分桶</h2>
+            <p id="stage-caption">相似点更可能得到相同的哈希签名，因此查询时可以只看同桶候选。</p>
+          </div>
+          <div class="metric-strip" aria-label="当前搜索指标">
+            <div>
+              <span>候选数</span>
+              <strong id="candidate-count">0</strong>
+            </div>
+            <div>
+              <span>距离计算</span>
+              <strong id="distance-count">0</strong>
+            </div>
+            <div>
+              <span>召回提示</span>
+              <strong id="recall-hint">观察中</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="canvas-wrap">
+          <canvas id="ann-canvas" width="980" height="620" aria-label="ANN 算法可视化画布"></canvas>
+          <div id="floating-note" class="floating-note"></div>
+        </div>
+
+        <div class="legend" aria-label="图例">
+          <span><i class="dot blue"></i>数据向量</span>
+          <span><i class="dot red"></i>查询向量</span>
+          <span><i class="dot green"></i>候选/访问节点</span>
+          <span><i class="line"></i>划分、投影或图边</span>
+        </div>
+      </section>
+
+      <aside class="explain-panel">
+        <section>
+          <h2>这一步在做什么</h2>
+          <p id="step-explanation"></p>
+        </section>
+        <section>
+          <h2>为什么能加速</h2>
+          <p id="speed-explanation"></p>
+        </section>
+        <section>
+          <h2>容易踩的点</h2>
+          <p id="pitfall-explanation"></p>
+        </section>
+        <section class="compare-box">
+          <h2>三种方法对比</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>方法</th>
+                <th>强项</th>
+                <th>代价</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>LSH</td>
+                <td>简单，可并行</td>
+                <td>桶参数敏感</td>
+              </tr>
+              <tr>
+                <td>KD-Tree</td>
+                <td>低维清晰</td>
+                <td>高维退化</td>
+              </tr>
+              <tr>
+                <td>HNSW</td>
+                <td>召回/速度均衡</td>
+                <td>内存较高</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </aside>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

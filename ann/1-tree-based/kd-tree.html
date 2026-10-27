@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>KD-Tree | 树形近似最近邻搜索</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+        background: #f7f8fa;
+        color: #202124;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        line-height: 1.7;
+    }
+    a { color: #1a73e8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    header {
+        background: linear-gradient(135deg, #ffffff 0%, #eef1f6 100%);
+        border-bottom: 1px solid #e0e3e7;
+        padding: 28px 40px;
+    }
+    header .back { font-size: 14px; color: #5f6368; }
+    header h1 {
+        margin-top: 8px;
+        font-size: 28px;
+        font-weight: 700;
+        color: #202124;
+    }
+    header .subtitle {
+        margin-top: 4px;
+        color: #5f6368;
+        font-size: 15px;
+    }
+
+    main {
+        max-width: 1180px;
+        margin: 30px auto;
+        padding: 0 24px;
+    }
+
+    section {
+        background: #ffffff;
+        border: 1px solid #e6e8eb;
+        border-radius: 10px;
+        padding: 24px 28px;
+        margin-bottom: 22px;
+        box-shadow: 0 1px 3px rgba(15, 20, 30, 0.03);
+    }
+    section h2 {
+        font-size: 20px;
+        color: #1a1f36;
+        border-left: 4px solid #1a73e8;
+        padding-left: 10px;
+        margin-bottom: 14px;
+    }
+    section h3 {
+        font-size: 16px;
+        color: #202124;
+        margin: 16px 0 8px;
+    }
+    section p { margin-bottom: 10px; color: #333; }
+    section ul, section ol { padding-left: 24px; margin-bottom: 12px; }
+    section li { margin-bottom: 4px; }
+
+    pre.code {
+        background: #1e1e2f;
+        color: #e6e6e6;
+        padding: 14px 16px;
+        border-radius: 8px;
+        overflow-x: auto;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 1.55;
+        margin: 8px 0 14px;
+    }
+    pre.code .kw { color: #c586c0; }
+    pre.code .fn { color: #dcdcaa; }
+    pre.code .str { color: #ce9178; }
+    pre.code .num { color: #b5cea8; }
+    pre.code .cmt { color: #6a9955; font-style: italic; }
+
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+        background: #fafbfd;
+        border: 1px solid #e6e8eb;
+        border-radius: 8px;
+        padding: 16px;
+    }
+    .card h4 {
+        font-size: 15px;
+        margin-bottom: 8px;
+        color: #1a73e8;
+    }
+
+    .canvas-wrap {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+    .canvas-wrap > .col-left { flex: 1 1 480px; }
+    .canvas-wrap > .col-right { flex: 1 1 480px; }
+
+    canvas {
+        background: #ffffff;
+        border: 1px solid #dcdfe3;
+        border-radius: 6px;
+        display: block;
+        cursor: crosshair;
+    }
+
+    svg.tree-view {
+        background: #ffffff;
+        border: 1px solid #dcdfe3;
+        border-radius: 6px;
+        width: 100%;
+        height: 380px;
+    }
+
+    .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0 4px;
+    }
+    button {
+        background: #1a73e8;
+        color: white;
+        border: 0;
+        border-radius: 6px;
+        padding: 8px 14px;
+        cursor: pointer;
+        font-size: 13px;
+    }
+    button:hover { background: #1668c8; }
+    button.secondary { background: #ffffff; color: #1a73e8; border: 1px solid #1a73e8; }
+    button.secondary:hover { background: #f0f5ff; }
+    button.danger { background: #d93025; }
+    button.danger:hover { background: #b8231b; }
+
+    .param {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 6px 0;
+        font-size: 13px;
+        color: #333;
+    }
+    .param input[type=range] { width: 160px; }
+    .param select { padding: 4px 6px; }
+
+    .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 12px;
+        color: #555;
+        margin: 8px 0;
+    }
+    .legend span.dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 4px;
+        vertical-align: middle;
+    }
+
+    .step-info {
+        background: #f0f5ff;
+        border-left: 4px solid #1a73e8;
+        padding: 10px 14px;
+        border-radius: 4px;
+        margin: 10px 0;
+        font-size: 14px;
+        color: #1a3a70;
+        min-height: 44px;
+    }
+
+    table.complexity {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        font-size: 14px;
+    }
+    table.complexity th, table.complexity td {
+        border: 1px solid #e0e3e7;
+        padding: 8px 10px;
+        text-align: left;
+    }
+    table.complexity th { background: #f0f5ff; color: #1a3a70; }
+
+    .pros-cons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+    @media (max-width: 720px) { .pros-cons { grid-template-columns: 1fr; } }
+    .pros { background: #ecf9f0; border-left: 4px solid #2e9d5a; padding: 10px 14px; border-radius: 4px; }
+    .cons { background: #fdecec; border-left: 4px solid #d93025; padding: 10px 14px; border-radius: 4px; }
+    .pros h4 { color: #1e6b3d; margin-bottom: 6px; }
+    .cons h4 { color: #a3221b; margin-bottom: 6px; }
+
+    footer {
+        text-align: center;
+        padding: 20px 0;
+        color: #8b8f94;
+        font-size: 13px;
+    }
+
+    /* ============ 新手友好组件 ============ */
+    .prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; color: #1e3a8a; }
+    .prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+    .prereq-bar .pill:hover { background: #dbeafe; text-decoration: none; }
+    .glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+    .glossary summary { cursor: pointer; font-weight: 600; color: #374151; }
+    .glossary dl { margin-top: 10px; }
+    .glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+    .glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+    .new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+    .new-user-tip strong { color: #1e40af; }
+    .new-user-tip ol { padding-left: 22px; margin: 6px 0; }
+    .intuition-primer { background: #fefce8; border-left: 3px solid #eab308; padding: 10px 14px; margin: 10px 0; border-radius: 4px; font-size: 0.94rem; color: #713f12; }
+    .pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+    .pitfall h4 { color: #92400e; margin-top: 0; margin-bottom: 8px; }
+    .pitfall ol { padding-left: 22px; }
+    .next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; color: #065f46; }
+    .next-steps a { color: #047857; font-weight: 600; }
+    .param-hint-table { width: 100%; font-size: 0.88rem; margin: 8px 0; border-collapse: collapse; }
+    .param-hint-table th, .param-hint-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    .param-hint-table th { background: #f9fafb; color: #374151; }
+</style>
+</head>
+<body>
+<header>
+    <div class="back"><a href="../index.html">&larr; 返回 ANN 算法总览</a></div>
+    <h1>KD-Tree · K 维空间划分树</h1>
+    <div class="subtitle">Bentley 1975 提出的多维二叉搜索树。用轴对齐超平面递归切分空间，通过回溯与剪枝加速最近邻搜索。</div>
+</header>
+
+<main>
+
+<div class="prereq-bar">
+    <b>前置阅读：</b>
+    <span class="pill">无（本类别入门算法）</span>
+    <span class="pill">建议：了解二叉搜索树 BST 与递归</span>
+    <a class="pill" href="../index.html">返回总览</a>
+    <br>
+    <b style="display:inline-block;margin-top:6px;">重要说明：</b>
+    <span style="color:#7c2d12">KD-Tree 本质上是<b>精确</b> K-NN 结构（低维下），不是近似方法。它被放在 ANN 教程里作为"树类"入门；进入 ANN 语义的近似变体是 Best-Bin-First（Beis &amp; Lowe 1997）与 <a href="./annoy.html" style="color:#7c2d12;text-decoration:underline">Annoy</a>。</span>
+</div>
+
+<details class="glossary" open>
+    <summary>关键术语速查（点击展开/收起）</summary>
+    <dl>
+        <dt>轴对齐分割（axis-aligned split）</dt>
+        <dd>沿某一个坐标轴（如 x 轴或 y 轴）切一刀把空间分成两半——想象用"东西方向"或"南北方向"的直线切地图。KD-Tree 的所有分割都是轴对齐的，这也是它跟 Ball Tree 最本质的区别。</dd>
+        <dt>切分维度（split dimension） / 切分阈值（split value）</dt>
+        <dd>每个内部节点存一对 <code>(d, t)</code>：<code>d</code> 说"在哪一维上切"，<code>t</code> 说"切在哪个位置"。Bentley 原始版本 <code>d = depth mod k</code>，即按深度轮转；实践中常改为方差最大或范围最大的维度。</dd>
+        <dt>中位数分裂</dt>
+        <dd>把点按当前维度排序，取正中间那个点作为切分点。左右两边点数几乎相等，保证树平衡、深度 O(log N)。</dd>
+        <dt>回溯（backtracking）</dt>
+        <dd>先递归下降到最可能的叶子，再一路返回父节点。返回时顺便检查"另一侧子树"里有没有可能藏着更近的点。</dd>
+        <dt>剪枝（pruning）</dt>
+        <dd>发现某个子树里的所有点都不可能比当前最优更近，直接跳过、不进入。剪枝越强、访问节点越少——这是 KD-Tree 相对暴力扫描的加速来源。</dd>
+        <dt>轴距离（splitting-plane distance）</dt>
+        <dd>查询点到切分超平面的<b>垂直距离</b>：<code>|target[d] − pivot[d]|</code>。它是另一侧子树内任何点到查询点距离的<b>下界</b>——如果这个下界已经不小于当前最优半径，就可以整个子树剪掉。</dd>
+        <dt>维度诅咒（curse of dimensionality）</dt>
+        <dd>高维空间（&gt; 20 维）中任意两点的距离几乎都相等，切分超平面近乎失去区分度，剪枝条件几乎永远不成立，KD-Tree 退化为暴力扫描（Weber, Schek &amp; Blott 1998 有严格分析）。</dd>
+        <dt>叶子容量（leaf size）</dt>
+        <dd>不再往下切分的阈值。子集大小小于该值时直接存点数组、逐个算距离。太小导致树太深，太大导致叶内暴力扫描代价上升；sklearn 默认 30。</dd>
+        <dt>Best Bin First (BBF)</dt>
+        <dd>Beis &amp; Lowe (1997) 提出的 KD-Tree 近似查询：把待访问的子树放进优先队列（按到查询点的距离），只查前 <code>emax</code> 个叶子。SIFT 图像匹配的经典配套算法。</dd>
+    </dl>
+</details>
+
+<section>
+    <h2>1. 直观理解与历史背景</h2>
+
+    <h3>1.1 从"二叉搜索树"到"K 维搜索树"</h3>
+    <p>
+        普通的二叉搜索树（BST）能在一维数字里做 O(log N) 查找："比根小走左边、比根大走右边"。
+        但当"键"变成 2 维、3 维甚至 128 维向量时，BST 就不够用了——因为没法定义"整体上更大还是更小"。
+    </p>
+    <p>
+        <b>Jon Louis Bentley 在 1975 年</b>（论文 <i>"Multidimensional Binary Search Trees Used for Associative Searching"</i>,
+        <i>Communications of the ACM</i>, 18(9)）给出了一个优雅的解法：<b>每一层只在一个维度上比较</b>。
+        第 0 层用 x 轴切、第 1 层用 y 轴切、第 2 层再回到 x 轴……如此轮换。这样每个内部节点只做"一维比较"，
+        但整棵树共同覆盖了所有 k 个维度。
+    </p>
+
+    <h3>1.2 生活化类比</h3>
+    <p>
+        想象你在一张巨大的城市地图上要找 <b>离你家最近的便利店</b>。若逐个计算距离，需要访问全部便利店；
+        但你可以先按城市 <b>东经/西经</b> 二分：目标店铺一定在你所在的东半区或西半区之一；
+        接着在该半区再按 <b>南北纬度</b> 二分；如此反复，快速缩小搜索范围。
+    </p>
+    <p>
+        <b>关键的教学要点</b>：找到一个"候选便利店"后，你不能马上停——还需要检查"我到区界的垂直距离"是否比"我到候选店的距离"更小。
+        若前者更小，另一半区可能藏着更近的店，必须去看；若前者更大，另一半区整体跳过。
+        这就是<b>回溯 + 剪枝</b>，是 KD-Tree 快过暴力扫描的根本原因。
+    </p>
+
+    <div class="card">
+        <h4>核心直觉一句话</h4>
+        <p style="margin:6px 0 0;">
+            KD-Tree = <b>轴对齐超矩形</b> 的空间划分。查询下降时只用一维比较，回溯时用"查询点到分割线的垂直距离"作为
+            <b>整个子树最近点距离的下界</b>，用这个下界与"当前最优距离"比较来决定是否剪枝。
+        </p>
+    </div>
+
+    <h3>1.3 KD-Tree 在 ANN 生态中的位置</h3>
+    <ul>
+        <li><b>低维（k ≤ 10）</b>：KD-Tree 是精确 K-NN 的黄金选择，实测查询复杂度 ≈ O(log N)。sklearn <code>NearestNeighbors</code> 默认在 k ≤ 15 时启用。</li>
+        <li><b>中等维度（10 &lt; k &lt; 20）</b>：性能开始退化，比 Ball Tree 略弱。</li>
+        <li><b>高维（k ≥ 20）</b>：几乎失效——Weber, Schek &amp; Blott（<i>VLDB 1998</i>）证明"当维度足够高时，所有基于空间划分的方法都不比顺序扫描更好"。此时必须用近似方法：LSH、Annoy、HNSW、IVF-PQ 等。</li>
+        <li><b>ANN 变体</b>：Beis &amp; Lowe（<i>CVPR 1997</i>）提出的 <b>Best-Bin-First (BBF)</b> 把"完备回溯"改为"优先队列 + 只查前 emax 个叶子"，牺牲精确性换速度，是 SIFT 图像匹配的经典配套。<a href="./annoy.html">Annoy</a> 则用随机投影超平面代替轴对齐，是同类思路的现代化。</li>
+    </ul>
+
+    <div class="new-user-tip">
+        <strong>第一次打开建议这样玩：</strong>
+        <ol>
+            <li>点击下方 <b>【随机生成 20 点】</b>，让画布出现一批蓝点，观察灰色分割线是如何一层层出现的（越靠近根 = 线越粗越深）。</li>
+            <li>用鼠标 <b>拖动红色查询点</b>，感受最近邻绿圈随着你的移动而切换。</li>
+            <li>注意 <b>黄色高亮的"被访问节点"</b>——它数量远小于总点数，就是剪枝在起作用。</li>
+            <li>把 <b>k 近邻</b> 拉到 3~5，看虚线搜索半径圆如何扩大；再切换到"最大方差维度"策略，感受访问节点数的变化。</li>
+        </ol>
+    </div>
+</section>
+
+<section>
+    <h2>2. 算法原理（Bentley 1975 严格定义）</h2>
+
+    <h3>2.1 数学定义</h3>
+    <div class="intuition-primer">
+        <b>直觉铺垫：</b>每个点是一组 <b>k 个数字</b>，例如 2 维时 <code>(经度, 纬度)</code>，3 维时 <code>(R, G, B)</code>。
+        下面公式里的 <code>x<sub>d</sub></code> 就是"取这个点在第 d 个数字的值"；<code>x<sub>d</sub> ≤ t</code> 相当于问"这个点在 d 轴上是否位于阈值 t 的左边"。
+    </div>
+    <p>给定点集 <code>P = {p<sub>1</sub>, p<sub>2</sub>, …, p<sub>n</sub>} ⊂ ℝ<sup>k</sup></code>。
+       KD-Tree 是一棵二叉树，每个<b>内部节点</b>存三样东西：</p>
+    <ul>
+        <li><b>切分点</b> <code>p ∈ P</code>——通常也是数据集里真实存在的一个点（Bentley 原论文的做法；也有变体把切分点存成"虚拟中位数"，如 Friedman/Bentley/Finkel 1977 的改良版）。</li>
+        <li><b>切分维度</b> <code>d ∈ {0, 1, …, k−1}</code>——决定"在哪一维上比较"。</li>
+        <li><b>切分阈值</b> <code>t = p<sub>d</sub></code>——就是切分点在维度 d 上的坐标。</li>
+    </ul>
+    <p>该节点把 k 维空间划分成两个半空间：</p>
+    <pre class="code">左子树覆盖: { x ∈ ℝ<sup>k</sup> : x<sub>d</sub> ≤ t }
+右子树覆盖: { x ∈ ℝ<sup>k</sup> : x<sub>d</sub> &gt; t }</pre>
+    <p><b>叶子节点</b>：当子集大小 ≤ leaf_size 时不再切分，直接把这几个点存成数组，查询时暴力扫。</p>
+
+    <h3>2.2 三种切分维度选择策略</h3>
+    <table class="complexity">
+        <thead><tr><th>策略</th><th>做法</th><th>出处 / 用途</th></tr></thead>
+        <tbody>
+            <tr>
+                <td><b>轮转（cyclic）</b></td>
+                <td><code>d = depth mod k</code>：第 0 层切 x，第 1 层切 y，……</td>
+                <td>Bentley 1975 原始版本；实现最简单</td>
+            </tr>
+            <tr>
+                <td><b>最大方差（max variance）</b></td>
+                <td>选当前子集里方差最大（数据最"散"）的那一维</td>
+                <td>Friedman-Bentley-Finkel 1977；剪枝更有效，构建略慢</td>
+            </tr>
+            <tr>
+                <td><b>最大范围（max spread）</b></td>
+                <td>选 <code>max(coord) − min(coord)</code> 最大的那一维</td>
+                <td>sklearn <code>KDTree</code> 默认；比方差计算便宜、效果相近</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>2.3 构建流程（Bentley 1975 伪代码）</h3>
+    <div class="intuition-primer">
+        <b>直觉铺垫：</b>下面 <code>axis = depth % k</code> 是轮转策略。以 2 维为例：depth=0 用 x 轴切，depth=1 用 y 轴切，depth=2 又回到 x 轴，如此往复。取<b>中位数</b>作切分点是为了保证左右子集大小相等，树深 O(log N)。
+    </div>
+    <pre class="code"><span class="kw">def</span> <span class="fn">build_kdtree</span>(points, depth=<span class="num">0</span>):
+    <span class="kw">if</span> <span class="kw">not</span> points:
+        <span class="kw">return</span> <span class="kw">None</span>
+    <span class="kw">if</span> <span class="fn">len</span>(points) &lt;= leaf_size:            <span class="cmt"># 叶子节点，存点数组</span>
+        <span class="kw">return</span> Leaf(points=points)
+
+    k = <span class="fn">len</span>(points[<span class="num">0</span>])
+    axis = depth % k                              <span class="cmt"># 轮转策略：depth=0→x, depth=1→y</span>
+    points.<span class="fn">sort</span>(key=<span class="kw">lambda</span> p: p[axis])
+    median = <span class="fn">len</span>(points) // <span class="num">2</span>
+
+    <span class="kw">return</span> Node(
+        point = points[median],
+        axis  = axis,
+        left  = <span class="fn">build_kdtree</span>(points[:median], depth+<span class="num">1</span>),
+        right = <span class="fn">build_kdtree</span>(points[median+<span class="num">1</span>:], depth+<span class="num">1</span>),
+    )</pre>
+
+    <h3>2.4 最近邻查询：先下降、再回溯、途中剪枝</h3>
+    <div class="intuition-primer">
+        <b>直觉铺垫：</b>查询分两步——(1) 像玩"猜数字"一样一路向下走到"最像"目标的叶子，记住当前最近距离；
+        (2) 往回走时，对每个岔口检查：<b>另一侧最少需要多远才能到？</b> 如果这个下界都比现在的最优距离大，另一侧整块跳过。这就是回溯 + 剪枝。
+    </div>
+    <pre class="code"><span class="kw">def</span> <span class="fn">nn</span>(node, target, best=<span class="kw">None</span>):
+    <span class="cmt"># best = 当前找到的最近邻 {point, dist}；None 表示尚未找到（半径=∞）</span>
+    <span class="kw">if</span> node <span class="kw">is</span> <span class="kw">None</span>: <span class="kw">return</span> best
+
+    <span class="cmt"># --- 步骤 1：先在当前节点更新 best ---</span>
+    d = <span class="fn">dist</span>(node.point, target)
+    <span class="kw">if</span> best <span class="kw">is</span> <span class="kw">None</span> <span class="kw">or</span> d &lt; best.dist:
+        best = Best(point=node.point, dist=d)
+
+    <span class="cmt"># --- 步骤 2：先递归"更可能"的一侧（near）---</span>
+    diff = target[node.axis] - node.point[node.axis]
+    near, far = (node.left, node.right) <span class="kw">if</span> diff &lt; <span class="num">0</span> <span class="kw">else</span> (node.right, node.left)
+    best = <span class="fn">nn</span>(near, target, best)
+
+    <span class="cmt"># --- 步骤 3：回溯时检查 far 是否需要进入（剪枝判定）---</span>
+    <span class="cmt">#     轴距离 |diff| 是 far 子树内任何点到 target 距离的下界</span>
+    <span class="kw">if</span> <span class="fn">abs</span>(diff) &lt; best.dist:
+        best = <span class="fn">nn</span>(far, target, best)         <span class="cmt"># 下界仍可能突破 → 递归</span>
+    <span class="cmt"># else: |diff| ≥ best.dist → 整棵 far 子树剪掉</span>
+    <span class="kw">return</span> best</pre>
+
+    <h3>2.5 剪枝的几何证明（关键！）</h3>
+    <div class="intuition-primer">
+        <b>为什么"轴距离 ≥ 当前最优"就能剪掉整棵子树？</b>这里给出严格证明。
+    </div>
+    <p>设当前节点切分维度为 <code>d</code>、切分阈值为 <code>t</code>；<code>far</code> 子树覆盖的空间是 <code>{x : x<sub>d</sub> &gt; t}</code>（假设 target 在左侧，对称情形同理）。</p>
+    <p>对<b>任意</b> <code>x ∈ far 子树</code>，有 <code>x<sub>d</sub> &gt; t ≥ target<sub>d</sub></code>（因为 target 在左侧意味着 target<sub>d</sub> ≤ t）。于是：</p>
+    <pre class="code">‖x − target‖<sub>2</sub> ≥ |x<sub>d</sub> − target<sub>d</sub>| ≥ |t − target<sub>d</sub>| = |diff|</pre>
+    <p>换句话说，<b><code>|diff|</code> 是 far 子树内任何点到 target 的欧氏距离的下界</b>。所以只要 <code>|diff| ≥ best.dist</code>，那 far 子树里就绝不可能有比 best 更近的点，可以整块跳过。</p>
+
+    <div class="card">
+        <h4>剪枝条件的口诀</h4>
+        <p style="margin:6px 0 0;">
+            <b>「查询点到切分线的垂直距离</b> ≥ <b>当前最优半径」→ 整棵远侧子树剪掉。</b><br>
+            在下面第 4 节的动画中，你会亲眼看到"红色斜纹遮罩"覆盖被剪枝的整块空间。
+        </p>
+    </div>
+
+    <h3>2.6 K 近邻查询（K &gt; 1）</h3>
+    <p>把 <code>best</code> 从"单个最优"改成"大小为 K 的最大堆"（堆顶是当前 K 近邻里最远的那个）：</p>
+    <ul>
+        <li>访问一个点时，若堆未满或 <code>d &lt; heap.top()</code>，则 push（挤掉最远的一个）。</li>
+        <li>剪枝条件从 <code>|diff| &lt; best.dist</code> 改为 <code>|diff| &lt; heap.top()</code>（用当前"第 K 近的距离"作半径）。</li>
+    </ul>
+    <p>本页的 <code>knnSearch</code> 实现就采用了这个最大堆策略（K &le; 5 时用数组模拟即可）。</p>
+</section>
+
+<section>
+    <h2>3. 交互式演示</h2>
+    <p><b>玩法：</b>左侧 Canvas 支持点击空白添加点、拖动红色查询点观察最近邻与访问路径。右侧 SVG 实时展示 KD-Tree 结构（每个节点标注切分轴 x/y 与坐标）。</p>
+    <div class="canvas-wrap">
+        <div class="col-left">
+            <canvas id="kdCanvas" width="520" height="440"></canvas>
+            <div class="controls">
+                <button id="btnRandom">随机生成 20 点</button>
+                <button id="btnRebuild" class="secondary">重新构建 KD-Tree</button>
+                <button id="btnClear" class="danger">清空</button>
+            </div>
+            <div class="legend">
+                <span><span class="dot" style="background:#3b7ddd"></span>数据点</span>
+                <span><span class="dot" style="background:#d93025"></span>查询点</span>
+                <span><span class="dot" style="background:#2e9d5a"></span>当前最近邻</span>
+                <span><span class="dot" style="background:#e0a800"></span>被访问节点</span>
+            </div>
+            <div class="legend" style="margin-top:6px;">
+                <span style="font-weight:600;color:#374151;">分割线颜色/粗细 = 深度：</span>
+                <span><span class="dot" style="background:#1a56db"></span>x轴 深度0（粗实线）</span>
+                <span><span class="dot" style="background:#c2410c"></span>y轴 深度0</span>
+                <span><span class="dot" style="background:#3b82f6"></span>x轴 深度1-2</span>
+                <span><span class="dot" style="background:#bfdbfe"></span>深度3+（细虚线）</span>
+            </div>
+        </div>
+        <div class="col-right">
+            <svg id="kdTreeSvg" class="tree-view" viewBox="0 0 640 380"></svg>
+            <div class="param">
+                <label>切分策略：</label>
+                <select id="splitStrategy">
+                    <option value="rotate">轮转维度</option>
+                    <option value="variance">最大方差维度</option>
+                </select>
+                <label>&nbsp;&nbsp;k 近邻 (k)：</label>
+                <input type="range" id="kInput" min="1" max="5" value="1">
+                <span id="kVal">1</span>
+            </div>
+            <div class="step-info" id="stepInfo">
+                点击左侧画布添加点，或点击"随机生成 20 点"，然后拖动红色查询点。
+            </div>
+            <p style="font-size:0.88rem;color:#555;margin-top:10px;">
+                <b>观察建议：</b>
+            </p>
+            <ul style="font-size:0.88rem;color:#555;">
+                <li>切换<b>切分策略</b>时对比"访问节点数"的变化——方差最大维度通常访问更少（更好的剪枝）。</li>
+                <li>拖动查询点到<b>密集区域中心</b>：访问节点数可能低到 3~5 个（大量剪枝）。</li>
+                <li>拖动查询点到<b>稀疏边缘</b>：访问节点数上升（回溯到根后另一侧仍可能藏更近点）。</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<section>
+    <h2>4. 案例逐步讲解</h2>
+    <p><b>目标：</b>在 8 个固定点上完整走一遍"构建 → 查询 → 剪枝"，让每个动作单独一帧。点击 "下一步" 即可推进。</p>
+
+    <h3>4.1 演示会展示哪些事件</h3>
+    <table class="param-hint-table">
+        <thead><tr><th>事件类型</th><th>视觉标识</th><th>说明</th></tr></thead>
+        <tbody>
+            <tr>
+                <td><b>1. 构建切分</b></td>
+                <td>浅蓝色 / 浅橙色实线或虚线（越深的层线越粗）</td>
+                <td>选中数据集中位数点作切分点，把 bbox 切成左右两半</td>
+            </tr>
+            <tr>
+                <td><b>2. 访问节点</b></td>
+                <td style="color:#d93025;font-weight:600">红色发光大圆</td>
+                <td>当前正在处理的节点。计算 <code>d(Q, node)</code>，尝试更新最优</td>
+            </tr>
+            <tr>
+                <td><b>3. 更新最优半径</b></td>
+                <td style="color:#2e9d5a;font-weight:600">绿色实心圆 + 绿色虚线搜索圆 + <code>r=xx.x</code></td>
+                <td>找到更近的点：<code>best</code> 收缩，剪枝阈值变紧</td>
+            </tr>
+            <tr>
+                <td><b>4. 检查远侧（不剪枝）</b></td>
+                <td>文字说明 <code>|diff| &lt; best.d</code></td>
+                <td>轴距离小于半径，远侧可能藏更近点，必须递归</td>
+            </tr>
+            <tr>
+                <td><b>5. 剪枝远侧子树</b></td>
+                <td style="color:#b91c1c;font-weight:600">红色斜纹遮罩 + 红色虚线边框 + "已剪枝" 标签</td>
+                <td>轴距离 ≥ 半径 → 整个远侧子树的最近距离都不可能超过 best，跳过</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 style="margin-top:14px;">4.2 演示画布</h3>
+    <div class="canvas-wrap">
+        <div class="col-left">
+            <canvas id="stepCanvas" width="520" height="380"></canvas>
+            <div class="controls">
+                <button id="btnStepPrev" class="secondary">上一步</button>
+                <button id="btnStepNext">下一步</button>
+                <button id="btnStepReset" class="secondary">重置</button>
+            </div>
+            <div class="legend" style="margin-top:8px;font-size:0.85rem;">
+                <span><span class="dot" style="background:#d93025;box-shadow:0 0 8px #d93025"></span>当前访问节点</span>
+                <span><span class="dot" style="background:#e0a800"></span>已访问</span>
+                <span><span class="dot" style="background:#2e9d5a"></span>当前最优 + 搜索半径</span>
+                <span><span class="dot" style="background:rgba(185,28,28,0.4);border:1px dashed #b91c1c"></span>被剪枝子树</span>
+            </div>
+        </div>
+        <div class="col-right">
+            <div class="step-info" id="stepDetail">阶段：等待开始。</div>
+            <pre class="code" id="stepCode" style="max-height:280px;overflow:auto;"></pre>
+        </div>
+    </div>
+
+    <div class="intuition-primer" style="margin-top:14px;">
+        <b>本演示的查询点是精心选择的（Q=(310, 210)，靠近 E 点）：</b>
+        当访问到 E 点时 <code>best.d</code> 会迅速收缩到 ~14，回溯到根 H 时 <code>|diff|=80 ≫ 14</code>，
+        <b>触发一次经典剪枝</b>——整个左子树（A、B、C、D 四个点）被一次跳过。你会看到画布左半边被红色斜纹遮罩覆盖。
+    </div>
+</section>
+
+<section>
+    <h2>5. 复杂度分析</h2>
+    <table class="complexity">
+        <thead>
+            <tr><th>操作</th><th>平均</th><th>最坏</th><th>出处 / 说明</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>构建</td><td>O(N log N)</td><td>O(N log² N)</td><td>Bentley 1975。每层排序 O(N log N)，共 log N 层。用 <code>nth_element</code> 或线性选择可优化到 O(N log N)。</td></tr>
+            <tr><td>查询（低维 k ≤ 10，随机分布）</td><td>O(log N)</td><td>O(N)</td><td>Friedman-Bentley-Finkel 1977 证明：当 N/2<sup>k</sup> 较大时期望访问节点数为常数级 × log N。</td></tr>
+            <tr><td>查询（中等维度 10 &lt; k &lt; 20）</td><td>≈ O(N<sup>1−1/k</sup>)</td><td>O(N)</td><td>剪枝仍有效但访问节点显著增多。</td></tr>
+            <tr><td>查询（高维 k ≥ 20）</td><td>≈ O(N)</td><td>O(N)</td><td>维度诅咒。Weber, Schek &amp; Blott <i>VLDB 1998</i> 严格证明：当 k 大到临界值，KD-Tree 不比顺序扫描更快。</td></tr>
+            <tr><td>空间</td><td>O(N)</td><td>O(N)</td><td>每个数据点一个节点。加上 bbox 存储约 O(k·N)。</td></tr>
+            <tr><td>动态插入 / 删除</td><td>O(log N) 但会失衡</td><td>—</td><td>不自动 rebalance；频繁写入建议定期重建。</td></tr>
+        </tbody>
+    </table>
+    <p style="margin-top:12px;color:#555;font-size:0.9rem;">
+        <b>关于"维度临界点"：</b>经验值 k ≈ 20 只是"广义拇指规则"。实际临界点取决于数据分布——
+        高度相关的高维数据（如经过 PCA 前的 embedding）"有效维度"可能远低于名义维度，KD-Tree 仍可用。
+    </p>
+</section>
+
+<section>
+    <h2>6. 可调参数（本页交互）</h2>
+    <table class="param-hint-table">
+        <thead><tr><th>参数</th><th>调大的影响</th><th>调小的影响</th><th>调节建议</th></tr></thead>
+        <tbody>
+            <tr>
+                <td>切分策略</td>
+                <td><b>最大方差维度</b>：切得更均匀，剪枝更有效，构建略慢（每层需算 k 个方差）</td>
+                <td><b>轮转维度</b>：实现简单，构建快，剪枝略弱</td>
+                <td>数据各维度尺度差异大时首选方差策略；否则轮转已足够</td>
+            </tr>
+            <tr>
+                <td>k 近邻大小</td>
+                <td>返回更多邻居，最大堆的堆顶（当前 K 近距离）更大，剪枝阈值更宽松，访问节点数上升</td>
+                <td>K=1 时剪枝最狠，速度最快</td>
+                <td>推荐系统 K 常取 10~50；图像检索 K 常取 5~20</td>
+            </tr>
+            <tr>
+                <td>叶子容量 leaf_size（sklearn 参数，本演示未开放）</td>
+                <td>树更浅，少走几层递归；但叶内暴力扫描更贵</td>
+                <td>树更深，递归开销更大；但叶内扫描便宜</td>
+                <td>sklearn 默认 30；一般在 10~50 之间；对 cache 友好的实现 leaf_size 可到 100+</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section>
+    <h2>7. 优缺点 &amp; 适用场景</h2>
+    <div class="pros-cons">
+        <div class="pros">
+            <h4>优点</h4>
+            <ul>
+                <li>低维（≤ 10 维）下极其高效，实测 O(log N)。</li>
+                <li>结构简单、实现门槛低，是学习空间索引的最佳入门。</li>
+                <li>支持<b>精确</b> K 近邻查询，不是近似。</li>
+                <li>可扩展到范围查询（range query）、区间查询等多种几何操作。</li>
+                <li>用途极广：GIS、机器人碰撞检测、密度估计（sklearn <code>KernelDensity</code> 底层就是 KD-Tree）。</li>
+            </ul>
+        </div>
+        <div class="cons">
+            <h4>缺点</h4>
+            <ul>
+                <li><b>维度诅咒</b>：k ≥ 20 时几乎退化为暴力扫描。</li>
+                <li>只适用于欧氏或 L<sub>p</sub> 距离（几何证明依赖轴距离下界）；不能直接用于余弦、编辑距离等。</li>
+                <li>动态插入不会自动 rebalance，写入密集场景不友好。</li>
+                <li>不支持磁盘外存友好访问（每个节点大小固定但访问模式随机）。</li>
+                <li>切分点必须存在数据集中（Bentley 版本）→ 稀疏区域的切分可能极不均衡。</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3 style="margin-top:16px;">典型工程场景</h3>
+    <ul>
+        <li><b>2D / 3D 地理坐标最近邻</b>：例如"找我附近的餐厅"、"最近的基站"。PostGIS 的 <code>&lt;-&gt;</code> 运算符底层可用 KD-Tree。</li>
+        <li><b>机器人碰撞检测 / 运动规划</b>：RRT (Rapidly-exploring Random Tree) 算法在采样后需要频繁最近邻查询，KD-Tree 是标配。</li>
+        <li><b>密度估计 &amp; 聚类</b>：sklearn 的 <code>DBSCAN</code>、<code>KernelDensity</code>、<code>NearestNeighbors</code>（默认 kd_tree）在 k &lt; 15 时全部使用 KD-Tree。</li>
+        <li><b>三角网格 / 点云处理</b>：Open3D 的 <code>KDTreeFlann</code> 用于 3D 点云去噪、法线估计。</li>
+        <li><b>SIFT 图像匹配的近似加速</b>：Beis &amp; Lowe (1997) 的 BBF (Best-Bin-First) 变体使 KD-Tree 在 128 维 SIFT 特征上仍能用；OpenCV <code>FlannBasedMatcher</code> 默认底层。</li>
+    </ul>
+</section>
+
+<section>
+    <h2>8. 代码调用示例</h2>
+
+    <h3>scikit-learn（Python，最常用）</h3>
+    <pre class="code"><span class="kw">from</span> sklearn.neighbors <span class="kw">import</span> KDTree
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+X = np.<span class="fn">random</span>.<span class="fn">rand</span>(<span class="num">1000</span>, <span class="num">3</span>)         <span class="cmt"># 1000 个 3 维点</span>
+tree = <span class="fn">KDTree</span>(X, leaf_size=<span class="num">30</span>, metric=<span class="str">'euclidean'</span>)
+
+query = np.<span class="fn">random</span>.<span class="fn">rand</span>(<span class="num">1</span>, <span class="num">3</span>)
+dist, ind = tree.<span class="fn">query</span>(query, k=<span class="num">5</span>)      <span class="cmt"># 返回 5 近邻</span>
+<span class="fn">print</span>(dist, ind)</pre>
+
+    <h3>SciPy（C 实现，更快）</h3>
+    <pre class="code"><span class="kw">from</span> scipy.spatial <span class="kw">import</span> cKDTree
+tree = <span class="fn">cKDTree</span>(X)
+dist, ind = tree.<span class="fn">query</span>(query, k=<span class="num">5</span>)
+<span class="cmt"># cKDTree 还支持 workers=-1 用多核并行、balanced_tree=True 保证平衡</span></pre>
+
+    <h3>Open3D（3D 点云）</h3>
+    <pre class="code"><span class="kw">import</span> open3d <span class="kw">as</span> o3d
+pcd = o3d.io.<span class="fn">read_point_cloud</span>(<span class="str">"cloud.pcd"</span>)
+kdtree = o3d.geometry.<span class="fn">KDTreeFlann</span>(pcd)
+
+<span class="cmt"># 查询点云中某点的 K 近邻</span>
+[k, idx, _] = kdtree.<span class="fn">search_knn_vector_3d</span>(pcd.points[<span class="num">100</span>], knn=<span class="num">10</span>)</pre>
+
+    <h3>OpenCV FLANN（SIFT 图像匹配）</h3>
+    <pre class="code"><span class="kw">import</span> cv2
+index_params = <span class="fn">dict</span>(algorithm=<span class="num">1</span>, trees=<span class="num">5</span>)    <span class="cmt"># FLANN_INDEX_KDTREE = 1, 5 棵随机化 KD-Tree</span>
+search_params = <span class="fn">dict</span>(checks=<span class="num">50</span>)              <span class="cmt"># emax，越大越准</span>
+flann = cv2.<span class="fn">FlannBasedMatcher</span>(index_params, search_params)
+matches = flann.<span class="fn">knnMatch</span>(des1, des2, k=<span class="num">2</span>)</pre>
+</section>
+
+<section>
+    <h2>9. 常见误区</h2>
+    <div class="pitfall">
+        <h4>初学者容易踩的四个坑</h4>
+        <ol>
+            <li><b>把 KD-Tree 用在几百维的 embedding 上——错。</b> 维度诅咒（Weber-Schek-Blott 1998 有严格证明）会让剪枝失效，你会以为算法很快，其实退化到 O(N)。BERT-768 / OpenAI-1536 请直接用 HNSW / IVF-PQ / ScaNN，不要用 KD-Tree。</li>
+            <li><b>用平均值代替中位数——错。</b> 一旦数据有偏态分布（例如长尾），平均值切分会让一侧长期很大另一侧很小，树严重失衡；查询最坏 O(N)。始终按当前维度中位数切分。</li>
+            <li><b>把切分点存进数据但不明白切分点也参与比较——错。</b> Bentley 原版切分点也是数据点，查询时必须先在这个点上算距离、再决定走近侧或远侧。有些教材伪代码把切分点写成"虚拟阈值"（如 sklearn），需要理解两种约定的差异。</li>
+            <li><b>频繁增删数据不重建——错。</b> KD-Tree 是静态平衡结构；插入不会自动 rebalance。写入密集场景请周期性完全重建，或改用支持增量更新的 HNSW。</li>
+        </ol>
+    </div>
+</section>
+
+<section>
+    <h2>10. 下一步学什么</h2>
+    <div class="next-steps">
+        <p><b>推荐路径：</b>当维度增加到十几或几十维，KD-Tree 的"长条盒子"很难剪枝，此时应该学习用超球体替代超矩形的方案，或者放弃精确性换速度。</p>
+        <ul>
+            <li>下一站：<a href="./ball-tree.html">Ball Tree / VP-Tree</a>——用球代替盒子，剪枝依赖三角不等式，可以处理中等维度和任意度量空间。</li>
+            <li>近似加速：<b>Best-Bin-First (BBF)</b>——把回溯改为优先队列 + 只查前 emax 叶子，牺牲少量精度换速度（OpenCV FLANN 默认）。</li>
+            <li>再进阶：<a href="./annoy.html">Annoy 随机投影树森林</a>——放弃轴对齐、改用随机超平面切分并集成多棵树。</li>
+            <li>大规模现代方案：<code>HNSW</code>（分层小世界图）、<code>IVF-PQ</code>（倒排 + 乘积量化）、<code>ScaNN</code>（各向异性量化），可以处理亿级 embedding 检索。</li>
+        </ul>
+    </div>
+</section>
+
+<section>
+    <h2>11. 参考文献</h2>
+    <ol style="font-size:0.92rem;color:#333;">
+        <li>Bentley, J. L. (1975). <b>"Multidimensional binary search trees used for associative searching"</b>. <i>Communications of the ACM</i>, 18(9), 509–517.
+            <span style="color:#888;">→ KD-Tree 原始论文</span></li>
+        <li>Friedman, J. H., Bentley, J. L., &amp; Finkel, R. A. (1977). <b>"An algorithm for finding best matches in logarithmic expected time"</b>. <i>ACM Trans. Math. Softw.</i>, 3(3), 209–226.
+            <span style="color:#888;">→ 最近邻查询的期望复杂度分析、最大方差策略</span></li>
+        <li>Weber, R., Schek, H. J., &amp; Blott, S. (1998). <b>"A Quantitative Analysis and Performance Study for Similarity-Search Methods in High-Dimensional Spaces"</b>. <i>VLDB 1998</i>.
+            <span style="color:#888;">→ 维度诅咒的严格证明</span></li>
+        <li>Beis, J. S., &amp; Lowe, D. G. (1997). <b>"Shape indexing using approximate nearest-neighbour search in high-dimensional spaces"</b>. <i>CVPR 1997</i>.
+            <span style="color:#888;">→ Best-Bin-First (BBF) 近似查询算法，SIFT 匹配经典</span></li>
+        <li>Muja, M., &amp; Lowe, D. G. (2014). <b>"Scalable Nearest Neighbor Algorithms for High Dimensional Data"</b>. <i>IEEE TPAMI</i>, 36(11).
+            <span style="color:#888;">→ FLANN 论文，Randomized KD-Trees + Hierarchical K-Means</span></li>
+        <li>scikit-learn <code>KDTree</code> 源码：<code>sklearn/neighbors/_kd_tree.pyx</code>（默认切分策略 midpoint split，与本页展示的中位数略有差异）</li>
+    </ol>
+</section>
+
+</main>
+
+<footer>ANN 教学演示 · KD-Tree · 纯 HTML5 Canvas + SVG 实现</footer>
+
+<script>
+"use strict";
+
+/* ============================================================
+ * 通用工具
+ * ============================================================ */
+function dist2(a, b) {
+    const dx = a[0]-b[0], dy = a[1]-b[1];
+    return dx*dx + dy*dy;
+}
+function dist(a, b) { return Math.sqrt(dist2(a,b)); }
+
+/* ============================================================
+ * KD-Tree 实现（2 维，支持轮转 / 最大方差切分）
+ * ============================================================ */
+class KDNode {
+    constructor(point, axis, left, right, bbox) {
+        this.point = point;
+        this.axis  = axis;
+        this.left  = left;
+        this.right = right;
+        this.bbox  = bbox; // [xmin,ymin,xmax,ymax]
+    }
+}
+function buildKDTree(points, depth, strategy, bbox) {
+    if (points.length === 0) return null;
+    let axis;
+    if (strategy === 'variance') {
+        // 选方差最大的维度
+        const m0 = points.reduce((s,p)=>s+p[0],0)/points.length;
+        const m1 = points.reduce((s,p)=>s+p[1],0)/points.length;
+        const v0 = points.reduce((s,p)=>s+(p[0]-m0)**2,0);
+        const v1 = points.reduce((s,p)=>s+(p[1]-m1)**2,0);
+        axis = v0 >= v1 ? 0 : 1;
+    } else {
+        axis = depth % 2;
+    }
+    const sorted = points.slice().sort((a,b)=>a[axis]-b[axis]);
+    const mid = Math.floor(sorted.length/2);
+    const pivot = sorted[mid];
+
+    const leftBox = bbox.slice();
+    const rightBox = bbox.slice();
+    if (axis === 0) { leftBox[2] = pivot[0]; rightBox[0] = pivot[0]; }
+    else            { leftBox[3] = pivot[1]; rightBox[1] = pivot[1]; }
+
+    return new KDNode(
+        pivot, axis,
+        buildKDTree(sorted.slice(0, mid),   depth+1, strategy, leftBox),
+        buildKDTree(sorted.slice(mid+1),    depth+1, strategy, rightBox),
+        bbox
+    );
+}
+
+/* K 近邻搜索：使用 K 大小的最大堆（用数组模拟即可，K 小） */
+function knnSearch(root, target, K, trace) {
+    // best 是长度 <= K 的数组，按 dist 从大到小维护
+    const best = [];
+    function push(node, d) {
+        if (best.length < K) {
+            best.push({ node: node, d: d });
+            best.sort((a,b)=>b.d-a.d);
+        } else if (d < best[0].d) {
+            best[0] = { node: node, d: d };
+            best.sort((a,b)=>b.d-a.d);
+        }
+    }
+    function worst() { return best.length < K ? Infinity : best[0].d; }
+
+    function recurse(node) {
+        if (!node) return;
+        trace.visited.push(node);
+        const d = dist(node.point, target);
+        push(node, d);
+
+        const diff = target[node.axis] - node.point[node.axis];
+        const near = diff < 0 ? node.left  : node.right;
+        const far  = diff < 0 ? node.right : node.left;
+
+        recurse(near);
+        // 剪枝：|diff| >= worst 就跳过
+        if (Math.abs(diff) < worst()) {
+            recurse(far);
+        } else {
+            trace.pruned.push(far);
+        }
+    }
+    recurse(root);
+    return best.sort((a,b)=>a.d-b.d);
+}
+
+/* ============================================================
+ * 主交互画布
+ * ============================================================ */
+const mainCanvas = document.getElementById('kdCanvas');
+const mCtx = mainCanvas.getContext('2d');
+const treeSvg = document.getElementById('kdTreeSvg');
+
+let points = [];
+let query = [260, 220];
+let strategy = 'rotate';
+let K = 1;
+let root = null;
+
+function seedRandom() {
+    points = [];
+    for (let i = 0; i < 20; i++) {
+        points.push([
+            30 + Math.random()*(mainCanvas.width-60),
+            30 + Math.random()*(mainCanvas.height-60)
+        ]);
+    }
+    rebuild();
+}
+function rebuild() {
+    if (points.length === 0) { root = null; drawMain(); drawTree(); return; }
+    root = buildKDTree(points, 0, strategy, [0,0,mainCanvas.width,mainCanvas.height]);
+    drawMain();
+    drawTree();
+}
+
+function drawMain() {
+    mCtx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+
+    // 绘制 KD-Tree 分割线（递归遍历 bbox）
+    // 每层用不同的粗细/颜色区分——层级越浅（靠近根）线越粗越深；
+    // x 轴切分（竖线）用蓝色系，y 轴切分（横线）用橙色系，与树视图颜色一致
+    const AXIS_COLORS = [
+        // 每一层从深到浅的调色板：[x轴色, y轴色]
+        ['#1a56db', '#c2410c'],  // 深度 0：最深
+        ['#2563eb', '#ea580c'],
+        ['#3b82f6', '#f97316'],
+        ['#60a5fa', '#fb923c'],
+        ['#93c5fd', '#fdba74'],
+        ['#bfdbfe', '#fed7aa'],  // 深度 5+：最浅
+    ];
+    function drawSplit(node, depth) {
+        if (!node) return;
+        const [x0,y0,x1,y1] = node.bbox;
+        const colors = AXIS_COLORS[Math.min(depth, AXIS_COLORS.length - 1)];
+        mCtx.strokeStyle = node.axis === 0 ? colors[0] : colors[1];
+        // 深度越浅线越粗（4 → 3 → 2 → 1.5 → 1 → 1）
+        mCtx.lineWidth = Math.max(1, 4 - depth * 0.7);
+        // 深度 0 实线，深度 1 长虚线，深度 2+ 短虚线
+        if (depth === 0)      mCtx.setLineDash([]);
+        else if (depth === 1) mCtx.setLineDash([8, 4]);
+        else if (depth === 2) mCtx.setLineDash([5, 3]);
+        else                  mCtx.setLineDash([2, 3]);
+        mCtx.beginPath();
+        if (node.axis === 0) {
+            mCtx.moveTo(node.point[0], y0);
+            mCtx.lineTo(node.point[0], y1);
+        } else {
+            mCtx.moveTo(x0, node.point[1]);
+            mCtx.lineTo(x1, node.point[1]);
+        }
+        mCtx.stroke();
+        // 在分割线上标注深度小圆点（帮助识别哪条线属于哪一层）
+        const midX = node.axis === 0 ? node.point[0] : (x0 + x1) / 2;
+        const midY = node.axis === 0 ? (y0 + y1) / 2 : node.point[1];
+        mCtx.setLineDash([]);
+        mCtx.fillStyle = node.axis === 0 ? colors[0] : colors[1];
+        mCtx.beginPath();
+        mCtx.arc(midX, midY, Math.max(2, 5 - depth * 0.6), 0, Math.PI*2);
+        mCtx.fill();
+        // 深度数字（仅前 3 层显示）
+        if (depth < 3) {
+            mCtx.fillStyle = '#ffffff';
+            mCtx.font = 'bold 9px sans-serif';
+            mCtx.textAlign = 'center';
+            mCtx.textBaseline = 'middle';
+            mCtx.fillText(String(depth), midX, midY);
+        }
+        drawSplit(node.left, depth + 1);
+        drawSplit(node.right, depth + 1);
+    }
+    drawSplit(root, 0);
+    mCtx.setLineDash([]);
+
+    // 执行 KNN 查询以收集访问路径
+    let trace = { visited: [], pruned: [] };
+    let neighbors = [];
+    if (root) neighbors = knnSearch(root, query, K, trace);
+
+    // 高亮被访问的节点
+    trace.visited.forEach(n => {
+        mCtx.fillStyle = 'rgba(224, 168, 0, 0.35)';
+        mCtx.beginPath();
+        mCtx.arc(n.point[0], n.point[1], 9, 0, Math.PI*2);
+        mCtx.fill();
+    });
+
+    // 绘制数据点
+    for (const p of points) {
+        mCtx.fillStyle = '#3b7ddd';
+        mCtx.beginPath();
+        mCtx.arc(p[0], p[1], 4, 0, Math.PI*2);
+        mCtx.fill();
+    }
+
+    // 绘制 K 近邻（绿色环）
+    neighbors.forEach(nb => {
+        mCtx.strokeStyle = '#2e9d5a';
+        mCtx.lineWidth = 2;
+        mCtx.beginPath();
+        mCtx.arc(nb.node.point[0], nb.node.point[1], 7, 0, Math.PI*2);
+        mCtx.stroke();
+        // 连接查询点
+        mCtx.strokeStyle = 'rgba(46,157,90,0.5)';
+        mCtx.beginPath();
+        mCtx.moveTo(query[0], query[1]);
+        mCtx.lineTo(nb.node.point[0], nb.node.point[1]);
+        mCtx.stroke();
+    });
+
+    // 搜索半径圆（第 K 近邻半径）
+    if (neighbors.length > 0) {
+        const r = neighbors[neighbors.length-1].d;
+        mCtx.strokeStyle = 'rgba(46,157,90,0.35)';
+        mCtx.setLineDash([4,4]);
+        mCtx.beginPath();
+        mCtx.arc(query[0], query[1], r, 0, Math.PI*2);
+        mCtx.stroke();
+        mCtx.setLineDash([]);
+    }
+
+    // 查询点
+    mCtx.fillStyle = '#d93025';
+    mCtx.beginPath();
+    mCtx.arc(query[0], query[1], 6, 0, Math.PI*2);
+    mCtx.fill();
+    mCtx.strokeStyle = 'rgba(217,48,37,0.35)';
+    mCtx.beginPath();
+    mCtx.arc(query[0], query[1], 10, 0, Math.PI*2);
+    mCtx.stroke();
+
+    // 信息
+    const info = document.getElementById('stepInfo');
+    if (!root) {
+        info.textContent = '尚无数据点。点击画布或"随机生成 20 点"。';
+    } else {
+        info.innerHTML =
+            `<b>访问节点数：</b>${trace.visited.length} / ${countNodes(root)}` +
+            `　<b>剪枝子树数：</b>${trace.pruned.length}` +
+            (neighbors[0] ? `　<b>最近距离：</b>${neighbors[0].d.toFixed(1)}` : '');
+    }
+}
+
+function countNodes(n) { return n ? 1 + countNodes(n.left) + countNodes(n.right) : 0; }
+
+/* SVG 树结构渲染 */
+function drawTree() {
+    treeSvg.innerHTML = '';
+    if (!root) return;
+    // 计算树宽度
+    const depths = [];
+    function walk(n, d) {
+        if (!n) return;
+        while (depths.length <= d) depths.push(0);
+        depths[d]++;
+        walk(n.left, d+1); walk(n.right, d+1);
+    }
+    walk(root, 0);
+    const maxWidth = Math.max(...depths, 1);
+    const W = 640, H = 380;
+    const leaves = countLeaves(root);
+    // 用 in-order 排布 x
+    let idx = 0;
+    function layout(n, d) {
+        if (!n) return;
+        layout(n.left, d+1);
+        n._x = (idx + 0.5) * (W / countNodes(root));
+        n._y = 30 + d * 50;
+        idx++;
+        layout(n.right, d+1);
+    }
+    layout(root, 0);
+
+    function draw(n) {
+        if (!n) return;
+        if (n.left) {
+            addLine(n._x, n._y, n.left._x, n.left._y);
+            draw(n.left);
+        }
+        if (n.right) {
+            addLine(n._x, n._y, n.right._x, n.right._y);
+            draw(n.right);
+        }
+        addCircle(n._x, n._y, n.axis === 0 ? '#3b7ddd' : '#e0a800',
+                  '(' + Math.round(n.point[0]) + ',' + Math.round(n.point[1]) + ')',
+                  n.axis === 0 ? 'x' : 'y');
+    }
+    function addLine(x1,y1,x2,y2) {
+        const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+        l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+        l.setAttribute('stroke', '#c0c6cf');
+        treeSvg.appendChild(l);
+    }
+    function addCircle(x, y, color, label, axisLabel) {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('cx', x); c.setAttribute('cy', y);
+        c.setAttribute('r', 12);
+        c.setAttribute('fill', color);
+        c.setAttribute('stroke', '#333'); c.setAttribute('stroke-width', 0.5);
+        g.appendChild(c);
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x', x); t.setAttribute('y', y+4);
+        t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('font-size', 10);
+        t.setAttribute('fill', 'white');
+        t.textContent = axisLabel;
+        g.appendChild(t);
+        const t2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t2.setAttribute('x', x); t2.setAttribute('y', y+24);
+        t2.setAttribute('text-anchor', 'middle');
+        t2.setAttribute('font-size', 9);
+        t2.setAttribute('fill', '#555');
+        t2.textContent = label;
+        g.appendChild(t2);
+        treeSvg.appendChild(g);
+    }
+    draw(root);
+}
+function countLeaves(n) {
+    if (!n) return 0;
+    if (!n.left && !n.right) return 1;
+    return countLeaves(n.left) + countLeaves(n.right);
+}
+
+/* 事件绑定 */
+mainCanvas.addEventListener('click', (e) => {
+    const rect = mainCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    // 若点靠近查询点则忽略（用于拖动）
+    if (Math.abs(x-query[0])<12 && Math.abs(y-query[1])<12) return;
+    points.push([x, y]);
+    rebuild();
+});
+let dragging = false;
+mainCanvas.addEventListener('mousedown', (e)=>{
+    const rect = mainCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    if (Math.abs(x-query[0])<14 && Math.abs(y-query[1])<14) dragging = true;
+});
+mainCanvas.addEventListener('mousemove', (e)=>{
+    if (!dragging) return;
+    const rect = mainCanvas.getBoundingClientRect();
+    query = [e.clientX - rect.left, e.clientY - rect.top];
+    drawMain();
+});
+window.addEventListener('mouseup', ()=> dragging=false);
+
+document.getElementById('btnRandom').onclick = seedRandom;
+document.getElementById('btnRebuild').onclick = rebuild;
+document.getElementById('btnClear').onclick = ()=>{ points=[]; rebuild(); };
+document.getElementById('splitStrategy').onchange = (e)=>{
+    strategy = e.target.value; rebuild();
+};
+document.getElementById('kInput').oninput = (e)=>{
+    K = parseInt(e.target.value); document.getElementById('kVal').textContent = K;
+    drawMain();
+};
+
+/* 初始化 */
+seedRandom();
+
+/* ============================================================
+ * 案例逐步讲解
+ * ============================================================ */
+const stepCanvas = document.getElementById('stepCanvas');
+const sCtx = stepCanvas.getContext('2d');
+const stepDetail = document.getElementById('stepDetail');
+const stepCode = document.getElementById('stepCode');
+
+// 固定 8 个点
+const demoPoints = [
+    [80,  60],  // A
+    [140, 180], // B
+    [70, 240],  // C
+    [200, 100], // D
+    [300, 200], // E
+    [380, 80],  // F
+    [420, 260], // G
+    [230, 300], // H
+];
+const labels = ['A','B','C','D','E','F','G','H'];
+// 精心选择的查询点：靠近 E(300,200)。best.d 会在第 2 步就降到 ~14，
+// 回溯到根 H 时 |diff|=80 ≫ 14，触发剪枝整个左子树（4 个点）。
+const demoQuery = [310, 210];
+
+let demoRoot = null;
+let stepIdx = 0;
+const steps = [];
+
+// 构建阶段
+function planSteps() {
+    steps.length = 0;
+    // Step 0: 展示原始点
+    steps.push({
+        type: 'show-points',
+        text: '第 0 步：初始 8 个二维数据点 A~H。查询点 Q=' + JSON.stringify(demoQuery) + '。',
+        code: 'points = [A(80,60), B(140,180), C(70,240), D(200,100),\n          E(300,200), F(380,80), G(420,260), H(230,300)]'
+    });
+
+    // 构建递归：记录每次切分
+    const buildTrace = [];
+    function build(pts, depth, box) {
+        if (pts.length === 0) return null;
+        const axis = depth % 2;
+        pts.sort((a,b)=>a[axis]-b[axis]);
+        const mid = Math.floor(pts.length/2);
+        const pivot = pts[mid];
+        const leftBox = box.slice(), rightBox = box.slice();
+        if (axis === 0) { leftBox[2]=pivot[0]; rightBox[0]=pivot[0]; }
+        else            { leftBox[3]=pivot[1]; rightBox[1]=pivot[1]; }
+        buildTrace.push({ point: pivot, axis, box, depth });
+        const node = new KDNode(pivot, axis, null, null, box);
+        node.left  = build(pts.slice(0,mid), depth+1, leftBox);
+        node.right = build(pts.slice(mid+1),  depth+1, rightBox);
+        return node;
+    }
+    demoRoot = build(demoPoints.slice(), 0, [0,0,stepCanvas.width, stepCanvas.height]);
+
+    // 每个 buildTrace 单独一步
+    buildTrace.forEach((t, i) => {
+        const label = labels[demoPoints.findIndex(p=>p[0]===t.point[0]&&p[1]===t.point[1])];
+        steps.push({
+            type: 'build',
+            splitsUpTo: i+1,
+            text: '第 ' + (i+1) + ' 步：选择点 ' + label + '(' + t.point[0] + ',' + t.point[1] + ') 作为切分节点，切分维度 = ' +
+                  (t.axis === 0 ? 'x' : 'y') + '。',
+            code: 'axis = depth % 2   // ' + (t.axis===0?'x':'y') + '\n' +
+                  'sort by axis, 取中位数 => ' + label
+        });
+        steps[steps.length-1].buildTrace = buildTrace.slice(0, i+1);
+    });
+
+    // Query 步骤（逐事件生成 —— 显式展示访问 / 更新 / 剪枝 / 回溯）
+    // 使用 K=1 演示单近邻查询，便于观察搜索半径缩小的过程
+    const K_DEMO = 1;
+    const eventSteps = [];   // 每一步的完整快照
+    let visitedNodes = [];   // 已访问节点列表（顺序）
+    let prunedBoxes = [];    // 被剪枝的子树 bbox 列表
+    let bestSoFar = null;    // 当前最优 { node, d }
+    let currentNode = null;  // 高亮：当前正在处理的节点
+
+    function pushEvent(txt, code, opts) {
+        eventSteps.push({
+            type: 'query',
+            buildTrace: buildTrace,          // 完整分割线
+            visited: visitedNodes.slice(),
+            pruned: prunedBoxes.slice(),
+            best: bestSoFar,
+            current: currentNode,
+            eventKind: (opts && opts.kind) || 'visit',
+            text: txt,
+            code: code || ''
+        });
+    }
+
+    function stepwiseKNN(node, depth) {
+        if (!node) return;
+        const nodeLabel = labels[demoPoints.findIndex(p=>p[0]===node.point[0]&&p[1]===node.point[1])];
+
+        // 事件 1：进入节点，计算距离
+        currentNode = node;
+        visitedNodes.push(node);
+        const d = dist(node.point, demoQuery);
+        const beforeD = bestSoFar ? bestSoFar.d : Infinity;
+        const updated = (d < beforeD);
+        if (updated) bestSoFar = { node: node, d: d };
+
+        pushEvent(
+            '访问节点 <b>' + nodeLabel + '</b>（深度 ' + depth + '，切分轴 ' + (node.axis === 0 ? 'x' : 'y') + '）' +
+            '：计算 d(Q, ' + nodeLabel + ') = ' + d.toFixed(1) +
+            (updated ? '，<span style="color:#2e9d5a"><b>更新当前最优</b></span>（原半径 ' + (isFinite(beforeD) ? beforeD.toFixed(1) : '∞') + ' → ' + d.toFixed(1) + '）'
+                     : '，未更新（当前最优半径 ' + beforeD.toFixed(1) + ' 更小）'),
+            'd = dist(Q, ' + nodeLabel + ') = ' + d.toFixed(1) + '\n' +
+            (updated ? 'best = { ' + nodeLabel + ', ' + d.toFixed(1) + ' }   // 更新'
+                     : '// 不更新，best 仍为 ' + (bestSoFar ? labels[demoPoints.findIndex(p=>p[0]===bestSoFar.node.point[0]&&p[1]===bestSoFar.node.point[1])] + '(' + bestSoFar.d.toFixed(1) + ')' : '?')),
+            { kind: 'visit' }
+        );
+
+        // 决定"近侧"和"远侧"子树
+        const diff = demoQuery[node.axis] - node.point[node.axis];
+        const near = diff < 0 ? node.left  : node.right;
+        const far  = diff < 0 ? node.right : node.left;
+        const nearSide = diff < 0 ? '左' : '右';
+        const farSide  = diff < 0 ? '右' : '左';
+
+        // 递归近侧
+        if (near) {
+            stepwiseKNN(near, depth + 1);
+        }
+
+        // 回溯：检查远侧是否需要剪枝
+        currentNode = node;
+        const bestR = bestSoFar ? bestSoFar.d : Infinity;
+        const canPrune = far && (Math.abs(diff) >= bestR);
+
+        if (!far) {
+            // 无远侧，直接返回
+        } else if (canPrune) {
+            prunedBoxes.push({ box: far.bbox, parent: nodeLabel, side: farSide });
+            pushEvent(
+                '<span style="color:#b91c1c"><b>剪枝！</b></span>回到 ' + nodeLabel + '，检查' + farSide + '子树：' +
+                '|diff| = |Q.' + (node.axis===0?'x':'y') + ' − ' + nodeLabel + '.' + (node.axis===0?'x':'y') + '| = ' +
+                '|' + demoQuery[node.axis] + ' − ' + node.point[node.axis] + '| = ' + Math.abs(diff).toFixed(1) +
+                ' ≥ 当前最优半径 ' + bestR.toFixed(1) +
+                '。<b>整个' + farSide + '子树的最近距离都不可能超过半径</b>，跳过整个 bbox。',
+                '// diff = Q[axis] - node[axis]   （查询点与节点在切分维度的坐标差）\n' +
+                '|diff| = |' + demoQuery[node.axis] + ' - ' + node.point[node.axis] + '| = ' + Math.abs(diff).toFixed(1) + '\n' +
+                '|diff| >= best.d = ' + bestR.toFixed(1) + '   =>  剪枝 ' + farSide + ' 侧',
+                { kind: 'prune' }
+            );
+        } else {
+            pushEvent(
+                '回到 ' + nodeLabel + ' 检查' + farSide + '子树：' +
+                '|diff| = |Q.' + (node.axis===0?'x':'y') + ' − ' + nodeLabel + '.' + (node.axis===0?'x':'y') + '| = ' +
+                '|' + demoQuery[node.axis] + ' − ' + node.point[node.axis] + '| = ' + Math.abs(diff).toFixed(1) +
+                ' < 当前最优半径 ' + bestR.toFixed(1) +
+                '，<b>' + farSide + '子树可能藏着更近的点</b>（半径圆越过了 ' + nodeLabel + ' 的切分线），需要递归' + farSide + '子树。',
+                '// diff = Q[axis] - node[axis]   （查询点与节点在切分维度的坐标差）\n' +
+                '|diff| = |' + demoQuery[node.axis] + ' - ' + node.point[node.axis] + '| = ' + Math.abs(diff).toFixed(1) + '\n' +
+                '|diff| < best.d = ' + bestR.toFixed(1) + '   =>  递归 far 子树',
+                { kind: 'explore-far' }
+            );
+            stepwiseKNN(far, depth + 1);
+        }
+    }
+
+    // 加一个"开始查询"过渡步
+    steps.push({
+        type: 'query',
+        buildTrace: buildTrace,
+        visited: [], pruned: [], best: null, current: null,
+        eventKind: 'start',
+        text: '<b>开始查询</b>：从根节点出发，递归下降到查询点所在的叶子附近，然后回溯检查每个祖先节点的另一侧子树是否可能包含更近点。' +
+              '<span style="color:#5f6368">当前最优半径 = ∞（尚未访问任何节点）</span>',
+        code: 'best = null   // 半径 = ∞\nrecurse(root)'
+    });
+
+    stepwiseKNN(demoRoot, 0);
+    // 汇总事件步
+    eventSteps.forEach(ev => steps.push(ev));
+
+    const finalBestLabel = labels[demoPoints.findIndex(p=>p[0]===bestSoFar.node.point[0]&&p[1]===bestSoFar.node.point[1])];
+    // 统计被剪枝子树里的节点总数（更直观展示"少扫了多少点"）
+    function countPointsInBox(box) {
+        const [x0,y0,x1,y1] = box;
+        return demoPoints.filter(p => p[0]>=x0 && p[0]<=x1 && p[1]>=y0 && p[1]<=y1).length;
+    }
+    const skippedPoints = prunedBoxes.reduce((sum, pr) => sum + countPointsInBox(pr.box), 0);
+    const savedRatio = ((skippedPoints / demoPoints.length) * 100).toFixed(0);
+    const conclusion = prunedBoxes.length > 0
+        ? '共访问 <b>' + visitedNodes.length + ' / ' + demoPoints.length + '</b> 个节点，' +
+          '<span style="color:#b91c1c">剪枝 <b>' + prunedBoxes.length + '</b> 棵子树（跳过 ' + skippedPoints + ' 个数据点，节省 ' + savedRatio + '%）</span> —— ' +
+          '这就是 KD-Tree 相比暴力扫描的加速来源：<b>用切分线 + 半径的几何关系，整棵子树一次跳过</b>。'
+        : '共访问 <b>' + visitedNodes.length + ' / ' + demoPoints.length + '</b> 个节点。' +
+          '<span style="color:#b45309">本次查询没有触发剪枝</span>（查询点位置使得每次 |diff| 都 &lt; 半径）。' +
+          '在实际大数据集上，随着 best.d 快速缩小，剪枝率通常达到 70-95%。可以拖动查询点位置观察不同情形。';
+    steps.push({
+        type: 'done',
+        buildTrace: buildTrace,
+        visited: visitedNodes,
+        pruned: prunedBoxes,
+        best: bestSoFar,
+        current: null,
+        eventKind: 'done',
+        text: '<b>查询结束。</b>最近邻 = <b>' + finalBestLabel + '</b>，距离 = ' + bestSoFar.d.toFixed(1) + '。' + conclusion,
+        code: 'return best   // ' + finalBestLabel + ' @ dist=' + bestSoFar.d.toFixed(1)
+    });
+}
+planSteps();
+
+function drawStep() {
+    sCtx.clearRect(0,0,stepCanvas.width, stepCanvas.height);
+    const s = steps[stepIdx];
+
+    // 数据点
+    demoPoints.forEach((p, i) => {
+        sCtx.fillStyle = '#3b7ddd';
+        sCtx.beginPath();
+        sCtx.arc(p[0], p[1], 5, 0, Math.PI*2);
+        sCtx.fill();
+        sCtx.fillStyle = '#111';
+        sCtx.font = '11px sans-serif';
+        sCtx.fillText(labels[i], p[0]+8, p[1]-6);
+    });
+
+    // 切分线（按深度分层：深度越浅越粗越深）
+    if (s.buildTrace) {
+        const STEP_COLORS = [
+            ['#1a56db', '#c2410c'],
+            ['#2563eb', '#ea580c'],
+            ['#3b82f6', '#f97316'],
+            ['#60a5fa', '#fb923c'],
+            ['#93c5fd', '#fdba74'],
+        ];
+        s.buildTrace.forEach(t => {
+            const d = t.depth || 0;
+            const colors = STEP_COLORS[Math.min(d, STEP_COLORS.length-1)];
+            const [x0,y0,x1,y1] = t.box;
+            sCtx.strokeStyle = t.axis === 0 ? colors[0] : colors[1];
+            sCtx.lineWidth = Math.max(1.2, 4 - d * 0.7);
+            if (d === 0)      sCtx.setLineDash([]);
+            else if (d === 1) sCtx.setLineDash([8, 4]);
+            else if (d === 2) sCtx.setLineDash([5, 3]);
+            else              sCtx.setLineDash([2, 3]);
+            sCtx.beginPath();
+            if (t.axis === 0) {
+                sCtx.moveTo(t.point[0], y0);
+                sCtx.lineTo(t.point[0], y1);
+            } else {
+                sCtx.moveTo(x0, t.point[1]);
+                sCtx.lineTo(x1, t.point[1]);
+            }
+            sCtx.stroke();
+            // 深度标记小圆点
+            sCtx.setLineDash([]);
+            const midX = t.axis === 0 ? t.point[0] : (x0 + x1) / 2;
+            const midY = t.axis === 0 ? (y0 + y1) / 2 : t.point[1];
+            sCtx.fillStyle = t.axis === 0 ? colors[0] : colors[1];
+            sCtx.beginPath();
+            sCtx.arc(midX, midY, Math.max(2, 5 - d * 0.6), 0, Math.PI*2);
+            sCtx.fill();
+            if (d < 3) {
+                sCtx.fillStyle = '#fff';
+                sCtx.font = 'bold 9px sans-serif';
+                sCtx.textAlign = 'center';
+                sCtx.textBaseline = 'middle';
+                sCtx.fillText(String(d), midX, midY);
+                sCtx.textAlign = 'start';
+                sCtx.textBaseline = 'alphabetic';
+            }
+        });
+        sCtx.setLineDash([]);
+    } else if (s.splitsUpTo) {
+        // 使用局部
+    }
+
+    // 查询点
+    sCtx.fillStyle = '#d93025';
+    sCtx.beginPath();
+    sCtx.arc(demoQuery[0], demoQuery[1], 6, 0, Math.PI*2);
+    sCtx.fill();
+    sCtx.fillStyle = '#111';
+    sCtx.font = '12px sans-serif';
+    sCtx.fillText('Q', demoQuery[0]+10, demoQuery[1]-6);
+
+    // 访问节点高亮 + 剪枝 bbox 阴影 + 当前节点强调
+    if (s.type === 'query' || s.type === 'done') {
+        // 剪枝的 bbox 先画（背景层）—— 灰色斜纹填充 + 红色边框
+        if (s.pruned && s.pruned.length > 0) {
+            s.pruned.forEach(pr => {
+                const [x0, y0, x1, y1] = pr.box;
+                // 斜纹背景
+                sCtx.save();
+                sCtx.fillStyle = 'rgba(185, 28, 28, 0.10)';
+                sCtx.fillRect(x0, y0, x1 - x0, y1 - y0);
+                // 斜线纹路
+                sCtx.strokeStyle = 'rgba(185, 28, 28, 0.35)';
+                sCtx.lineWidth = 1;
+                sCtx.beginPath();
+                const step = 10;
+                for (let d = -Math.abs(y1 - y0); d < (x1 - x0); d += step) {
+                    sCtx.moveTo(x0 + d, y0);
+                    sCtx.lineTo(x0 + d + (y1 - y0), y1);
+                }
+                sCtx.stroke();
+                // 红色边框
+                sCtx.setLineDash([6, 4]);
+                sCtx.strokeStyle = '#b91c1c';
+                sCtx.lineWidth = 2;
+                sCtx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+                sCtx.setLineDash([]);
+                // "已剪枝"标签
+                sCtx.fillStyle = '#b91c1c';
+                sCtx.font = 'bold 11px sans-serif';
+                sCtx.fillText('已剪枝', x0 + 4, y0 + 14);
+                sCtx.restore();
+            });
+        }
+
+        // 已访问节点（黄环）
+        const visited = s.visited || [];
+        visited.forEach(n => {
+            sCtx.strokeStyle = '#e0a800';
+            sCtx.lineWidth = 2.5;
+            sCtx.beginPath();
+            sCtx.arc(n.point[0], n.point[1], 9, 0, Math.PI*2);
+            sCtx.stroke();
+        });
+
+        // 当前节点（红色发光）
+        if (s.current) {
+            sCtx.save();
+            sCtx.shadowColor = '#d93025';
+            sCtx.shadowBlur = 18;
+            sCtx.strokeStyle = '#d93025';
+            sCtx.lineWidth = 3.5;
+            sCtx.beginPath();
+            sCtx.arc(s.current.point[0], s.current.point[1], 12, 0, Math.PI*2);
+            sCtx.stroke();
+            sCtx.restore();
+        }
+
+        // 当前最优 + 搜索半径圆
+        if (s.best) {
+            sCtx.strokeStyle = '#2e9d5a';
+            sCtx.lineWidth = 3;
+            sCtx.beginPath();
+            sCtx.arc(s.best.node.point[0], s.best.node.point[1], 14, 0, Math.PI*2);
+            sCtx.stroke();
+            // 搜索半径圆
+            sCtx.strokeStyle = 'rgba(46,157,90,0.55)';
+            sCtx.fillStyle = 'rgba(46,157,90,0.06)';
+            sCtx.setLineDash([5, 4]);
+            sCtx.lineWidth = 1.5;
+            sCtx.beginPath();
+            sCtx.arc(demoQuery[0], demoQuery[1], s.best.d, 0, Math.PI*2);
+            sCtx.fill();
+            sCtx.stroke();
+            sCtx.setLineDash([]);
+            // 半径数字标签
+            sCtx.fillStyle = '#2e9d5a';
+            sCtx.font = 'bold 11px sans-serif';
+            sCtx.fillText('r=' + s.best.d.toFixed(1), demoQuery[0] + s.best.d + 4, demoQuery[1] - 4);
+        }
+    }
+
+    stepDetail.innerHTML = '<b>阶段：</b>' + s.text;
+    stepCode.textContent = s.code || '';
+}
+
+document.getElementById('btnStepNext').onclick = ()=>{
+    if (stepIdx < steps.length-1) { stepIdx++; drawStep(); }
+};
+document.getElementById('btnStepPrev').onclick = ()=>{
+    if (stepIdx > 0) { stepIdx--; drawStep(); }
+};
+document.getElementById('btnStepReset').onclick = ()=>{
+    stepIdx = 0; drawStep();
+};
+drawStep();
+</script>
+</body>
+</html>

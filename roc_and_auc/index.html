@@ -1,0 +1,1780 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ROC 与 AUC 交互式教程</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --panel-soft: #f0f5ff;
+      --text: #1f2937;
+      --muted: #607087;
+      --line: #d7deea;
+      --line-strong: #aebbd0;
+      --blue: #2563eb;
+      --blue-soft: #dbeafe;
+      --green: #0f9f6e;
+      --green-soft: #dff8ec;
+      --red: #dc2626;
+      --red-soft: #fee2e2;
+      --amber: #b7791f;
+      --amber-soft: #fff3cf;
+      --purple: #7c3aed;
+      --purple-soft: #ede9fe;
+      --ink: #111827;
+      --shadow: 0 16px 45px rgba(30, 41, 59, 0.08);
+      --radius: 8px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        linear-gradient(180deg, #eef4ff 0, rgba(238, 244, 255, 0) 360px),
+        var(--bg);
+      line-height: 1.6;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 56px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: end;
+      padding: 18px 0 22px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 14px;
+      color: var(--ink);
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.06;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      color: var(--ink);
+      font-size: 25px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin-bottom: 8px;
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin-bottom: 0;
+      color: #43536b;
+      font-size: 18px;
+    }
+
+    .hero-summary {
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.78);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .hero-summary strong {
+      display: block;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .hero-summary span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .section {
+      margin-top: 24px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .section.flat {
+      border-color: transparent;
+      background: transparent;
+      box-shadow: none;
+      padding-inline: 0;
+    }
+
+    .intro-band {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+      gap: 16px;
+      margin-top: 12px;
+    }
+
+    .learning-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .learning-card.accent {
+      background: #f8fbff;
+      border-color: #c8d8f6;
+    }
+
+    .plain-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .plain-list li {
+      position: relative;
+      padding-left: 24px;
+    }
+
+    .plain-list li::before {
+      position: absolute;
+      left: 0;
+      top: 0.62em;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--blue);
+      content: "";
+    }
+
+    .term-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .term {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .term strong {
+      display: block;
+      color: var(--ink);
+    }
+
+    .term span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .callout {
+      margin-top: 14px;
+      padding: 14px;
+      border-left: 4px solid var(--blue);
+      border-radius: var(--radius);
+      background: #f2f6ff;
+      color: #273a5c;
+    }
+
+    .callout.warning {
+      border-left-color: var(--amber);
+      background: #fff8df;
+      color: #61420f;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid.two {
+      grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .subtle {
+      color: var(--muted);
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .pill,
+    .tab {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: #314158;
+      padding: 8px 13px;
+      transition: 0.16s ease;
+    }
+
+    .pill.active,
+    .tab.active {
+      border-color: var(--blue);
+      background: var(--blue-soft);
+      color: #1746b5;
+      font-weight: 700;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .segmented {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .control-box {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fbfcff;
+    }
+
+    .range-line {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .threshold-value {
+      min-width: 86px;
+      padding: 8px 10px;
+      border-radius: var(--radius);
+      background: var(--ink);
+      color: white;
+      font-variant-numeric: tabular-nums;
+      text-align: center;
+      font-weight: 800;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--blue);
+    }
+
+    .reset-btn {
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      background: #fff;
+      color: #26364c;
+      padding: 8px 12px;
+      font-weight: 700;
+    }
+
+    .scenario {
+      display: grid;
+      gap: 10px;
+      min-height: 150px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fbfcff;
+    }
+
+    .scenario-title {
+      color: var(--ink);
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .scenario-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: var(--panel-soft);
+      color: #284372;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .tag.green {
+      background: var(--green-soft);
+      color: #08724f;
+    }
+
+    .tag.amber {
+      background: var(--amber-soft);
+      color: #7a4b10;
+    }
+
+    .tag.purple {
+      background: var(--purple-soft);
+      color: #5b21b6;
+    }
+
+    .sample-strip {
+      position: relative;
+      min-height: 202px;
+      margin-top: 12px;
+      padding: 24px 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(90deg, rgba(15, 159, 110, 0.08), rgba(37, 99, 235, 0.05) 42%, rgba(220, 38, 38, 0.08)),
+        #fff;
+      overflow: hidden;
+    }
+
+    .sample-axis {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      top: 22px;
+      height: 1px;
+      background: var(--line-strong);
+    }
+
+    .sample-axis::before,
+    .sample-axis::after {
+      position: absolute;
+      top: -17px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .sample-axis::before {
+      left: 0;
+      content: "0.00 低分";
+    }
+
+    .sample-axis::after {
+      right: 0;
+      content: "高分 1.00";
+    }
+
+    .threshold-line {
+      position: absolute;
+      top: 12px;
+      bottom: 8px;
+      width: 2px;
+      background: var(--ink);
+      transform: translateX(-1px);
+      z-index: 4;
+    }
+
+    .threshold-line::before {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--ink);
+      content: "";
+      transform: translate(-50%, -50%);
+    }
+
+    .sample-dot {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border: 2px solid transparent;
+      border-radius: 999px;
+      color: white;
+      font-size: 12px;
+      font-weight: 900;
+      transform: translate(-50%, -50%);
+      transition: border-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+      z-index: 3;
+    }
+
+    .sample-dot.positive {
+      background: var(--red);
+    }
+
+    .sample-dot.negative {
+      background: var(--green);
+    }
+
+    .sample-dot.predicted {
+      border-color: #111827;
+      box-shadow: 0 0 0 4px rgba(17, 24, 39, 0.14);
+    }
+
+    .sample-dot.not-predicted {
+      opacity: 0.72;
+    }
+
+    .sample-label {
+      position: absolute;
+      width: 60px;
+      color: #41516a;
+      font-size: 11px;
+      text-align: center;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      min-height: 92px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .metric strong {
+      display: block;
+      color: var(--ink);
+      font-size: 25px;
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: 112px repeat(2, minmax(0, 1fr));
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .matrix-cell {
+      min-height: 86px;
+      padding: 12px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .matrix-cell:nth-child(3n) {
+      border-right: 0;
+    }
+
+    .matrix-cell.header {
+      min-height: 46px;
+      background: #f5f7fb;
+      color: #39475c;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .matrix-cell.axis {
+      background: #f5f7fb;
+      color: #39475c;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .matrix-cell.good {
+      background: var(--green-soft);
+    }
+
+    .matrix-cell.bad {
+      background: var(--red-soft);
+    }
+
+    .matrix-value {
+      display: block;
+      color: var(--ink);
+      font-size: 30px;
+      line-height: 1.1;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .formula-stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .formula {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fbfcff;
+      color: #29384d;
+      font-size: 14px;
+    }
+
+    .formula code {
+      color: #0f4aa8;
+      font-weight: 800;
+    }
+
+    .coach {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+      padding: 14px;
+      border: 1px solid #c8d8f6;
+      border-radius: var(--radius);
+      background: #f8fbff;
+    }
+
+    .coach-title {
+      color: var(--ink);
+      font-weight: 900;
+    }
+
+    .mini-kpis {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .mini-kpi {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      font-size: 13px;
+    }
+
+    .mini-kpi strong {
+      display: block;
+      color: var(--ink);
+      font-size: 19px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .chart-panel {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .chart-wrap {
+      width: 100%;
+      aspect-ratio: 1 / 0.78;
+      min-height: 300px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fbfcff;
+    }
+
+    .chart-wrap svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-note {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .auc-box {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .explain-card {
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .explain-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--ink);
+    }
+
+    .comparison {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .comparison th,
+    .comparison td {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .comparison th {
+      background: #f5f7fb;
+      color: #34435a;
+      font-size: 13px;
+    }
+
+    .comparison tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .sweep-table-wrap {
+      max-height: 320px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .sweep-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .sweep-table th,
+    .sweep-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .sweep-table th:first-child,
+    .sweep-table td:first-child {
+      text-align: left;
+    }
+
+    .sweep-table th {
+      position: sticky;
+      top: 0;
+      background: #f5f7fb;
+      color: #34435a;
+      z-index: 1;
+    }
+
+    .sweep-table tr.current {
+      background: #fff7ed;
+      font-weight: 800;
+    }
+
+    .myth-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .myth {
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .myth strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #9f1239;
+    }
+
+    .myth span {
+      display: block;
+      color: var(--muted);
+    }
+
+    .model-bars {
+      display: grid;
+      gap: 11px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 92px 1fr 62px;
+      gap: 10px;
+      align-items: center;
+      color: #3b4b62;
+      font-size: 14px;
+    }
+
+    .bar-track {
+      height: 12px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e7ecf4;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--blue), var(--green));
+    }
+
+    .sample-table-wrap {
+      max-height: 360px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .sample-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .sample-table th,
+    .sample-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .sample-table th {
+      position: sticky;
+      top: 0;
+      background: #f5f7fb;
+      color: #34435a;
+      font-size: 12px;
+      z-index: 1;
+    }
+
+    .status {
+      display: inline-flex;
+      min-width: 46px;
+      justify-content: center;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .status.tp,
+    .status.tn {
+      background: var(--green-soft);
+      color: #08724f;
+    }
+
+    .status.fp,
+    .status.fn {
+      background: var(--red-soft);
+      color: #9f1239;
+    }
+
+    .steps {
+      display: grid;
+      gap: 12px;
+      counter-reset: step;
+    }
+
+    .step {
+      position: relative;
+      padding: 14px 14px 14px 48px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .step::before {
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--blue-soft);
+      color: #1746b5;
+      content: counter(step);
+      counter-increment: step;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .footer-note {
+      margin-top: 24px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 920px) {
+      .hero,
+      .intro-band,
+      .grid.two,
+      .grid.three,
+      .auc-box,
+      .myth-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .term-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .chart-wrap {
+        min-height: 270px;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .page {
+        width: min(100% - 20px, 1180px);
+        padding-top: 18px;
+      }
+
+      .section {
+        padding: 18px;
+      }
+
+      .metrics {
+        grid-template-columns: 1fr;
+      }
+
+      .mini-kpis {
+        grid-template-columns: 1fr;
+      }
+
+      .matrix {
+        grid-template-columns: 88px repeat(2, minmax(0, 1fr));
+      }
+
+      .matrix-cell {
+        min-height: 76px;
+        padding: 9px;
+      }
+
+      .matrix-value {
+        font-size: 24px;
+      }
+
+      .range-line {
+        grid-template-columns: 1fr;
+      }
+
+      .bar-row {
+        grid-template-columns: 72px 1fr 54px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div>
+        <h1>ROC 与 AUC：从阈值到排序能力</h1>
+        <p class="lead">如果你刚接触 ROC/AUC，先不要背公式。先把它想成一个问题：模型给每个样本打了分，我们应该把阈值放在哪里？阈值从高到低移动时，抓到的正类和误报的负类会怎样变化？</p>
+        <div class="pill-row" aria-label="核心概念">
+          <span class="tag">阈值变化</span>
+          <span class="tag green">TPR / FPR</span>
+          <span class="tag amber">ROC 曲线</span>
+          <span class="tag purple">AUC 排序解释</span>
+        </div>
+      </div>
+      <aside class="hero-summary" aria-label="阅读路径">
+        <div>
+          <strong>先看一个阈值</strong>
+          <span>阈值决定哪些样本被预测为正类。</span>
+        </div>
+        <div>
+          <strong>再扫所有阈值</strong>
+          <span>每个阈值得到一个 ROC 点。</span>
+        </div>
+        <div>
+          <strong>最后比较面积</strong>
+          <span>AUC 衡量整体排序能力。</span>
+        </div>
+      </aside>
+    </section>
+
+    <section class="intro-band" aria-label="初学者导览">
+      <div class="learning-card accent">
+        <h2>先建立直觉</h2>
+        <ul class="plain-list">
+          <li><strong>正类</strong>就是你关心、想抓出来的对象：欺诈交易、真实患病、会点击。</li>
+          <li><strong>模型分数</strong>表示“像正类的程度”。分数越高，越应该排在前面。</li>
+          <li><strong>阈值</strong>是一条切线：分数超过它就预测为正类，低于它就预测为负类。</li>
+          <li><strong>ROC</strong>不是一个点，而是阈值一路移动后得到的一串点。</li>
+          <li><strong>AUC</strong>不是某个阈值的准确率，而是整体排序能力。</li>
+        </ul>
+      </div>
+      <div class="learning-card">
+        <h2>术语小字典</h2>
+        <div class="term-grid">
+          <div class="term"><strong>TP 真正例</strong><span>正类被预测成正类。风控里是欺诈交易被成功拦截。</span></div>
+          <div class="term"><strong>FP 假正例</strong><span>负类被预测成正类。风控里是正常交易被误拦。</span></div>
+          <div class="term"><strong>FN 假负例</strong><span>正类被预测成负类。风控里是欺诈交易被放过。</span></div>
+          <div class="term"><strong>TN 真负例</strong><span>负类被预测成负类。风控里是正常交易被正常放行。</span></div>
+          <div class="term"><strong>TPR / Recall</strong><span>正类里抓到了多少：TP / (TP + FN)。越高表示漏掉越少。</span></div>
+          <div class="term"><strong>FPR</strong><span>负类里误报了多少：FP / (FP + TN)。越高表示误伤越多。</span></div>
+        </div>
+        <div class="callout">阅读建议：先固定“风控欺诈识别 + 模型 A”，拖动阈值看懂 TP/FP/FN/TN；再看 ROC 曲线；最后切换医疗和广告做对比。</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="toolbar">
+        <div>
+          <h2>1. 选择业务场景和模型</h2>
+          <p class="subtle">同一条 ROC 曲线是数学对象，但阈值怎么选取决于业务成本。</p>
+        </div>
+        <button class="reset-btn" id="resetBtn" type="button">重置示例</button>
+      </div>
+
+      <div class="grid two">
+        <div class="control-box">
+          <h3>业务场景</h3>
+          <div class="segmented" id="scenarioTabs" aria-label="业务场景选择"></div>
+          <div class="scenario" id="scenarioPanel"></div>
+        </div>
+        <div class="control-box">
+          <h3>模型分数分布</h3>
+          <div class="segmented" id="modelTabs" aria-label="模型选择"></div>
+          <div class="model-bars" id="modelBars"></div>
+          <p class="subtle" id="modelSummary"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>2. 调一个阈值，看混淆矩阵如何变化</h2>
+      <p class="subtle">模型给每个样本一个分数。阈值右侧被预测为正类；在风控里就是“拦截”，在医疗里是“判为需要复查”，在广告里是“优先投放”。</p>
+
+      <div class="control-box">
+        <div class="range-line">
+          <label for="thresholdRange"><strong>阈值</strong>：分数大于等于阈值就预测为正类</label>
+          <output class="threshold-value" id="thresholdValue" for="thresholdRange">0.65</output>
+        </div>
+        <input id="thresholdRange" type="range" min="0" max="1" step="0.01" value="0.65" aria-label="分类阈值">
+      </div>
+
+      <div class="sample-strip" id="sampleStrip" aria-label="样本分数条带">
+        <div class="sample-axis"></div>
+        <div class="threshold-line" id="thresholdLine"></div>
+      </div>
+      <div class="legend">
+        <span class="legend-item"><span class="legend-swatch" style="background: var(--red);"></span>真实正类</span>
+        <span class="legend-item"><span class="legend-swatch" style="background: var(--green);"></span>真实负类</span>
+        <span class="legend-item"><span class="legend-swatch" style="background: #111827;"></span>黑边表示预测为正类</span>
+      </div>
+
+      <div class="grid two" style="margin-top: 18px;">
+        <div>
+          <h3>当前阈值的混淆矩阵</h3>
+          <div class="matrix" id="confusionMatrix"></div>
+        </div>
+        <div>
+          <h3>从混淆矩阵到 ROC 坐标</h3>
+          <div class="metrics" id="metricCards"></div>
+          <div class="formula-stack" style="margin-top: 10px;" id="formulaPanel"></div>
+          <div class="coach" id="coachPanel"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>3. 扫描所有阈值，连成 ROC 曲线</h2>
+      <p class="subtle">ROC 的横轴是 FPR，表示负类中有多少被误报为正类；纵轴是 TPR，表示正类中有多少被成功抓到。阈值越低，通常 TPR 和 FPR 都会上升。</p>
+
+      <div class="grid two">
+        <div class="chart-panel">
+          <div class="chart-wrap">
+            <svg id="rocChart" role="img" aria-label="ROC 曲线图"></svg>
+          </div>
+          <p class="chart-note" id="rocNote"></p>
+        </div>
+        <div class="chart-panel">
+          <div>
+            <h3>AUC 的两种理解</h3>
+            <p class="subtle">几何上是 ROC 曲线下面积；排序上是模型把正样本排在负样本前面的概率。</p>
+          </div>
+          <div class="auc-box">
+            <div class="explain-card">
+              <strong>几何面积</strong>
+              <p id="aucAreaText"></p>
+            </div>
+            <div class="explain-card">
+              <strong>排序概率</strong>
+              <p id="aucRankText"></p>
+            </div>
+          </div>
+          <div class="formula" id="aucFormula"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>4. 阈值扫描表：ROC 曲线上的点从哪里来</h2>
+      <p class="subtle">下面每一行都是一个阈值。阈值从高到低移动，预测为正类的样本会越来越多；TPR 通常会上升，FPR 也可能上升。ROC 图就是把这些行里的 FPR、TPR 坐标连起来。</p>
+      <div class="sweep-table-wrap">
+        <table class="sweep-table">
+          <thead>
+            <tr>
+              <th>阈值</th>
+              <th>TP</th>
+              <th>FP</th>
+              <th>FN</th>
+              <th>TN</th>
+              <th>TPR</th>
+              <th>FPR</th>
+              <th>ROC 点</th>
+            </tr>
+          </thead>
+          <tbody id="sweepTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>5. 具体样本表：每一笔样本如何被归类</h2>
+      <p class="subtle">这张表把抽象的 TP、FP、TN、FN 落到单个样本上。你拖动阈值时，最后一列会同步变化。</p>
+      <div class="sample-table-wrap">
+        <table class="sample-table">
+          <thead>
+            <tr>
+              <th>样本</th>
+              <th>业务含义</th>
+              <th>真实标签</th>
+              <th>模型分数</th>
+              <th>当前预测</th>
+              <th>归类</th>
+            </tr>
+          </thead>
+          <tbody id="sampleTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section flat">
+      <div class="grid three">
+        <div class="explain-card">
+          <h3>ROC vs 单个阈值</h3>
+          <p>单个阈值只给一个混淆矩阵。ROC 把所有阈值都扫一遍，展示“多抓到正类”和“多误报负类”之间的完整权衡。</p>
+        </div>
+        <div class="explain-card">
+          <h3>AUC vs Accuracy</h3>
+          <p>Accuracy 依赖一个阈值。AUC 更关注排序能力：正样本的分数是否普遍高于负样本。一个模型可能在某个阈值下准确率不错，但整体排序不稳定。</p>
+        </div>
+        <div class="explain-card">
+          <h3>ROC vs PR 曲线</h3>
+          <p>ROC 关注 TPR 和 FPR。PR 关注 Precision 和 Recall。正类很稀少时，PR 往往更能暴露“误报太多”的问题。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>6. 多角度对比</h2>
+      <table class="comparison">
+        <thead>
+          <tr>
+            <th>角度</th>
+            <th>看什么</th>
+            <th>适合回答的问题</th>
+            <th>容易误解的地方</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>阈值视角</td>
+            <td>TP、FP、TN、FN</td>
+            <td>当前拦截策略会漏掉多少正类，会误伤多少负类？</td>
+            <td>只看一个阈值，不能代表模型整体好坏。</td>
+          </tr>
+          <tr>
+            <td>ROC 视角</td>
+            <td>所有阈值下的 TPR/FPR</td>
+            <td>当我想提高召回时，误报会增加多少？</td>
+            <td>类别极不均衡时，FPR 看起来小，但 FP 绝对数量仍可能很大。</td>
+          </tr>
+          <tr>
+            <td>AUC 视角</td>
+            <td>ROC 曲线下面积，或正负样本排序概率</td>
+            <td>模型整体排序能力强不强？</td>
+            <td>AUC 高不等于某个业务阈值一定可用。</td>
+          </tr>
+          <tr>
+            <td>业务视角</td>
+            <td>误报成本和漏报成本</td>
+            <td>医疗是否更偏高召回？风控是否需要控制误拦？广告是否更关心排序？</td>
+            <td>不同业务不能用同一个“最佳阈值”模板。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>7. 初学者最容易踩的坑</h2>
+      <div class="myth-grid">
+        <div class="myth">
+          <strong>误区 1：AUC 高，所以线上阈值一定好。</strong>
+          <span>AUC 衡量整体排序。上线仍要选阈值，并检查该阈值下的 FP、FN 成本。</span>
+        </div>
+        <div class="myth">
+          <strong>误区 2：ROC 曲线越高，Precision 一定越高。</strong>
+          <span>ROC 不直接看 Precision。正类很少时，即使 FPR 很低，误报数量也可能压低 Precision。</span>
+        </div>
+        <div class="myth">
+          <strong>误区 3：Accuracy 比 AUC 更直观，所以更可靠。</strong>
+          <span>Accuracy 强依赖阈值和类别比例。负类特别多时，全预测负类也可能有很高 Accuracy。</span>
+        </div>
+        <div class="myth">
+          <strong>误区 4：AUC 是概率校准好不好。</strong>
+          <span>AUC 主要看排序。分数 0.9 不一定代表真实概率 90%，概率校准需要另行评估。</span>
+        </div>
+      </div>
+      <div class="callout warning">实际建模时，AUC 常用于比较模型排序能力；阈值选择还需要结合业务目标、样本比例、成本矩阵和线上容量。</div>
+    </section>
+
+    <section class="section">
+      <h2>8. 记忆路径</h2>
+      <div class="steps">
+        <div class="step"><strong>模型先给分数。</strong> 分数越高，模型越认为它是正类；分数本身不是最终判定。</div>
+        <div class="step"><strong>阈值把分数切成预测正类和预测负类。</strong> 一个阈值对应一个混淆矩阵。</div>
+        <div class="step"><strong>混淆矩阵算出 TPR 和 FPR。</strong> TPR 是抓正类的能力，FPR 是误报负类的代价。</div>
+        <div class="step"><strong>扫所有阈值就是 ROC。</strong> 每个阈值贡献一个点，点连起来就是曲线。</div>
+        <div class="step"><strong>曲线下面积就是 AUC。</strong> AUC 也等价于正样本排在负样本前面的概率。</div>
+      </div>
+    </section>
+
+    <p class="footer-note">本页是一个本地静态交互教程，所有计算都在浏览器内完成。</p>
+  </main>
+
+  <script>
+    const scenarios = {
+      fraud: {
+        name: "风控欺诈识别",
+        positive: "欺诈交易",
+        negative: "正常交易",
+        action: "拦截",
+        threshold: 0.65,
+        risk: "误报是误拦正常用户，漏报是放过欺诈交易。",
+        recommendation: "一般会在召回欺诈和控制误拦之间折中。",
+        tags: ["主线手算案例", "TP/FP/FN/TN 最直观", "平衡误报与漏报"],
+        samples: [
+          ["T01", "异常大额转账", 1, 0.96],
+          ["T02", "异地短时登录后支付", 1, 0.91],
+          ["T03", "新设备高频下单", 1, 0.83],
+          ["T04", "夜间连续失败支付", 0, 0.76],
+          ["T05", "常用设备大额支付", 1, 0.68],
+          ["T06", "低频正常消费", 0, 0.63],
+          ["T07", "优惠券批量尝试", 1, 0.58],
+          ["T08", "老用户跨城消费", 0, 0.49],
+          ["T09", "新用户小额支付", 0, 0.42],
+          ["T10", "收货地址突变", 1, 0.35],
+          ["T11", "稳定订阅扣费", 0, 0.22],
+          ["T12", "常规线下消费", 0, 0.10]
+        ]
+      },
+      medical: {
+        name: "医疗筛查",
+        positive: "真实患病",
+        negative: "真实健康",
+        action: "建议复查",
+        threshold: 0.42,
+        risk: "误报会带来复查成本，漏报可能延误诊断。",
+        recommendation: "通常宁愿多一些误报，也要尽量降低漏诊。",
+        tags: ["高召回优先", "漏报成本高", "阈值通常更低"],
+        samples: [
+          ["P01", "影像强阳性", 1, 0.95],
+          ["P02", "多项指标异常", 1, 0.86],
+          ["P03", "家族史和症状明显", 1, 0.79],
+          ["P04", "炎症但非目标疾病", 0, 0.70],
+          ["P05", "早期轻微症状", 1, 0.57],
+          ["P06", "短期生理波动", 0, 0.50],
+          ["P07", "隐匿早期病例", 1, 0.44],
+          ["P08", "健康体检轻度异常", 0, 0.39],
+          ["P09", "无症状正常", 0, 0.31],
+          ["P10", "低风险随访", 1, 0.28],
+          ["P11", "指标稳定", 0, 0.19],
+          ["P12", "健康对照", 0, 0.08]
+        ]
+      },
+      ads: {
+        name: "广告点击预测",
+        positive: "会点击",
+        negative: "不会点击",
+        action: "优先投放",
+        threshold: 0.55,
+        risk: "误报会浪费曝光，漏报会错过潜在点击。",
+        recommendation: "常更关注排序：把更可能点击的人排在更前面。",
+        tags: ["排序质量", "点击概率", "AUC 解释最自然"],
+        samples: [
+          ["U01", "近期强兴趣用户", 1, 0.89],
+          ["U02", "搜索过同类商品", 1, 0.80],
+          ["U03", "浏览但未购买", 0, 0.72],
+          ["U04", "相似人群高活跃", 1, 0.66],
+          ["U05", "近期泛兴趣", 0, 0.60],
+          ["U06", "历史点击少", 1, 0.52],
+          ["U07", "低频访问", 0, 0.47],
+          ["U08", "价格敏感用户", 1, 0.41],
+          ["U09", "无相关行为", 0, 0.34],
+          ["U10", "偶发点击用户", 1, 0.29],
+          ["U11", "非目标地域", 0, 0.18],
+          ["U12", "冷启动用户", 0, 0.12]
+        ]
+      }
+    };
+
+    const modelTransforms = {
+      good: {
+        name: "模型 A：分离明显",
+        short: "高 AUC",
+        summary: "正负样本分数整体分开，ROC 曲线会更靠近左上角。",
+        transform: sample => sample.score
+      },
+      medium: {
+        name: "模型 B：分数重叠",
+        short: "中等 AUC",
+        summary: "一些负类被打到较高分，一些正类被压低，曲线更接近对角线。",
+        transform: sample => {
+          const idNum = Number(sample.id.replace(/\D/g, ""));
+          const shift = sample.label === 1 ? -0.08 : 0.08;
+          const wiggle = idNum % 3 === 0 ? -0.05 : idNum % 3 === 1 ? 0.03 : 0.00;
+          return clamp(sample.score + shift + wiggle, 0.03, 0.97);
+        }
+      },
+      accuracyTrap: {
+        name: "模型 C：阈值表现尚可",
+        short: "排序一般",
+        summary: "某个阈值下 accuracy 可能不差，但正负样本的整体排序有明显交叉。",
+        transform: sample => {
+          const idNum = Number(sample.id.replace(/\D/g, ""));
+          const base = sample.label === 1 ? 0.58 : 0.42;
+          const wave = ((idNum * 37) % 9 - 4) * 0.045;
+          const extra = idNum === 4 || idNum === 8 ? 0.16 : idNum === 10 ? -0.16 : 0;
+          return clamp(base + wave + extra, 0.05, 0.95);
+        }
+      }
+    };
+
+    const state = {
+      scenarioKey: "fraud",
+      modelKey: "good",
+      threshold: scenarios.fraud.threshold
+    };
+
+    const els = {
+      scenarioTabs: document.getElementById("scenarioTabs"),
+      modelTabs: document.getElementById("modelTabs"),
+      scenarioPanel: document.getElementById("scenarioPanel"),
+      modelBars: document.getElementById("modelBars"),
+      modelSummary: document.getElementById("modelSummary"),
+      thresholdRange: document.getElementById("thresholdRange"),
+      thresholdValue: document.getElementById("thresholdValue"),
+      thresholdLine: document.getElementById("thresholdLine"),
+      sampleStrip: document.getElementById("sampleStrip"),
+      confusionMatrix: document.getElementById("confusionMatrix"),
+      metricCards: document.getElementById("metricCards"),
+      formulaPanel: document.getElementById("formulaPanel"),
+      coachPanel: document.getElementById("coachPanel"),
+      rocChart: document.getElementById("rocChart"),
+      rocNote: document.getElementById("rocNote"),
+      aucAreaText: document.getElementById("aucAreaText"),
+      aucRankText: document.getElementById("aucRankText"),
+      aucFormula: document.getElementById("aucFormula"),
+      sweepTable: document.getElementById("sweepTable"),
+      sampleTable: document.getElementById("sampleTable"),
+      resetBtn: document.getElementById("resetBtn")
+    };
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function fmt(value, digits = 2) {
+      return Number(value).toFixed(digits);
+    }
+
+    function pct(value) {
+      return `${fmt(value * 100, 1)}%`;
+    }
+
+    function getSamples() {
+      const scenario = scenarios[state.scenarioKey];
+      const model = modelTransforms[state.modelKey];
+      return scenario.samples.map(([id, description, label, score]) => {
+        const transformed = model.transform({ id, description, label, score });
+        return { id, description, label, score: transformed };
+      });
+    }
+
+    function getConfusion(samples, threshold) {
+      const result = { tp: 0, fp: 0, tn: 0, fn: 0 };
+      samples.forEach(sample => {
+        const predicted = sample.score >= threshold ? 1 : 0;
+        if (sample.label === 1 && predicted === 1) result.tp += 1;
+        if (sample.label === 0 && predicted === 1) result.fp += 1;
+        if (sample.label === 0 && predicted === 0) result.tn += 1;
+        if (sample.label === 1 && predicted === 0) result.fn += 1;
+      });
+      return result;
+    }
+
+    function getRates(confusion) {
+      const positives = confusion.tp + confusion.fn;
+      const negatives = confusion.fp + confusion.tn;
+      const predictedPositive = confusion.tp + confusion.fp;
+      const total = positives + negatives;
+      const tpr = positives ? confusion.tp / positives : 0;
+      const fpr = negatives ? confusion.fp / negatives : 0;
+      const precision = predictedPositive ? confusion.tp / predictedPositive : 0;
+      const accuracy = total ? (confusion.tp + confusion.tn) / total : 0;
+      return { positives, negatives, tpr, fpr, precision, accuracy };
+    }
+
+    function getRocPoints(samples) {
+      const thresholds = [...new Set(samples.map(sample => sample.score))]
+        .sort((a, b) => b - a)
+        .map(score => score - 0.000001);
+      const points = [{ fpr: 0, tpr: 0, threshold: 1.01, confusion: getConfusion(samples, 1.01) }];
+      thresholds.forEach(threshold => {
+        const confusion = getConfusion(samples, threshold);
+        const rates = getRates(confusion);
+        points.push({ fpr: rates.fpr, tpr: rates.tpr, threshold, confusion });
+      });
+      points.push({ fpr: 1, tpr: 1, threshold: -0.01, confusion: getConfusion(samples, -0.01) });
+      return dedupeRoc(points);
+    }
+
+    function getSweepRows(samples) {
+      const rawThresholds = [1.01, ...new Set(samples.map(sample => sample.score).sort((a, b) => b - a)), -0.01];
+      return rawThresholds.map((threshold, index) => {
+        const effectiveThreshold = index === 0 ? threshold : index === rawThresholds.length - 1 ? threshold : threshold - 0.000001;
+        const confusion = getConfusion(samples, effectiveThreshold);
+        const rates = getRates(confusion);
+        return {
+          label: index === 0 ? "> 最高分" : index === rawThresholds.length - 1 ? "< 最低分" : fmt(threshold, 2),
+          threshold: effectiveThreshold,
+          confusion,
+          rates
+        };
+      });
+    }
+
+    function dedupeRoc(points) {
+      const deduped = [];
+      points.forEach(point => {
+        const last = deduped[deduped.length - 1];
+        if (!last || last.fpr !== point.fpr || last.tpr !== point.tpr) {
+          deduped.push(point);
+        }
+      });
+      return deduped;
+    }
+
+    function getAuc(points) {
+      let auc = 0;
+      const parts = [];
+      for (let i = 1; i < points.length; i += 1) {
+        const prev = points[i - 1];
+        const cur = points[i];
+        const width = cur.fpr - prev.fpr;
+        const area = width * (prev.tpr + cur.tpr) / 2;
+        auc += area;
+        if (width > 0) {
+          parts.push({ prev, cur, width, area });
+        }
+      }
+      return { auc, parts };
+    }
+
+    function getPairwiseAuc(samples) {
+      const positives = samples.filter(sample => sample.label === 1);
+      const negatives = samples.filter(sample => sample.label === 0);
+      let wins = 0;
+      let ties = 0;
+      positives.forEach(pos => {
+        negatives.forEach(neg => {
+          if (pos.score > neg.score) wins += 1;
+          if (pos.score === neg.score) ties += 1;
+        });
+      });
+      const totalPairs = positives.length * negatives.length;
+      const auc = totalPairs ? (wins + 0.5 * ties) / totalPairs : 0;
+      return { positives: positives.length, negatives: negatives.length, wins, ties, totalPairs, auc };
+    }
+
+    function renderTabs() {
+      els.scenarioTabs.innerHTML = Object.entries(scenarios).map(([key, item]) => {
+        const active = key === state.scenarioKey ? " active" : "";
+        return `<button class="tab${active}" type="button" data-scenario="${key}">${item.name}</button>`;
+      }).join("");
+
+      els.modelTabs.innerHTML = Object.entries(modelTransforms).map(([key, item]) => {
+        const active = key === state.modelKey ? " active" : "";
+        return `<button class="tab${active}" type="button" data-model="${key}">${item.name}</button>`;
+      }).join("");
+    }
+
+    function renderScenario() {
+      const scenario = scenarios[state.scenarioKey];
+      els.scenarioPanel.innerHTML = `
+        <div class="scenario-title">${scenario.name}</div>
+        <p>${scenario.risk}</p>
+        <p class="subtle">${scenario.recommendation}</p>
+        <div class="scenario-meta">
+          ${scenario.tags.map((tag, index) => `<span class="tag ${index === 1 ? "green" : index === 2 ? "amber" : ""}">${tag}</span>`).join("")}
+        </div>
+      `;
+    }
+
+    function renderModelSummary(samples, auc) {
+      const positives = samples.filter(sample => sample.label === 1);
+      const negatives = samples.filter(sample => sample.label === 0);
+      const avgPos = positives.reduce((sum, sample) => sum + sample.score, 0) / positives.length;
+      const avgNeg = negatives.reduce((sum, sample) => sum + sample.score, 0) / negatives.length;
+      const model = modelTransforms[state.modelKey];
+
+      const rows = [
+        ["正类平均分", avgPos],
+        ["负类平均分", avgNeg],
+        ["AUC", auc]
+      ];
+
+      els.modelBars.innerHTML = rows.map(([label, value]) => `
+        <div class="bar-row">
+          <span>${label}</span>
+          <div class="bar-track"><div class="bar-fill" style="width: ${clamp(value * 100, 0, 100)}%;"></div></div>
+          <strong>${fmt(value, 2)}</strong>
+        </div>
+      `).join("");
+      els.modelSummary.textContent = `${model.summary} 当前模型的排序解释 AUC 为 ${fmt(auc, 3)}。`;
+    }
+
+    function renderSampleStrip(samples) {
+      const scenario = scenarios[state.scenarioKey];
+      const thresholdLeft = `${state.threshold * 100}%`;
+      els.thresholdLine.style.left = thresholdLeft;
+
+      els.sampleStrip.querySelectorAll(".sample-dot, .sample-label").forEach(node => node.remove());
+      const lanes = [72, 118, 164];
+      const sorted = [...samples].sort((a, b) => b.score - a.score);
+      sorted.forEach((sample, index) => {
+        const left = `${sample.score * 100}%`;
+        const top = lanes[index % lanes.length];
+        const predicted = sample.score >= state.threshold;
+        const dot = document.createElement("div");
+        dot.className = [
+          "sample-dot",
+          sample.label === 1 ? "positive" : "negative",
+          predicted ? "predicted" : "not-predicted"
+        ].join(" ");
+        dot.style.left = left;
+        dot.style.top = `${top}px`;
+        dot.title = `${sample.id}：${sample.description}，${sample.label ? scenario.positive : scenario.negative}，分数 ${fmt(sample.score)}`;
+        dot.textContent = sample.id.replace(/\D/g, "");
+
+        const label = document.createElement("div");
+        label.className = "sample-label";
+        label.style.left = left;
+        label.style.top = `${top + 25}px`;
+        label.textContent = fmt(sample.score);
+
+        els.sampleStrip.appendChild(dot);
+        els.sampleStrip.appendChild(label);
+      });
+    }
+
+    function renderConfusion(confusion) {
+      const scenario = scenarios[state.scenarioKey];
+      els.confusionMatrix.innerHTML = `
+        <div class="matrix-cell header"></div>
+        <div class="matrix-cell header">真实正类<br>${scenario.positive}</div>
+        <div class="matrix-cell header">真实负类<br>${scenario.negative}</div>
+        <div class="matrix-cell axis">预测正类<br>${scenario.action}</div>
+        <div class="matrix-cell good"><span class="matrix-value">${confusion.tp}</span>TP：抓对了正类</div>
+        <div class="matrix-cell bad"><span class="matrix-value">${confusion.fp}</span>FP：误报了负类</div>
+        <div class="matrix-cell axis">预测负类<br>不${scenario.action}</div>
+        <div class="matrix-cell bad"><span class="matrix-value">${confusion.fn}</span>FN：漏掉了正类</div>
+        <div class="matrix-cell good"><span class="matrix-value">${confusion.tn}</span>TN：放过了负类</div>
+      `;
+    }
+
+    function renderMetrics(confusion, rates) {
+      const cards = [
+        ["TPR", rates.tpr, "正类中抓到了多少，也叫 Recall"],
+        ["FPR", rates.fpr, "负类中误报了多少，ROC 横轴"],
+        ["Precision", rates.precision, "预测为正类里有多少是真的"],
+        ["Accuracy", rates.accuracy, "所有样本中预测正确的比例"]
+      ];
+      els.metricCards.innerHTML = cards.map(([label, value, desc]) => `
+        <div class="metric">
+          <strong>${pct(value)}</strong>
+          <span>${label}<br>${desc}</span>
+        </div>
+      `).join("");
+
+      els.formulaPanel.innerHTML = `
+        <div class="formula"><code>TPR = TP / (TP + FN)</code> = ${confusion.tp} / (${confusion.tp} + ${confusion.fn}) = ${fmt(rates.tpr, 3)}</div>
+        <div class="formula"><code>FPR = FP / (FP + TN)</code> = ${confusion.fp} / (${confusion.fp} + ${confusion.tn}) = ${fmt(rates.fpr, 3)}</div>
+        <div class="formula"><code>Precision = TP / (TP + FP)</code> = ${confusion.tp} / (${confusion.tp} + ${confusion.fp}) = ${fmt(rates.precision, 3)}</div>
+        <div class="formula"><code>Accuracy = (TP + TN) / 全部样本</code> = (${confusion.tp} + ${confusion.tn}) / ${rates.positives + rates.negatives} = ${fmt(rates.accuracy, 3)}</div>
+      `;
+    }
+
+    function renderCoach(confusion, rates) {
+      const scenario = scenarios[state.scenarioKey];
+      const predictedPositive = confusion.tp + confusion.fp;
+      const predictedNegative = confusion.tn + confusion.fn;
+      const falseTone = confusion.fp > confusion.fn
+        ? `当前主要代价偏向误报：有 ${confusion.fp} 个${scenario.negative}被${scenario.action}。`
+        : confusion.fn > confusion.fp
+          ? `当前主要代价偏向漏报：有 ${confusion.fn} 个${scenario.positive}没有被${scenario.action}。`
+          : `当前误报和漏报数量相同，都是 ${confusion.fp} 个。`;
+      els.coachPanel.innerHTML = `
+        <div class="coach-title">把当前阈值翻译成人话</div>
+        <div>阈值 ${fmt(state.threshold)} 的意思是：分数达到 ${fmt(state.threshold)} 或更高的样本会被标成“正类”。在当前场景里，就是会被${scenario.action}。</div>
+        <div class="mini-kpis">
+          <div class="mini-kpi"><strong>${predictedPositive}</strong>个样本被预测为正类</div>
+          <div class="mini-kpi"><strong>${predictedNegative}</strong>个样本被预测为负类</div>
+          <div class="mini-kpi"><strong>${fmt(rates.tpr, 2)}, ${fmt(rates.fpr, 2)}</strong>ROC 点坐标是 (FPR, TPR)</div>
+        </div>
+        <div>${falseTone}</div>
+      `;
+    }
+
+    function renderRocChart(points, currentRates, auc) {
+      const width = 640;
+      const height = 500;
+      const pad = { left: 62, right: 28, top: 34, bottom: 58 };
+      const plotW = width - pad.left - pad.right;
+      const plotH = height - pad.top - pad.bottom;
+      const x = value => pad.left + value * plotW;
+      const y = value => pad.top + (1 - value) * plotH;
+      const path = points.map((point, index) => `${index === 0 ? "M" : "L"} ${x(point.fpr)} ${y(point.tpr)}`).join(" ");
+      const areaPath = `${path} L ${x(1)} ${y(0)} L ${x(0)} ${y(0)} Z`;
+      const grid = [0, 0.25, 0.5, 0.75, 1].map(value => `
+        <line x1="${x(value)}" y1="${y(0)}" x2="${x(value)}" y2="${y(1)}" stroke="#e4e9f2" />
+        <line x1="${x(0)}" y1="${y(value)}" x2="${x(1)}" y2="${y(value)}" stroke="#e4e9f2" />
+        <text x="${x(value)}" y="${height - 24}" text-anchor="middle" fill="#607087" font-size="13">${fmt(value, 2)}</text>
+        <text x="${pad.left - 14}" y="${y(value) + 4}" text-anchor="end" fill="#607087" font-size="13">${fmt(value, 2)}</text>
+      `).join("");
+
+      els.rocChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      els.rocChart.innerHTML = `
+        <rect x="0" y="0" width="${width}" height="${height}" fill="#fbfcff" />
+        ${grid}
+        <line x1="${x(0)}" y1="${y(0)}" x2="${x(1)}" y2="${y(1)}" stroke="#9aa8bd" stroke-dasharray="8 8" stroke-width="2" />
+        <path d="${areaPath}" fill="rgba(37, 99, 235, 0.12)" />
+        <path d="${path}" fill="none" stroke="#2563eb" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" />
+        ${points.map(point => `<circle cx="${x(point.fpr)}" cy="${y(point.tpr)}" r="4" fill="#2563eb" />`).join("")}
+        <circle cx="${x(currentRates.fpr)}" cy="${y(currentRates.tpr)}" r="9" fill="#ffffff" stroke="#dc2626" stroke-width="4" />
+        <text x="${x(currentRates.fpr) + 12}" y="${y(currentRates.tpr) - 12}" fill="#9f1239" font-size="14" font-weight="800">当前阈值</text>
+        <line x1="${x(0)}" y1="${y(0)}" x2="${x(1)}" y2="${y(0)}" stroke="#34435a" stroke-width="2" />
+        <line x1="${x(0)}" y1="${y(0)}" x2="${x(0)}" y2="${y(1)}" stroke="#34435a" stroke-width="2" />
+        <text x="${pad.left + plotW / 2}" y="${height - 8}" text-anchor="middle" fill="#34435a" font-size="15" font-weight="800">FPR：负类被误报的比例</text>
+        <text transform="translate(18 ${pad.top + plotH / 2}) rotate(-90)" text-anchor="middle" fill="#34435a" font-size="15" font-weight="800">TPR：正类被抓到的比例</text>
+        <text x="${width - 30}" y="28" text-anchor="end" fill="#111827" font-size="18" font-weight="900">AUC = ${fmt(auc, 3)}</text>
+      `;
+
+      els.rocNote.textContent = `红圈是当前阈值 ${fmt(state.threshold)} 对应的点：FPR = ${fmt(currentRates.fpr, 3)}，TPR = ${fmt(currentRates.tpr, 3)}。虚线是随机排序模型，曲线越靠近左上角越好。`;
+    }
+
+    function renderAucText(aucResult, pairwise) {
+      const firstWide = aucResult.parts.find(part => part.width > 0) || aucResult.parts[0];
+      const formula = firstWide
+        ? `例如其中一段：ΔFPR = ${fmt(firstWide.width, 3)}，两端 TPR = ${fmt(firstWide.prev.tpr, 3)} 和 ${fmt(firstWide.cur.tpr, 3)}，面积 = ${fmt(firstWide.width, 3)} × (${fmt(firstWide.prev.tpr, 3)} + ${fmt(firstWide.cur.tpr, 3)}) / 2 = ${fmt(firstWide.area, 3)}。`
+        : "当前样本无法形成有效面积段。";
+
+      els.aucAreaText.textContent = `把 ROC 曲线下方切成多个小梯形再相加，当前 AUC = ${fmt(aucResult.auc, 3)}。`;
+      els.aucRankText.textContent = `当前有 ${pairwise.positives} 个正样本、${pairwise.negatives} 个负样本，共 ${pairwise.totalPairs} 对正负样本；正样本分数更高的有 ${pairwise.wins} 对，平分 ${pairwise.ties} 对，所以排序 AUC = ${fmt(pairwise.auc, 3)}。`;
+      els.aucFormula.innerHTML = `<code>梯形面积 = ΔFPR × (TPR_left + TPR_right) / 2</code><br>${formula}`;
+    }
+
+    function renderSweepTable(samples) {
+      const rows = getSweepRows(samples);
+      els.sweepTable.innerHTML = rows.map(row => {
+        const current = Math.abs(row.threshold - state.threshold) < 0.035 ? " class=\"current\"" : "";
+        return `
+          <tr${current}>
+            <td>${row.label}</td>
+            <td>${row.confusion.tp}</td>
+            <td>${row.confusion.fp}</td>
+            <td>${row.confusion.fn}</td>
+            <td>${row.confusion.tn}</td>
+            <td>${fmt(row.rates.tpr, 3)}</td>
+            <td>${fmt(row.rates.fpr, 3)}</td>
+            <td>(${fmt(row.rates.fpr, 2)}, ${fmt(row.rates.tpr, 2)})</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderSampleTable(samples) {
+      const scenario = scenarios[state.scenarioKey];
+      const sorted = [...samples].sort((a, b) => b.score - a.score);
+      els.sampleTable.innerHTML = sorted.map(sample => {
+        const predicted = sample.score >= state.threshold;
+        let status = "TN";
+        if (sample.label === 1 && predicted) status = "TP";
+        if (sample.label === 0 && predicted) status = "FP";
+        if (sample.label === 1 && !predicted) status = "FN";
+        if (sample.label === 0 && !predicted) status = "TN";
+        const label = sample.label === 1 ? scenario.positive : scenario.negative;
+        const prediction = predicted ? `预测正类：${scenario.action}` : "预测负类";
+        return `
+          <tr>
+            <td><strong>${sample.id}</strong></td>
+            <td>${sample.description}</td>
+            <td>${label}</td>
+            <td>${fmt(sample.score)}</td>
+            <td>${prediction}</td>
+            <td><span class="status ${status.toLowerCase()}">${status}</span></td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function render() {
+      const samples = getSamples();
+      const confusion = getConfusion(samples, state.threshold);
+      const rates = getRates(confusion);
+      const rocPoints = getRocPoints(samples);
+      const aucResult = getAuc(rocPoints);
+      const pairwise = getPairwiseAuc(samples);
+
+      renderTabs();
+      renderScenario();
+      renderModelSummary(samples, pairwise.auc);
+      renderSampleStrip(samples);
+      renderConfusion(confusion);
+      renderMetrics(confusion, rates);
+      renderCoach(confusion, rates);
+      renderRocChart(rocPoints, rates, aucResult.auc);
+      renderAucText(aucResult, pairwise);
+      renderSweepTable(samples);
+      renderSampleTable(samples);
+
+      els.thresholdValue.value = fmt(state.threshold);
+      els.thresholdValue.textContent = fmt(state.threshold);
+      els.thresholdRange.value = state.threshold;
+    }
+
+    els.scenarioTabs.addEventListener("click", event => {
+      const button = event.target.closest("[data-scenario]");
+      if (!button) return;
+      state.scenarioKey = button.dataset.scenario;
+      state.threshold = scenarios[state.scenarioKey].threshold;
+      render();
+    });
+
+    els.modelTabs.addEventListener("click", event => {
+      const button = event.target.closest("[data-model]");
+      if (!button) return;
+      state.modelKey = button.dataset.model;
+      render();
+    });
+
+    els.thresholdRange.addEventListener("input", event => {
+      state.threshold = Number(event.target.value);
+      render();
+    });
+
+    els.resetBtn.addEventListener("click", () => {
+      state.scenarioKey = "fraud";
+      state.modelKey = "good";
+      state.threshold = scenarios.fraud.threshold;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

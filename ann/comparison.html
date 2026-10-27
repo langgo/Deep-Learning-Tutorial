@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANN 算法场景选型对比</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-light: #dbeafe;
+    --good: #10b981;
+    --warn: #f59e0b;
+    --bad: #ef4444;
+    --code-bg: #f3f4f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  .nav {
+    background: white;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+  }
+  .nav a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.95rem;
+  }
+  .nav a:hover { text-decoration: underline; }
+  header {
+    background: linear-gradient(135deg, #0f766e 0%, #2563eb 100%);
+    color: white;
+    padding: 50px 40px 35px;
+    text-align: center;
+  }
+  header h1 { margin: 0 0 8px; font-size: 2rem; }
+  header p { margin: 0; opacity: 0.9; }
+  .container {
+    max-width: 1250px;
+    margin: 0 auto;
+    padding: 30px 20px 80px;
+  }
+  section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+  h2 {
+    color: var(--accent);
+    margin: 0 0 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--accent-light);
+    font-size: 1.35rem;
+  }
+  h3 {
+    color: #111827;
+    margin: 20px 0 8px;
+    font-size: 1.1rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.92rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: #f9fafb;
+    font-weight: 600;
+    color: #374151;
+    position: sticky;
+    top: 0;
+  }
+  tr:hover td { background: #fafbfc; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: white;
+  }
+  .badge.good { background: var(--good); }
+  .badge.mid { background: var(--warn); }
+  .badge.bad { background: var(--bad); }
+  .badge.na { background: #9ca3af; }
+  .scenario {
+    background: linear-gradient(135deg, #eff6ff 0%, #ede9fe 100%);
+    border-left: 4px solid var(--accent);
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-radius: 4px;
+  }
+  .scenario-title {
+    font-weight: 600;
+    font-size: 1.05rem;
+    margin-bottom: 6px;
+    color: #1e40af;
+  }
+  .recommend {
+    display: inline-block;
+    background: var(--good);
+    color: white;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-right: 6px;
+  }
+  code {
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 0.88em;
+  }
+  .kv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+    margin: 16px 0;
+  }
+  .kv-card {
+    background: #fbfcfe;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .kv-card h4 {
+    margin: 0 0 8px;
+    color: var(--accent);
+    font-size: 1rem;
+  }
+  .kv-card p {
+    margin: 0;
+    color: #4b5563;
+    font-size: 0.9rem;
+  }
+  .decision-tree {
+    background: #fefce8;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 18px 22px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 0.9rem;
+    line-height: 1.9;
+    white-space: pre-wrap;
+    color: #713f12;
+  }
+  .decision-tree b { color: #92400e; }
+  .footer {
+    margin-top: 30px;
+    padding: 20px;
+    background: #f9fafb;
+    border-radius: 8px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="nav"><a href="./index.html">← 返回目录</a></div>
+
+<header>
+  <h1>ANN 算法场景选型对比</h1>
+  <p>综合数据规模、维度、内存预算、召回要求、更新频率的实战选型指南</p>
+</header>
+
+<div class="container">
+
+  <section>
+    <h2>一、总体特性对比表</h2>
+    <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;">
+      评分：<span class="badge good">优</span> <span class="badge mid">中</span>
+      <span class="badge bad">弱</span> <span class="badge na">不适用</span>
+    </p>
+    <div style="overflow-x: auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>算法</th>
+          <th>类型</th>
+          <th>召回率</th>
+          <th>查询延迟</th>
+          <th>内存占用</th>
+          <th>构建速度</th>
+          <th>支持更新</th>
+          <th>高维(&gt;100)</th>
+          <th>十亿级</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="./1-tree-based/kd-tree.html"><b>KD-Tree</b></a></td>
+          <td>树</td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优(低维)</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge bad">弱</span></td>
+          <td><span class="badge bad">弱</span></td>
+        </tr>
+        <tr>
+          <td><a href="./1-tree-based/ball-tree.html"><b>Ball Tree</b></a></td>
+          <td>树</td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge bad">弱</span></td>
+        </tr>
+        <tr>
+          <td><a href="./1-tree-based/annoy.html"><b>Annoy</b></a></td>
+          <td>树森林</td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优(mmap)</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge bad">只读</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中</span></td>
+        </tr>
+        <tr>
+          <td><a href="./2-lsh/classic-lsh.html"><b>Classic LSH</b></a></td>
+          <td>哈希</td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+        </tr>
+        <tr>
+          <td><a href="./2-lsh/minhash.html"><b>MinHash</b></a></td>
+          <td>哈希</td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge na">Jaccard</span></td>
+          <td><span class="badge good">优</span></td>
+        </tr>
+        <tr>
+          <td><a href="./2-lsh/simhash.html"><b>SimHash</b></a></td>
+          <td>哈希</td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge na">文本</span></td>
+          <td><span class="badge good">优</span></td>
+        </tr>
+        <tr>
+          <td><a href="./3-quantization/pq.html"><b>PQ</b></a></td>
+          <td>量化</td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">极优(16-64x)</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge bad">重建</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+        </tr>
+        <tr>
+          <td><a href="./3-quantization/opq.html"><b>OPQ</b></a></td>
+          <td>量化</td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">极优</span></td>
+          <td><span class="badge bad">较慢</span></td>
+          <td><span class="badge bad">重建</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+        </tr>
+        <tr>
+          <td><a href="./3-quantization/ivf-pq.html"><b>IVF-PQ</b></a></td>
+          <td>倒排+量化</td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">极优</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">极优</span></td>
+        </tr>
+        <tr>
+          <td><a href="./3-quantization/sq.html"><b>SQ</b></a></td>
+          <td>量化</td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中(4x)</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中</span></td>
+        </tr>
+        <tr style="background: #fef3c7;">
+          <td><a href="./4-graph-based/hnsw.html"><b>HNSW ★</b></a></td>
+          <td>图</td>
+          <td><span class="badge good">极优</span></td>
+          <td><span class="badge good">极优</span></td>
+          <td><span class="badge bad">大</span></td>
+          <td><span class="badge bad">慢</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中(内存瓶颈)</span></td>
+        </tr>
+        <tr>
+          <td><a href="./4-graph-based/nsg.html"><b>NSG</b></a></td>
+          <td>图</td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge bad">慢</span></td>
+          <td><span class="badge bad">不友好</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中</span></td>
+        </tr>
+        <tr>
+          <td><a href="./4-graph-based/diskann.html"><b>DiskANN</b></a></td>
+          <td>图+磁盘</td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中(ms)</span></td>
+          <td><span class="badge good">优(SSD)</span></td>
+          <td><span class="badge bad">很慢</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">极优</span></td>
+        </tr>
+        <tr>
+          <td><a href="./4-graph-based/spann.html"><b>SPANN</b></a></td>
+          <td>图+磁盘</td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+        </tr>
+        <tr style="background: #fef3c7;">
+          <td><a href="./5-hybrid/ivf-hnsw.html"><b>IVF-HNSW</b></a></td>
+          <td>混合</td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">极优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">极优</span></td>
+        </tr>
+        <tr>
+          <td><a href="./5-hybrid/scann.html"><b>ScaNN ★</b></a></td>
+          <td>混合</td>
+          <td><span class="badge good">极优</span></td>
+          <td><span class="badge good">极优</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge mid">中</span></td>
+          <td><span class="badge good">优</span></td>
+          <td><span class="badge good">优</span></td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>二、按场景推荐</h2>
+
+    <div class="scenario">
+      <div class="scenario-title">场景 1：百万级向量，内存充足，追求极致召回和 QPS（在线推荐/搜索）</div>
+      <div>
+        <span class="recommend">首选</span><b>HNSW</b> —— 召回 99% @ p99 &lt; 5ms，向量数据库事实标准。
+        <br><span class="recommend">备选</span><b>NSG</b> —— 单层图，内存比 HNSW 省约 30%，但构建更慢。
+      </div>
+      <p style="margin: 8px 0 0; color: var(--muted); font-size: 0.9rem;">
+        典型内存开销：128d × 1M × 4B (向量) + M×8B×N (图) ≈ 800MB（M=32）
+      </p>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">场景 2：亿级以上向量，内存受限，可接受召回 90%+</div>
+      <div>
+        <span class="recommend">首选</span><b>IVF-PQ</b> —— Faiss 主力方案，内存压缩 16-64x。
+        <br><span class="recommend">进阶</span><b>IVF-HNSW-PQ</b> —— HNSW 加速粗聚类，PQ 压缩存储，最佳综合。
+      </div>
+      <p style="margin: 8px 0 0; color: var(--muted); font-size: 0.9rem;">
+        128d × 1B → 原始 512GB；IVF-PQ (M=16, k=256) → 16GB
+      </p>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">场景 3：单机十亿级向量，成本敏感，SSD 部署</div>
+      <div>
+        <span class="recommend">首选</span><b>DiskANN</b> —— 图存 SSD，单机十亿级，微软 Bing 生产验证。
+        <br><span class="recommend">备选</span><b>SPANN</b> —— 内存头节点 + 磁盘 posting，Bing 生产使用。
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">场景 4：静态数据集，只读服务，追求上线速度</div>
+      <div>
+        <span class="recommend">首选</span><b>Annoy</b> —— Spotify 出品，构建后 mmap 加载秒级，只读。
+        <br><span class="recommend">备选</span><b>Faiss IndexFlatL2</b>（小规模）—— 精确 kNN 兜底。
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">场景 5：文本/文档去重（Jaccard 或 编辑距离近似）</div>
+      <div>
+        <span class="recommend">首选</span><b>MinHash + LSH</b> —— Jaccard 相似度，海量集合去重经典方案。
+        <br><span class="recommend">首选</span><b>SimHash</b> —— Google 网页去重经典方案，64bit 指纹 + 汉明距离。
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">场景 6：GPU 加速（超大规模离线检索/训练）</div>
+      <div>
+        <span class="recommend">首选</span><b>Faiss GPU (IVF-Flat / IVF-PQ)</b> —— NVIDIA V100/A100 可达 100 万 QPS。
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">场景 7：低维（≤20），精确 K-NN 场景（GIS、传感器等）</div>
+      <div>
+        <span class="recommend">首选</span><b>KD-Tree / Ball Tree</b> —— sklearn <code>NearestNeighbors</code> 默认，
+        低维近似最优。
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">场景 8：极致 SOTA 召回，Google 内部生态</div>
+      <div>
+        <span class="recommend">首选</span><b>ScaNN</b> —— ICML 2020，ann-benchmarks GloVe/SIFT 领先。
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">场景 9：高频动态更新（如实时推荐、Feed 索引）</div>
+      <div>
+        <span class="recommend">首选</span><b>HNSW</b>（支持 insert）
+        <br><span class="recommend">避免</span><b>PQ / OPQ / Annoy</b>（需要重建）
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>三、决策树：三分钟选出算法</h2>
+    <div class="decision-tree">
+问题 1: 数据规模有多大？
+
+├─ &lt; 10万         → <b>暴力搜索 (FlatL2)</b> 或 <b>KD-Tree</b>（低维）
+├─ 10万 ~ 1000万   → 进入问题 2
+├─ 1亿 ~ 10亿      → 进入问题 3
+└─ &gt; 10亿         → <b>DiskANN / SPANN</b>（SSD） 或 <b>Faiss IVF-PQ</b>
+
+问题 2: 内存是否宽裕？
+
+├─ 内存充足 → <b>HNSW</b>（推荐）或 <b>NSG</b>
+├─ 内存中等 → <b>IVF-Flat</b> 或 <b>Annoy</b>
+└─ 内存紧张 → <b>IVF-PQ</b> 或 <b>HNSW-PQ</b>
+
+问题 3: 查询延迟目标？
+
+├─ p99 &lt; 5ms      → <b>HNSW / IVF-HNSW-PQ / ScaNN</b>
+├─ p99 &lt; 50ms     → <b>DiskANN / SPANN</b>
+└─ 离线批量        → <b>IVF-PQ (Faiss GPU)</b>
+
+问题 4: 是否高频更新？
+
+├─ 支持在线 insert → <b>HNSW</b>
+├─ 每小时重建      → <b>IVF-PQ</b>
+└─ 静态只读        → <b>Annoy</b> 或 <b>ScaNN</b>
+
+问题 5: 距离度量？
+
+├─ L2 / 内积 / 余弦 → 上述所有算法
+├─ Jaccard         → <b>MinHash + LSH</b>
+├─ 汉明距离         → <b>SimHash</b> / <b>BinaryFlat</b>
+└─ 编辑距离         → LSH-家族的编辑距离 LSH，或专用算法
+    </div>
+  </section>
+
+  <section>
+    <h2>四、主流开源库映射</h2>
+    <div class="kv-grid">
+      <div class="kv-card">
+        <h4>Faiss (Meta)</h4>
+        <p>IndexFlat, IVF-Flat, IVF-PQ, IVFADC, HNSW, HNSW-PQ, PQ, OPQ, SQ, ScaNN 兼容。GPU 支持完整。工业界通用首选。</p>
+      </div>
+      <div class="kv-card">
+        <h4>hnswlib</h4>
+        <p>HNSW 官方参考实现（Malkov 团队维护），纯 C++ + Python 绑定。Milvus / Qdrant / Weaviate 底层引用；Elasticsearch 使用 Lucene 自研 Java HNSW（并非依赖 hnswlib）。</p>
+      </div>
+      <div class="kv-card">
+        <h4>Annoy (Spotify)</h4>
+        <p>随机投影树森林，mmap 只读，Python 一等公民。适合静态数据。</p>
+      </div>
+      <div class="kv-card">
+        <h4>ScaNN (Google)</h4>
+        <p>各向异性量化，ann-benchmarks 领跑。TensorFlow 生态。</p>
+      </div>
+      <div class="kv-card">
+        <h4>DiskANN (Microsoft)</h4>
+        <p>Vamana 图存 SSD，单机十亿级低成本。C++ 实现。</p>
+      </div>
+      <div class="kv-card">
+        <h4>NMSLIB</h4>
+        <p>非度量空间通用库，HNSW/NSW/SW-graph 多种图算法。学术研究常用。</p>
+      </div>
+      <div class="kv-card">
+        <h4>向量数据库</h4>
+        <p>Milvus / Qdrant / Weaviate / pgvector / Elasticsearch(Lucene) / Vespa 均以 HNSW 为主力索引；Redis Search 支持 FLAT 与 HNSW 两种，需显式选择。</p>
+      </div>
+      <div class="kv-card">
+        <h4>datasketch (Python)</h4>
+        <p>MinHash / MinHash-LSH / HyperLogLog / SimHash 等草图算法参考库。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>五、常见误区与经验</h2>
+    <h3>1) "HNSW 一定最快最好"？</h3>
+    <p>
+      HNSW 内存开销大，索引大小是原始向量的 1.5-2 倍。数据规模超过内存限制时，DiskANN/SPANN/IVF-PQ 更合适。
+      此外 HNSW 构建耗时（O(N log N)），千万级要几十分钟。
+    </p>
+    <h3>2) "PQ 一定损失精度"？</h3>
+    <p>
+      正常配置（M=16, k=256）下 128 维向量的召回损失通常 2-5%。加上 OPQ 或 reordering (精排前 top-100 用原向量重排)，
+      基本可以恢复到无损。IVF-PQ + reordering 是十亿级场景平衡精度和内存的最佳实践。
+    </p>
+    <h3>3) "召回率数字可信吗"？</h3>
+    <p>
+      Benchmark（如 ann-benchmarks）常用 SIFT1M / GloVe / GIST 等数据集，与真实业务向量分布可能不同。
+      务必在<b>自己的数据</b>上测试召回-延迟曲线。
+    </p>
+    <h3>4) "调参有什么套路"？</h3>
+    <p>
+      HNSW 建议 <code>M=16-48, efConstruction=200-500, efSearch=50-500</code>；
+      IVF-PQ 建议 <code>nlist ≈ √N, nprobe = nlist/50, M = D/4</code>；召回不够时先加大 efSearch/nprobe，
+      再考虑改结构。
+    </p>
+    <h3>5) "向量归一化重要吗"？</h3>
+    <p>
+      对于余弦相似度，先做 L2 归一化再用内积或 L2 距离都可以（数学等价）。归一化后所有向量在单位球面上，
+      量化误差分布更均匀，PQ/OPQ 效果显著提升。
+    </p>
+  </section>
+
+  <section>
+    <h2>六、参考基准（供参考）</h2>
+    <p style="color: var(--muted); font-size: 0.9rem;">
+      注：以下数据为 <b>示意性数量级</b>（并非直接抓取自 ann-benchmarks），依 SIFT1M / 128d / recall@10≈0.95 目标下的常见观察给出。
+      具体数值随硬件（CPU 频率、SIMD、内存带宽）与实现（Faiss / hnswlib / 官方 impl）差异可达 2-5 倍，务必自行 benchmark。
+      最新权威数据请参考 <code>ann-benchmarks.com</code>。
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>算法</th>
+          <th>QPS (single-thread)</th>
+          <th>索引大小</th>
+          <th>构建时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>HNSW (M=32)</td><td>~15,000</td><td>~800 MB</td><td>~10 min</td></tr>
+        <tr><td>ScaNN</td><td>~18,000</td><td>~250 MB</td><td>~15 min</td></tr>
+        <tr><td>IVF-PQ (nlist=4096, M=16)</td><td>~8,000</td><td>~25 MB</td><td>~5 min</td></tr>
+        <tr><td>Annoy (n_trees=100)</td><td>~5,000</td><td>~600 MB</td><td>~3 min</td></tr>
+        <tr><td>NSG</td><td>~12,000</td><td>~550 MB</td><td>~25 min</td></tr>
+        <tr><td>Faiss IndexFlatL2 (精确)</td><td>~50 (基线)</td><td>~500 MB</td><td>0 s</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <div class="footer">
+    <p>← <a href="./index.html" style="color: var(--accent);">返回目录</a> ｜ 每个算法均有专属可视化演示页，可直接体验参数调整效果</p>
+  </div>
+
+</div>
+
+</body>
+</html>

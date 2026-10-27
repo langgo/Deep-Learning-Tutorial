@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PQ - 乘积量化 (Product Quantization)</title>
+<style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --border: #e3e6ee;
+  --text: #1f2933;
+  --muted: #6b7280;
+  --primary: #4f46e5;
+  --primary-light: #eef2ff;
+  --accent: #059669;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --code-bg: #f3f4f6;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+}
+.top-nav {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.top-nav a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+.top-nav a:hover { text-decoration: underline; }
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+h1 { font-size: 28px; margin: 0 0 8px 0; }
+h2 {
+  font-size: 22px;
+  margin: 32px 0 12px 0;
+  padding-left: 12px;
+  border-left: 4px solid var(--primary);
+}
+h3 {
+  font-size: 18px;
+  margin: 20px 0 10px 0;
+  color: var(--primary);
+}
+p, li { font-size: 15px; color: var(--text); }
+.subtitle { color: var(--muted); font-size: 15px; margin-bottom: 20px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 16px 0;
+  box-shadow: var(--shadow);
+}
+.card.blue { background: #f0f7ff; border-color: #bfdbfe; }
+.card.green { background: #ecfdf5; border-color: #a7f3d0; }
+.card.yellow { background: #fffbeb; border-color: #fcd34d; }
+.formula {
+  background: var(--code-bg);
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 14px;
+  overflow-x: auto;
+  margin: 8px 0;
+  border-left: 3px solid var(--primary);
+}
+code {
+  background: var(--code-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 13px;
+}
+pre {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.control label {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.control .val {
+  color: var(--primary);
+  font-weight: 600;
+  font-family: "SF Mono", Consolas, monospace;
+}
+.control input[type="range"] {
+  width: 100%;
+}
+.btn {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+.btn:hover { background: #4338ca; }
+.btn.secondary {
+  background: white;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+.btn.secondary:hover { background: var(--primary-light); }
+.btn.warn { background: var(--warn); }
+.btn.warn:hover { background: #b45309; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+canvas {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  display: block;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+  font-size: 14px;
+}
+th, td {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+th {
+  background: #f9fafb;
+  font-weight: 600;
+}
+tr:nth-child(even) td { background: #fafbfc; }
+.pros-cons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.pros-cons ul { padding-left: 20px; }
+.pros-cons .pros li { color: var(--accent); }
+.pros-cons .cons li { color: var(--danger); }
+.step-box {
+  padding: 12px 16px;
+  background: var(--primary-light);
+  border-radius: 6px;
+  min-height: 60px;
+  margin: 12px 0;
+  font-size: 14px;
+}
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--primary-light);
+  color: var(--primary);
+  border-radius: 12px;
+  font-size: 12px;
+  margin-right: 4px;
+}
+.viz-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  margin: 16px 0;
+}
+.viz-block {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: #fafbfc;
+}
+.viz-block h4 {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+.codebook-table {
+  font-size: 12px;
+}
+.codebook-table td { padding: 4px 8px; }
+.hl {
+  background: #fff59d;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+.prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+.glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+.glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+.glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+.glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+.new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.pitfall h4 { color: #92400e; margin-top: 0; }
+.next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+.next-steps a { color: #047857; font-weight: 600; }
+.intuition-box { background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+.intuition-box h4 { color: #6d28d9; margin-top: 0; }
+.symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+.symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+.symbol-table th { background: #f9fafb; color: #374151; }
+</style>
+</head>
+<body>
+
+<div class="top-nav">
+  <div><strong>ANN 算法可视化</strong> · Product Quantization (PQ)</div>
+  <a href="../index.html">← 返回目录</a>
+</div>
+
+<div class="container">
+
+<h1>PQ · 乘积量化 (Product Quantization)</h1>
+<p class="subtitle">把一个长向量拆成若干短子向量，每段独立用小规模码本表示 —— 用极少的字节撑起海量向量的近似最近邻检索。</p>
+
+<div class="prereq-bar">
+  <b>前置阅读：</b>
+  <span class="pill">前置：K-Means 聚类基础 · <a href="sq.html" style="color:inherit;text-decoration:none">SQ（本类别入门）</a></span>
+  <span class="pill">建议顺序：<a href="sq.html" style="color:inherit;text-decoration:none">SQ</a> → PQ (当前) → <a href="ivf-pq.html" style="color:inherit;text-decoration:none">IVF-PQ</a> → <a href="opq.html" style="color:inherit;text-decoration:none">OPQ</a></span>
+</div>
+
+<details class="glossary">
+<summary>关键术语速查（点击展开）</summary>
+<dl>
+  <dt>K-Means</dt>
+  <dd>把 N 个点分成 k 组，每组用一个"组中心"代表。反复迭代：① 每个点归到最近中心 → ② 每个中心移到自己组的均值 → ③ 直到不再变化。</dd>
+  <dt>码本 codebook</dt>
+  <dd>K-Means 学到的 k 个中心的集合。PQ 里每段独立学一本码本，共 M 本。</dd>
+  <dt>码字 codeword / code</dt>
+  <dd>每个数据点在码本里对应的<b>索引编号</b>（0 ~ K−1）。PQ 编码 = M 个索引。</dd>
+  <dt>LUT（查找表 Look-Up Table）</dt>
+  <dd>查询到来时预计算的 M×K 表格 <code>LUT[m][k]</code>，之后每条数据距离 = M 次查表 + 加法。</dd>
+  <dt>子向量 subvector</dt>
+  <dd>把 D 维向量切成 M 段，每段是 d = D/M 维的子向量。</dd>
+  <dt>ADC（Asymmetric Distance Computation, 非对称距离计算）</dt>
+  <dd>查询侧保持原始浮点向量（不量化），数据侧用码字查表。适合"查询少、数据多"的场景。</dd>
+  <dt>SDC（Symmetric Distance Computation, 对称距离计算）</dt>
+  <dd>查询也量化，两边都查表。速度更快但误差更大。工业实践里 ADC 是默认选择。</dd>
+</dl>
+</details>
+
+<div class="new-user-tip">
+<b>新手引导 · 建议按顺序体验：</b>
+<ol style="margin:6px 0 0 20px">
+  <li>拉动 <b>M（段数）</b> 从 1 到 4，观察子空间数量的变化（M=1 相当于对整个向量做 K-Means，M=2 会看到 X 段和 Y 段分别独立聚类）。</li>
+  <li>拉动 <b>K（每段簇数）</b>从 4 到 16，观察格子密度和数据点被吸附到最近格子中心的过程。</li>
+  <li>点击 <b>【随机新查询点】</b> 或直接在画布上点击选一个查询位置。</li>
+  <li>看下方 <b>LUT 表</b>：每行是一段的查表值。再看"近似距离 vs 真实距离"，验证误差来源。</li>
+</ol>
+</div>
+
+<h2>一、直观理解</h2>
+<div class="card blue">
+<h3>类比：把长电话号码分成几段</h3>
+<p>假设有一个 12 位长号码 <code>138 5827 3941</code>：</p>
+<ul>
+  <li>如果给整个号码建"字典"，需要 10<sup>12</sup> 条记录 —— 显然不现实。</li>
+  <li>如果分成 3 段：<code>138</code>、<code>5827</code>、<code>3941</code>，每段各建一本"常用号码表"（比如各 256 条），
+      然后每段只用 <strong>1 字节 (log₂256=8 bit)</strong> 记录"我是第几号"就好。</li>
+  <li>整个号码只需 3 字节 存储，就近似还原原始号码。</li>
+</ul>
+<p>PQ 就是把这种思路搬到高维向量上：把 128 维向量切成 M=8 段，每段 16 维，每段独立 K-Means 得到 256 个"典型子向量"，
+用 <code>M × log₂K = 8 字节</code> 就能压缩表达一个 128 维 float32（原本要 128×4=512 字节，<strong>压缩 64 倍</strong>）。</p>
+</div>
+
+<div class="card green">
+<h3>为什么"分段量化"比"整体量化"好？</h3>
+<p>假设我们直接对 128 维向量做 K-Means 得到 K 个中心，要达到与分 8 段各 256 中心相同的表达能力，需要
+<code>K = 256⁸ ≈ 1.8 × 10¹⁹</code> 个中心 —— 完全无法枚举。</p>
+<p>PQ 的核心洞察：<strong>不同子空间基本独立</strong>（比如 128 维图像特征的前 16 维和后 16 维语义不相关），
+所以用"笛卡尔积码本"（Cartesian product codebook）能以 <code>M × K</code> 个中心表达 <code>K^M</code> 种组合。</p>
+</div>
+
+<h2>二、算法原理</h2>
+
+<div class="intuition-box">
+<h4>先补：K-Means 一分钟速讲</h4>
+<p><b>K-Means 做的事：</b>给你 N 个点，找 k 个中心，使得<b>每个点到最近中心的距离和</b>最小。</p>
+<ol style="margin:6px 0 0 20px">
+  <li><b>随机初始化</b> k 个中心。</li>
+  <li><b>分配</b>：每个点归到离它最近的中心。</li>
+  <li><b>更新</b>：每个中心移动到自己组的所有点的均值位置。</li>
+  <li>回到步骤 2，反复迭代到中心不再变化（一般 10~30 轮）。</li>
+</ol>
+<p style="margin-bottom:0">在 PQ 里，K-Means 用来<b>为每段子向量学一个 K 个中心的码本</b>；聚类完成后，每个数据点用"距离最近的中心编号"表示。</p>
+</div>
+
+<h3>符号速查表</h3>
+<table class="symbol-table">
+  <tr><th>符号</th><th>含义</th><th>典型取值</th></tr>
+  <tr><td>D</td><td>向量总维度</td><td>128</td></tr>
+  <tr><td>N</td><td>数据库向量数</td><td>10<sup>6</sup>（100 万）</td></tr>
+  <tr><td>M</td><td>子空间/段数</td><td>4 / 8 / 16</td></tr>
+  <tr><td>d = D/M</td><td>每段子向量维度</td><td>D=128, M=8 → d=16</td></tr>
+  <tr><td>K</td><td>每段码本大小</td><td>256（正好 1 字节）</td></tr>
+  <tr><td>C<sub>m</sub></td><td>第 m 段的码本，含 K 个中心 c<sub>m,k</sub></td><td>—</td></tr>
+  <tr><td>u<sub>m</sub></td><td>x 的第 m 段子向量</td><td>d 维</td></tr>
+  <tr><td>q<sub>m</sub>(x)</td><td>u<sub>m</sub> 落入的码字编号</td><td>0 ~ K−1</td></tr>
+  <tr><td>LUT[m][k]</td><td>查询向量第 m 段到 c<sub>m,k</sub> 的距离²</td><td>M×K 表</td></tr>
+</table>
+
+<p><b>本页统一基线：</b>下文分析以 <code>D=128, N=100 万, M=8, K=256</code> 为例，得到 8 字节/向量 → <b>8 MB 总内存</b>（相比原始 512 MB，压缩 64×）。</p>
+
+<h3>2.1 记号定义</h3>
+<div class="card">
+<ul>
+  <li><b>x ∈ ℝ<sup>D</sup></b>：原始向量，维度 D（例如 128）</li>
+  <li><b>M</b>：子空间数量（一般取 4/8/16）</li>
+  <li><b>d = D / M</b>：每段子向量维度</li>
+  <li><b>K</b>：每段码本大小（通常 256，正好对应 1 字节）</li>
+  <li><b>C<sub>m</sub> = {c<sub>m,1</sub>, ..., c<sub>m,K</sub>}</b>：第 m 段的码本</li>
+</ul>
+</div>
+
+<h3>2.2 编码 (Encoding)</h3>
+<p>把 x 切成 M 段子向量：<code>x = [u₁; u₂; ...; u<sub>M</sub>]</code>，每段 u<sub>m</sub> ∈ ℝ<sup>d</sup>。</p>
+
+<div class="pitfall" style="margin:12px 0">
+<h4 style="font-size:14px">硬约束：D 必须整除 M</h4>
+<p style="margin:0">因为每段要平均分到 <code>d = D/M</code> 维。例如 D=128 时 M 只能取 <code>{1, 2, 4, 8, 16, 32, 64, 128}</code>；<span style="color:#dc2626">不能取 20 或 12</span>。工业实践里最常用 M=8（d=16）或 M=16（d=8）。</p>
+</div>
+
+<p>对每段独立找最近的码本中心：</p>
+<div class="formula">
+  q<sub>m</sub>(x) = arg min<sub>k ∈ [1,K]</sub> ‖u<sub>m</sub> − c<sub>m,k</sub>‖²
+</div>
+<p>编码结果：<code>code(x) = (q₁, q₂, ..., q<sub>M</sub>)</code>，占 <code>M · log₂K</code> 比特。</p>
+
+<h3>2.3 非对称距离查询 ADC (Asymmetric Distance Computation)</h3>
+<p>查询向量 <b>y</b> 也切成 M 段：<code>y = [v₁; v₂; ...; v<sub>M</sub>]</code>。</p>
+<p><b>预计算查找表 LUT</b> (每次查询只算一次)：</p>
+<div class="formula">
+  LUT[m][k] = ‖v<sub>m</sub> − c<sub>m,k</sub>‖²,  m ∈ [1,M], k ∈ [1,K]
+</div>
+<p>对数据库中每个向量 x，其近似距离由 M 次 LUT 查表求和：</p>
+<div class="formula">
+  d̂(y, x)² = Σ<sub>m=1..M</sub> LUT[m][q<sub>m</sub>(x)]
+</div>
+<p>好处：不再需要还原原向量、不再做浮点乘加 —— 100 万条向量的距离计算变成 100 万次"查 8 次表 + 加法"。</p>
+
+<div class="intuition-box">
+<h4>直觉：为什么叫"非对称"？为什么这样设计？</h4>
+<p><b>非对称</b>指查询侧 y 保持原始浮点（精确无损），数据侧 x 被量化（有误差）—— 两边精度不对称。</p>
+<p><b>为什么这样设计？</b>典型场景是一次查询要跟<b>百万条数据</b>算距离：</p>
+<ul style="margin:4px 0">
+  <li>如果只把数据端量化 → 只需<b>预计算一次 LUT</b>（M×K 个距离），然后每条数据 = M 次查表 + M 次加法。</li>
+  <li>如果把查询也量化（SDC）→ 距离误差更大，但少了一次 LUT 计算。查询 QPS 极高时才用。</li>
+</ul>
+<p style="margin-bottom:0">工业实践中 ADC 是默认，因为量化后的数据是主要成本源（几十 GB 到几 TB），查询侧误差不值得省。</p>
+</div>
+
+<h3>2.4 训练流程 (伪代码)</h3>
+<pre><code># 输入: 训练集 X ∈ ℝ^{N×D}, 段数 M, 每段簇数 K
+def train_pq(X, M, K):
+    D = X.shape[1]
+    d = D // M
+    codebooks = []
+    for m in range(M):
+        # 切出第 m 段
+        Xm = X[:, m*d:(m+1)*d]
+        # 对该段做 K-Means
+        Cm = kmeans(Xm, K)             # (K, d)
+        codebooks.append(Cm)
+    return codebooks
+
+def encode(x, codebooks):
+    codes = []
+    for m, Cm in enumerate(codebooks):
+        um = x[m*d:(m+1)*d]
+        k_star = argmin_k ||um - Cm[k]||^2
+        codes.append(k_star)
+    return codes                       # M 个整数
+
+def search(y, database_codes, codebooks):
+    # 1) 预计算 LUT
+    LUT = np.zeros((M, K))
+    for m, Cm in enumerate(codebooks):
+        vm = y[m*d:(m+1)*d]
+        LUT[m] = ((Cm - vm) ** 2).sum(axis=1)
+    # 2) 累加得到近似距离
+    dists = LUT[np.arange(M)[:,None], database_codes.T].sum(axis=0)
+    return dists</code></pre>
+
+<h3>2.5 内存与复杂度</h3>
+<table>
+  <tr><th></th><th>存储 / 向量</th><th>查询计算量</th></tr>
+  <tr><td>暴力 float32</td><td>D × 4 字节</td><td>D 次乘 + D 次加</td></tr>
+  <tr><td>PQ (M, K=256)</td><td>M 字节</td><td>M 次查表 + M 次加</td></tr>
+</table>
+<p>以 D=128, M=8, N=10⁶ 为例：</p>
+<ul>
+  <li>暴力：128 × 4 × 10⁶ = <b>512 MB</b></li>
+  <li>PQ：8 × 10⁶ = <b>8 MB</b>（<span class="hl">压缩 64 倍</span>）</li>
+</ul>
+
+<h2>三、交互式演示 · 2D 分 2 段 (每段 1D)</h2>
+<div class="card">
+<p>为了可视化，我们用 <b>2D 向量</b>，切成 <b>M=2</b> 段（即 X 轴一段、Y 轴一段），每段是 1D 数据。
+可以观察每一维独立做 K-Means 得到码本，再把两段码本的笛卡尔积覆盖整个 2D 平面。
+右侧展示查询点 y 到所有 K² 个格子的近似距离，与真实距离对比。</p>
+
+<div class="controls">
+  <div class="control">
+    <label>M · 段数 <span class="val" id="pq-M-val">2</span></label>
+    <input type="range" id="pq-M" min="1" max="4" step="1" value="2">
+    <small style="color:var(--muted)">M=2 时切成 X/Y 两段；M=1 表示直接对 2D 整体量化</small>
+  </div>
+  <div class="control">
+    <label>K · 每段码本大小 <span class="val" id="pq-K-val">4</span></label>
+    <input type="range" id="pq-K" min="2" max="16" step="1" value="4">
+  </div>
+  <div class="control">
+    <label>N · 数据点数 <span class="val" id="pq-N-val">400</span></label>
+    <input type="range" id="pq-N" min="50" max="1200" step="50" value="400">
+  </div>
+  <div class="control">
+    <label>K-Means 迭代 <span class="val" id="pq-iter-val">10</span></label>
+    <input type="range" id="pq-iter" min="1" max="30" step="1" value="10">
+  </div>
+</div>
+
+<div class="btn-row">
+  <button class="btn" id="pq-btn-regen">重新采样数据</button>
+  <button class="btn secondary" id="pq-btn-retrain">重训 K-Means</button>
+  <button class="btn warn" id="pq-btn-newquery">随机新查询点</button>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><span class="legend-dot" style="background:#94a3b8"></span>数据点</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#dc2626"></span>子码本中心</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#059669"></span>PQ 格子交点</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#4f46e5"></span>查询点 y</div>
+</div>
+
+<div class="viz-container">
+  <div class="viz-block">
+    <h4>数据分布 + PQ 网格</h4>
+    <canvas id="pq-canvas-main" width="440" height="440"></canvas>
+  </div>
+  <div class="viz-block">
+    <h4>X 轴子空间 (段 1) K-Means</h4>
+    <canvas id="pq-canvas-x" width="440" height="120"></canvas>
+    <h4 style="margin-top:8px">Y 轴子空间 (段 2) K-Means</h4>
+    <canvas id="pq-canvas-y" width="440" height="120"></canvas>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div>
+    <h3>子码本 C</h3>
+    <div id="pq-codebook-out" style="font-size:13px"></div>
+  </div>
+  <div>
+    <h3>查询 LUT 表</h3>
+    <div id="pq-lut-out" style="font-size:13px"></div>
+  </div>
+</div>
+
+<h3>案例逐步讲解</h3>
+<div class="btn-row">
+  <button class="btn secondary" id="pq-btn-prev">上一步</button>
+  <button class="btn" id="pq-btn-next">下一步 →</button>
+  <button class="btn secondary" id="pq-btn-reset">重置流程</button>
+</div>
+<div class="step-box" id="pq-step-box">点击"下一步"开始 PQ 流程演示。</div>
+
+</div>
+
+<h2>四、优缺点 & 适用场景</h2>
+<div class="pros-cons">
+  <div>
+    <h3 style="color:var(--accent)">优点</h3>
+    <ul class="pros">
+      <li>存储压缩率高：128d float32 → 8B (64×)</li>
+      <li>查询极快：LUT 预计算后每条向量只需 M 次加法</li>
+      <li>与 IVF/HNSW 正交，易组合成 IVF-PQ、HNSW-PQ</li>
+      <li>无需保留原始向量</li>
+    </ul>
+  </div>
+  <div>
+    <h3 style="color:var(--danger)">缺点</h3>
+    <ul class="cons">
+      <li>假设子空间独立，若维度间强相关，误差偏大 → OPQ 解决</li>
+      <li>召回率受 M 和 K 影响，压缩越狠精度越差</li>
+      <li>对稠密浮点向量有效，稀疏向量效果差</li>
+      <li>需要训练阶段学码本</li>
+    </ul>
+  </div>
+</div>
+<div class="card yellow">
+<b>适用场景：</b>大规模稠密向量检索 (>10⁶)，图片/文本 embedding 检索，作为 IVF/HNSW 的量化后端。工业界代表：<code>Faiss IndexPQ</code>, <code>Faiss IndexIVFPQ</code>。
+</div>
+
+<h2>五、与其他量化方法对比</h2>
+<table>
+  <tr><th>方法</th><th>压缩率</th><th>误差</th><th>适用</th></tr>
+  <tr><td><a href="sq.html">SQ (标量量化)</a></td><td>4× (float32 → int8)</td><td>低</td><td>维度间尺度相近</td></tr>
+  <tr><td>PQ (M=8, K=256)</td><td>64×</td><td>中等</td><td>子空间近似独立</td></tr>
+  <tr><td><a href="opq.html">OPQ</a></td><td>64×</td><td>更低 (旋转对齐)</td><td>任意分布</td></tr>
+  <tr><td><a href="ivf-pq.html">IVF-PQ</a></td><td>64×+ 只搜 nprobe</td><td>中</td><td>亿级检索</td></tr>
+</table>
+
+<div class="pitfall">
+<h4>常见误区</h4>
+<ul style="margin:0;padding-left:20px">
+  <li><b>D 必须整除 M</b>：例如 D=128 时 M 只能取 <code>{1,2,4,8,16,32,64,128}</code>，不能取 20 或 12。选参数前先分解 D 的因子。</li>
+  <li><b>K=256 是特殊值</b>：<code>log₂256 = 8 bit = 1 字节</code>，正好对齐字节存储。K=200 需要 8 bit 存储但浪费 56 个编码空间；K=300 则需要 9 bit，跨字节对齐困难，SIMD 效率下降。</li>
+  <li><b>M 越大不一定误差越小</b>：总比特预算 = M × log₂K。M 从 8 涨到 16 但 K 从 256 掉到 16（保持字节数相同），每段太粗反而误差上升。经验：优先 K=256 固定，再调 M。</li>
+  <li><b>子空间独立性假设</b>：PQ 把 D 维切成不相干的 M 段，但真实数据的维度往往相关（例如深度学习 embedding 前后段有耦合）。方向错位时误差大，此时用 <a href="opq.html">OPQ</a> 先旋转再切段。</li>
+</ul>
+</div>
+
+<div class="next-steps">
+<b>下一步学什么？</b>
+<ul style="margin:6px 0 0 20px">
+  <li>10 亿向量还嫌慢 → <a href="ivf-pq.html">IVF-PQ</a>：先粗聚类分桶，只扫 nprobe 个桶，扫描量降到 1%。</li>
+  <li>PQ 精度不够（子空间强相关）→ <a href="opq.html">OPQ</a>：先学一个正交旋转 R 让各段能量均衡，同码率下误差再降 5~15%。</li>
+  <li>更进一步 → RaBitQ / ScaNN（各向异性量化，2023 起最新一代）。</li>
+</ul>
+</div>
+
+</div>
+
+<script>
+/* ================== 工具函数 ================== */
+function randn() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function sample2DGaussianMixture(n) {
+  const clusters = [
+    { cx: 0.25, cy: 0.25, s: 0.06 },
+    { cx: 0.7, cy: 0.35, s: 0.08 },
+    { cx: 0.35, cy: 0.75, s: 0.07 },
+    { cx: 0.75, cy: 0.75, s: 0.06 },
+    { cx: 0.5, cy: 0.5, s: 0.1 }
+  ];
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const c = clusters[Math.floor(Math.random() * clusters.length)];
+    const x = Math.min(0.98, Math.max(0.02, c.cx + randn() * c.s));
+    const y = Math.min(0.98, Math.max(0.02, c.cy + randn() * c.s));
+    pts.push([x, y]);
+  }
+  return pts;
+}
+function kmeans1D(data, K, iter) {
+  const min = Math.min(...data), max = Math.max(...data);
+  let centers = [];
+  for (let k = 0; k < K; k++) centers.push(min + (max - min) * (k + 0.5) / K);
+  for (let it = 0; it < iter; it++) {
+    const sums = new Array(K).fill(0);
+    const counts = new Array(K).fill(0);
+    for (const v of data) {
+      let bk = 0, bd = Infinity;
+      for (let k = 0; k < K; k++) {
+        const d = Math.abs(v - centers[k]);
+        if (d < bd) { bd = d; bk = k; }
+      }
+      sums[bk] += v;
+      counts[bk] += 1;
+    }
+    for (let k = 0; k < K; k++) {
+      if (counts[k] > 0) centers[k] = sums[k] / counts[k];
+    }
+  }
+  centers.sort((a, b) => a - b);
+  return centers;
+}
+function kmeans2D(data, K, iter) {
+  let centers = [];
+  const shuf = data.slice().sort(() => Math.random() - 0.5);
+  for (let k = 0; k < K; k++) centers.push([shuf[k][0], shuf[k][1]]);
+  for (let it = 0; it < iter; it++) {
+    const sums = Array.from({ length: K }, () => [0, 0]);
+    const counts = new Array(K).fill(0);
+    for (const [x, y] of data) {
+      let bk = 0, bd = Infinity;
+      for (let k = 0; k < K; k++) {
+        const dx = x - centers[k][0], dy = y - centers[k][1];
+        const d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; bk = k; }
+      }
+      sums[bk][0] += x; sums[bk][1] += y;
+      counts[bk]++;
+    }
+    for (let k = 0; k < K; k++) {
+      if (counts[k] > 0) {
+        centers[k][0] = sums[k][0] / counts[k];
+        centers[k][1] = sums[k][1] / counts[k];
+      }
+    }
+  }
+  return centers;
+}
+
+/* ================== 状态 ================== */
+const S = {
+  points: [],
+  centersX: [],
+  centersY: [],
+  centers2D: [],
+  query: [0.5, 0.5],
+  M: 2, K: 4, N: 400, iter: 10,
+  step: 0
+};
+
+/* ================== 主渲染 ================== */
+const cvMain = document.getElementById('pq-canvas-main');
+const cvX = document.getElementById('pq-canvas-x');
+const cvY = document.getElementById('pq-canvas-y');
+
+function drawMain(highlightAssignments = false, showLUT = false) {
+  const ctx = cvMain.getContext('2d');
+  const W = cvMain.width, H = cvMain.height;
+  ctx.clearRect(0, 0, W, H);
+  // 背景网格
+  ctx.strokeStyle = '#f1f5f9';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 10; i++) {
+    ctx.beginPath();
+    ctx.moveTo((W * i) / 10, 0); ctx.lineTo((W * i) / 10, H); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, (H * i) / 10); ctx.lineTo(W, (H * i) / 10); ctx.stroke();
+  }
+  // PQ 网格 (M=2 时: X 段 + Y 段的分界线)
+  if (S.M === 2) {
+    ctx.strokeStyle = '#059669';
+    ctx.setLineDash([4, 4]);
+    for (const cx of S.centersX) {
+      ctx.beginPath();
+      ctx.moveTo(cx * W, 0); ctx.lineTo(cx * W, H); ctx.stroke();
+    }
+    for (const cy of S.centersY) {
+      ctx.beginPath();
+      ctx.moveTo(0, (1 - cy) * H); ctx.lineTo(W, (1 - cy) * H); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // 交点
+    for (const cx of S.centersX) {
+      for (const cy of S.centersY) {
+        ctx.fillStyle = '#059669';
+        ctx.beginPath();
+        ctx.arc(cx * W, (1 - cy) * H, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  } else if (S.M === 1) {
+    for (const c of S.centers2D) {
+      ctx.strokeStyle = '#059669';
+      ctx.fillStyle = 'rgba(5,150,105,0.15)';
+      ctx.beginPath();
+      ctx.arc(c[0] * W, (1 - c[1]) * H, 20, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#059669';
+      ctx.beginPath();
+      ctx.arc(c[0] * W, (1 - c[1]) * H, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // 数据点
+  for (const [x, y] of S.points) {
+    let color = '#94a3b8';
+    if (highlightAssignments && S.M === 2) {
+      const kx = argminIdx(S.centersX, x);
+      const ky = argminIdx(S.centersY, y);
+      const hue = ((kx * S.K + ky) * 43) % 360;
+      color = `hsl(${hue}, 60%, 55%)`;
+    }
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x * W, (1 - y) * H, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 子码本中心 (M=2 分别在两轴)
+  if (S.M === 2) {
+    for (const cx of S.centersX) {
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.arc(cx * W, H - 8, 5, 0, Math.PI * 2); ctx.fill();
+    }
+    for (const cy of S.centersY) {
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.arc(8, (1 - cy) * H, 5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // 查询点
+  const [qx, qy] = S.query;
+  ctx.fillStyle = '#4f46e5';
+  ctx.beginPath();
+  ctx.arc(qx * W, (1 - qy) * H, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'white'; ctx.lineWidth = 2;
+  ctx.stroke();
+  // 查询到所有格子中心的距离连线
+  if (showLUT && S.M === 2) {
+    ctx.strokeStyle = 'rgba(79,70,229,0.25)';
+    ctx.lineWidth = 1;
+    for (const cx of S.centersX) {
+      for (const cy of S.centersY) {
+        ctx.beginPath();
+        ctx.moveTo(qx * W, (1 - qy) * H);
+        ctx.lineTo(cx * W, (1 - cy) * H);
+        ctx.stroke();
+      }
+    }
+  }
+}
+function argminIdx(centers, v) {
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < centers.length; i++) {
+    const d = Math.abs(centers[i] - v);
+    if (d < bd) { bd = d; bi = i; }
+  }
+  return bi;
+}
+function drawSub1D(canvas, values, centers, label) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  // 数轴
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.beginPath();
+  ctx.moveTo(20, H / 2); ctx.lineTo(W - 20, H / 2);
+  ctx.stroke();
+  // 数据点
+  for (const v of values) {
+    const px = 20 + v * (W - 40);
+    ctx.fillStyle = 'rgba(148,163,184,0.5)';
+    ctx.beginPath();
+    ctx.arc(px, H / 2 + (Math.random() - 0.5) * 40, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 中心
+  for (let i = 0; i < centers.length; i++) {
+    const px = 20 + centers[i] * (W - 40);
+    ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px, 10); ctx.lineTo(px, H - 10); ctx.stroke();
+    ctx.fillStyle = '#dc2626';
+    ctx.font = '11px monospace';
+    ctx.fillText(`c${i}`, px - 6, 12);
+  }
+}
+
+/* ================== 渲染子码本 & LUT ================== */
+function renderCodebookAndLUT() {
+  const out = document.getElementById('pq-codebook-out');
+  if (S.M === 2) {
+    let html = '<b>段 1 (X 轴) 码本:</b><table class="codebook-table"><tr><th>k</th><th>c<sub>1,k</sub></th></tr>';
+    S.centersX.forEach((c, i) => { html += `<tr><td>${i}</td><td>${c.toFixed(3)}</td></tr>`; });
+    html += '</table><b>段 2 (Y 轴) 码本:</b><table class="codebook-table"><tr><th>k</th><th>c<sub>2,k</sub></th></tr>';
+    S.centersY.forEach((c, i) => { html += `<tr><td>${i}</td><td>${c.toFixed(3)}</td></tr>`; });
+    html += '</table>';
+    out.innerHTML = html;
+    // LUT
+    const [qx, qy] = S.query;
+    const lut1 = S.centersX.map(c => (qx - c) ** 2);
+    const lut2 = S.centersY.map(c => (qy - c) ** 2);
+    let lh = `<b>查询点:</b> y = (${qx.toFixed(3)}, ${qy.toFixed(3)})<br>`;
+    lh += '<b>LUT[1][k] = (y₁ − c<sub>1,k</sub>)²</b><table class="codebook-table"><tr><th>k</th>';
+    for (let k = 0; k < S.K; k++) lh += `<th>${k}</th>`;
+    lh += '</tr><tr><td>LUT[1]</td>';
+    for (const v of lut1) lh += `<td>${v.toFixed(4)}</td>`;
+    lh += '</tr><tr><td>LUT[2]</td>';
+    for (const v of lut2) lh += `<td>${v.toFixed(4)}</td>`;
+    lh += '</tr></table>';
+    // 计算前 5 个近似距离
+    lh += '<b>示例：前 5 条数据的近似距离</b><table class="codebook-table"><tr><th>#</th><th>code</th><th>d̂²</th><th>真实 d²</th></tr>';
+    for (let i = 0; i < Math.min(5, S.points.length); i++) {
+      const [x, y] = S.points[i];
+      const kx = argminIdx(S.centersX, x);
+      const ky = argminIdx(S.centersY, y);
+      const approx = lut1[kx] + lut2[ky];
+      const real = (qx - x) ** 2 + (qy - y) ** 2;
+      lh += `<tr><td>${i}</td><td>(${kx},${ky})</td><td>${approx.toFixed(4)}</td><td>${real.toFixed(4)}</td></tr>`;
+    }
+    lh += '</table>';
+    document.getElementById('pq-lut-out').innerHTML = lh;
+  } else if (S.M === 1) {
+    let html = '<b>整体 2D 码本 (M=1):</b><table class="codebook-table"><tr><th>k</th><th>cx</th><th>cy</th></tr>';
+    S.centers2D.forEach((c, i) => { html += `<tr><td>${i}</td><td>${c[0].toFixed(3)}</td><td>${c[1].toFixed(3)}</td></tr>`; });
+    html += '</table>';
+    out.innerHTML = html;
+    const [qx, qy] = S.query;
+    let lh = `<b>查询点:</b> y = (${qx.toFixed(3)}, ${qy.toFixed(3)})<br>`;
+    lh += '<b>LUT[k] = ‖y − c<sub>k</sub>‖²</b><table class="codebook-table"><tr><th>k</th><th>d²</th></tr>';
+    S.centers2D.forEach((c, i) => { lh += `<tr><td>${i}</td><td>${((qx - c[0]) ** 2 + (qy - c[1]) ** 2).toFixed(4)}</td></tr>`; });
+    lh += '</table>';
+    document.getElementById('pq-lut-out').innerHTML = lh;
+  } else {
+    out.innerHTML = '<i>M ≥ 3 时演示只支持逻辑展示 (2D 数据无法真的切 3+ 段)。此时视作 M=2 展示。</i>';
+    document.getElementById('pq-lut-out').innerHTML = '';
+  }
+}
+
+/* ================== 训练 & 采样 ================== */
+function retrain() {
+  const M_effective = Math.min(S.M, 2);
+  if (M_effective === 2) {
+    const xs = S.points.map(p => p[0]);
+    const ys = S.points.map(p => p[1]);
+    S.centersX = kmeans1D(xs, S.K, S.iter);
+    S.centersY = kmeans1D(ys, S.K, S.iter);
+  }
+  S.centers2D = kmeans2D(S.points, S.K, S.iter);
+  const xs = S.points.map(p => p[0]);
+  const ys = S.points.map(p => p[1]);
+  drawMain(true, false);
+  drawSub1D(cvX, xs, S.centersX, 'X');
+  drawSub1D(cvY, ys, S.centersY, 'Y');
+  renderCodebookAndLUT();
+}
+function resample() {
+  S.points = sample2DGaussianMixture(S.N);
+  retrain();
+}
+
+/* ================== 事件绑定 ================== */
+document.getElementById('pq-M').addEventListener('input', e => {
+  S.M = parseInt(e.target.value);
+  document.getElementById('pq-M-val').textContent = S.M;
+  retrain();
+});
+document.getElementById('pq-K').addEventListener('input', e => {
+  S.K = parseInt(e.target.value);
+  document.getElementById('pq-K-val').textContent = S.K;
+  retrain();
+});
+document.getElementById('pq-N').addEventListener('input', e => {
+  S.N = parseInt(e.target.value);
+  document.getElementById('pq-N-val').textContent = S.N;
+  resample();
+});
+document.getElementById('pq-iter').addEventListener('input', e => {
+  S.iter = parseInt(e.target.value);
+  document.getElementById('pq-iter-val').textContent = S.iter;
+  retrain();
+});
+document.getElementById('pq-btn-regen').onclick = resample;
+document.getElementById('pq-btn-retrain').onclick = retrain;
+document.getElementById('pq-btn-newquery').onclick = () => {
+  S.query = [0.1 + Math.random() * 0.8, 0.1 + Math.random() * 0.8];
+  retrain();
+};
+
+/* ================== 分步演示 ================== */
+const stepBox = document.getElementById('pq-step-box');
+const STEPS = [
+  { text: '<b>步骤 1</b>：从数据分布中采样 N 个 2D 向量作为训练集。每个向量 x=(x₁,x₂)。' },
+  { text: '<b>步骤 2</b>：把 2D 向量切成 M=2 段：段 1 = x₁ (X 轴)，段 2 = x₂ (Y 轴)。观察下方两条 1D 数轴上的散点。' },
+  { text: '<b>步骤 3</b>：对每段分别做 K-Means 得到 K 个中心 (红色竖线) → 得到两个子码本 C₁ 和 C₂。' },
+  { text: '<b>步骤 4</b>：两段码本的笛卡尔积形成 K×K=' + '?' + ' 个"格子交点"(绿色)，这就是 PQ 能表达的所有量化中心。' },
+  { text: '<b>步骤 5</b>：对每个训练点，编码为 code = (k₁, k₂)，只占 2·log₂K 比特。上图颜色不同代表落入不同格子。' },
+  { text: '<b>步骤 6</b>：来了个查询点 y (蓝色)，先把 y 也切成 (y₁, y₂)。' },
+  { text: '<b>步骤 7</b>：预计算 LUT：对每段 m，算 LUT[m][k] = (y_m − c_{m,k})²。M=2 时，LUT 是 2×K 大小的表。见右侧表格。' },
+  { text: '<b>步骤 8</b>：对数据库中每条编码 (k₁,k₂)，其到 y 的近似距离 = LUT[1][k₁] + LUT[2][k₂]。O(M) 查表 + 加法。' },
+  { text: '<b>步骤 9</b>：与真实距离 (x−y)² 对比可看出误差主要来自量化 (每段被吸附到最近中心)。K 越大误差越小。' }
+];
+function renderStep() {
+  const s = STEPS[S.step] || STEPS[0];
+  let t = s.text.replace('?', String(S.K * S.K));
+  stepBox.innerHTML = t;
+  drawMain(S.step >= 4, S.step >= 6);
+}
+document.getElementById('pq-btn-next').onclick = () => {
+  S.step = Math.min(STEPS.length - 1, S.step + 1);
+  renderStep();
+};
+document.getElementById('pq-btn-prev').onclick = () => {
+  S.step = Math.max(0, S.step - 1);
+  renderStep();
+};
+document.getElementById('pq-btn-reset').onclick = () => {
+  S.step = 0; renderStep();
+};
+
+/* ================== 初始化 ================== */
+resample();
+renderStep();
+</script>
+
+</body>
+</html>

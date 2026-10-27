@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Annoy | 随机投影树森林近似最近邻搜索</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+        background: #f7f8fa;
+        color: #202124;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        line-height: 1.7;
+    }
+    a { color: #1a73e8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    header {
+        background: linear-gradient(135deg, #ffffff 0%, #eaf5ee 100%);
+        border-bottom: 1px solid #e0e3e7;
+        padding: 28px 40px;
+    }
+    header .back { font-size: 14px; color: #5f6368; }
+    header h1 {
+        margin-top: 8px;
+        font-size: 28px;
+        font-weight: 700;
+        color: #202124;
+    }
+    header .subtitle {
+        margin-top: 4px;
+        color: #5f6368;
+        font-size: 15px;
+    }
+
+    main {
+        max-width: 1180px;
+        margin: 30px auto;
+        padding: 0 24px;
+    }
+
+    section {
+        background: #ffffff;
+        border: 1px solid #e6e8eb;
+        border-radius: 10px;
+        padding: 24px 28px;
+        margin-bottom: 22px;
+        box-shadow: 0 1px 3px rgba(15, 20, 30, 0.03);
+    }
+    section h2 {
+        font-size: 20px;
+        color: #1a1f36;
+        border-left: 4px solid #199a55;
+        padding-left: 10px;
+        margin-bottom: 14px;
+    }
+    section h3 {
+        font-size: 16px;
+        color: #202124;
+        margin: 16px 0 8px;
+    }
+    section p { margin-bottom: 10px; color: #333; }
+    section ul, section ol { padding-left: 24px; margin-bottom: 12px; }
+    section li { margin-bottom: 4px; }
+
+    pre.code {
+        background: #1e1e2f;
+        color: #e6e6e6;
+        padding: 14px 16px;
+        border-radius: 8px;
+        overflow-x: auto;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 1.55;
+        margin: 8px 0 14px;
+    }
+    pre.code .kw { color: #c586c0; }
+    pre.code .fn { color: #dcdcaa; }
+    pre.code .str { color: #ce9178; }
+    pre.code .num { color: #b5cea8; }
+    pre.code .cmt { color: #6a9955; font-style: italic; }
+
+    .card {
+        background: #fafbfd;
+        border: 1px solid #e6e8eb;
+        border-radius: 8px;
+        padding: 16px;
+    }
+    .card h4 {
+        font-size: 15px;
+        margin-bottom: 8px;
+        color: #199a55;
+    }
+
+    .canvas-wrap {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+    .canvas-wrap > .col-left { flex: 1 1 480px; }
+    .canvas-wrap > .col-right { flex: 1 1 480px; }
+
+    canvas {
+        background: #ffffff;
+        border: 1px solid #dcdfe3;
+        border-radius: 6px;
+        display: block;
+        cursor: crosshair;
+    }
+
+    svg.tree-view {
+        background: #ffffff;
+        border: 1px solid #dcdfe3;
+        border-radius: 6px;
+        width: 100%;
+        height: 380px;
+    }
+
+    .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0 4px;
+    }
+    button {
+        background: #199a55;
+        color: white;
+        border: 0;
+        border-radius: 6px;
+        padding: 8px 14px;
+        cursor: pointer;
+        font-size: 13px;
+    }
+    button:hover { background: #128248; }
+    button.secondary { background: #ffffff; color: #199a55; border: 1px solid #199a55; }
+    button.secondary:hover { background: #ecf9f0; }
+    button.danger { background: #d93025; }
+    button.danger:hover { background: #b8231b; }
+
+    .param {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 6px 0;
+        font-size: 13px;
+        color: #333;
+        flex-wrap: wrap;
+    }
+    .param input[type=range] { width: 160px; }
+    .param select { padding: 4px 6px; }
+
+    .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 12px;
+        color: #555;
+        margin: 8px 0;
+    }
+    .legend span.dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 4px;
+        vertical-align: middle;
+    }
+
+    .step-info {
+        background: #ecf9f0;
+        border-left: 4px solid #199a55;
+        padding: 10px 14px;
+        border-radius: 4px;
+        margin: 10px 0;
+        font-size: 14px;
+        color: #1e5a37;
+        min-height: 44px;
+    }
+
+    table.complexity {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        font-size: 14px;
+    }
+    table.complexity th, table.complexity td {
+        border: 1px solid #e0e3e7;
+        padding: 8px 10px;
+        text-align: left;
+    }
+    table.complexity th { background: #ecf9f0; color: #1e5a37; }
+
+    .pros-cons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+    @media (max-width: 720px) { .pros-cons { grid-template-columns: 1fr; } }
+    .pros { background: #ecf9f0; border-left: 4px solid #2e9d5a; padding: 10px 14px; border-radius: 4px; }
+    .cons { background: #fdecec; border-left: 4px solid #d93025; padding: 10px 14px; border-radius: 4px; }
+    .pros h4 { color: #1e6b3d; margin-bottom: 6px; }
+    .cons h4 { color: #a3221b; margin-bottom: 6px; }
+
+    .forest-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+        margin-top: 8px;
+    }
+    .forest-cell {
+        border: 1px solid #dcdfe3;
+        border-radius: 6px;
+        padding: 6px;
+        background: #ffffff;
+    }
+    .forest-cell canvas {
+        width: 100%; height: 170px;
+    }
+    .forest-cell .caption {
+        font-size: 12px;
+        color: #444;
+        text-align: center;
+        margin-top: 4px;
+    }
+
+    footer {
+        text-align: center;
+        padding: 20px 0;
+        color: #8b8f94;
+        font-size: 13px;
+    }
+
+    /* ============ 新手友好组件 ============ */
+    .prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; color: #1e3a8a; }
+    .prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+    .prereq-bar .pill:hover { background: #dbeafe; text-decoration: none; }
+    .glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+    .glossary summary { cursor: pointer; font-weight: 600; color: #374151; }
+    .glossary dl { margin-top: 10px; }
+    .glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+    .glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+    .new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+    .new-user-tip strong { color: #1e40af; }
+    .new-user-tip ol { padding-left: 22px; margin: 6px 0; }
+    .intuition-primer { background: #fefce8; border-left: 3px solid #eab308; padding: 10px 14px; margin: 10px 0; border-radius: 4px; font-size: 0.94rem; color: #713f12; }
+    .pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+    .pitfall h4 { color: #92400e; margin-top: 0; margin-bottom: 8px; }
+    .pitfall ol { padding-left: 22px; }
+    .next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; color: #065f46; }
+    .next-steps a { color: #047857; font-weight: 600; }
+    .param-hint-table { width: 100%; font-size: 0.88rem; margin: 8px 0; border-collapse: collapse; }
+    .param-hint-table th, .param-hint-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    .param-hint-table th { background: #f9fafb; color: #374151; }
+    .geom-svg { display: block; margin: 12px auto; background: #fdfdfd; border: 1px solid #e5e7eb; border-radius: 6px; }
+</style>
+</head>
+<body>
+<header>
+    <div class="back"><a href="../index.html">&larr; 返回 ANN 算法总览</a></div>
+    <h1>Annoy · 随机投影树森林</h1>
+    <div class="subtitle">Spotify 开源的近似最近邻算法，用多棵随机超平面树互补覆盖空间。</div>
+</header>
+
+<main>
+
+<div class="prereq-bar">
+    <b>前置阅读：</b>
+    <span class="pill">向量 / 内积 / L2 范数 基础</span>
+    <a class="pill" href="./kd-tree.html">KD-Tree</a>
+    <a class="pill" href="./ball-tree.html">Ball Tree</a>
+    <a class="pill" href="../index.html">返回总览</a>
+</div>
+
+<details class="glossary" open>
+    <summary>关键术语速查（点击展开/收起）</summary>
+    <dl>
+        <dt>中垂线 / 中垂超平面</dt>
+        <dd>到两个点 p 和 q 距离相等的所有点组成的直线（2D）或超平面（高维）。Annoy 每层随机选两点，用它们的中垂超平面作分界。</dd>
+        <dt>投影</dt>
+        <dd>把一个高维向量映射到某个方向 <b>n</b> 上的标量：<code>proj(x) = ⟨n, x⟩</code>。判断"在超平面哪一侧"，只看这个投影和阈值 b 的大小。</dd>
+        <dt>内积 ⟨a, b⟩ (dot product)</dt>
+        <dd><code>⟨a, b⟩ = Σᵢ aᵢbᵢ</code>。可以看作"a 在 b 方向上的投影 × |b|"，也是 cosine 相似度的分子。</dd>
+        <dt>随机投影树森林</dt>
+        <dd>不追求"最优切法"，而是每层随机选一个方向切一刀；重复建 T 棵这样的树。每棵树独立犯错，但森林一致犯错的概率很小，从而近似覆盖真近邻。</dd>
+        <dt>n_trees</dt>
+        <dd>森林里树的棵数。越多召回率越高，占内存也越多。Spotify 生产常用 10 ~ 100。</dd>
+        <dt>search_k</dt>
+        <dd>查询时候选点的下限。越大越准，查询也越慢。经验值 <code>search_k ≈ n_trees × k</code>。</dd>
+        <dt>mmap（内存映射文件）</dt>
+        <dd>把磁盘文件"直接映射"到进程地址空间，读取就像访问内存。Annoy 索引一旦落盘，多进程可以零拷贝加载，冷启动极快。</dd>
+        <dt>candidate set（候选集）</dt>
+        <dd>森林查询阶段收集到的所有可能近邻的并集；最后再对候选集精确算距离、排序、返回 top-k。</dd>
+    </dl>
+</details>
+
+<section>
+    <h2>1. 直观理解</h2>
+    <p>
+        <b>Annoy</b>（Approximate Nearest Neighbors Oh Yeah）由 Spotify 提出，
+        核心动机：单棵 KD-Tree 或 Ball Tree 在高维下剪枝失效；
+        与其"更聪明地切一刀"，不如"多切几次、每次都随机"，然后 <b>把多棵树的候选集并起来</b>。
+    </p>
+    <p>
+        <b>生活化例子</b>：想象你要在一堆散乱的照片中找一张最像目标的照片。
+    </p>
+    <ul>
+        <li>方法 A：让 1 个人按"色调"把照片一分为二 → 大概率漏掉真正相似的照片。</li>
+        <li>方法 B：让 10 个人各自 <b>随机选一个特征</b>（色调、构图、亮度……）分堆。
+             把 10 个人各自最相似的一堆照片全部合并 → 目标照片几乎一定在候选集中。</li>
+    </ul>
+    <p>方法 B 就是 Annoy：<b>用多棵结构不同的树来对冲单棵树的偏差</b>。</p>
+
+    <div class="card">
+        <h4>关键设计</h4>
+        <ul>
+            <li>每个内部节点随机选 <b>两个点</b>，取它们的 <b>中垂线（超平面）</b> 作为分界。</li>
+            <li>每棵树递归到叶节点大小 ≤ K（K ≈ n_trees × 逻辑常数）。</li>
+            <li>查询：在每棵树上走到叶子并收集候选，用优先队列做 best-first 扩展，直到候选数 ≥ <b>search_k</b>。</li>
+            <li>最后对所有候选做精确距离排序，返回 top-k。</li>
+        </ul>
+    </div>
+
+    <div class="new-user-tip">
+        <strong>第一次打开建议这样玩：</strong>
+        <ol>
+            <li>点击 <b>【簇状分布】</b>生成有明显聚集的点，方便观察召回。</li>
+            <li>把 <b>n_trees</b> 拉到 1，观察 Annoy 结果（紫色大圈）经常与精确 KNN（绿圈）不一致，召回率会时高时低。</li>
+            <li>再把 <b>n_trees</b> 逐步拉到 4、8，观察召回率明显稳定接近 100%——这就是"森林"的力量。</li>
+            <li>拖动红色查询点跨越不同区域，注意右侧"每棵树的候选叶"（黄色小点）差异很大——树之间的多样性正是 Annoy 有效的原因。</li>
+            <li>最后调节 <b>search_k</b>：调大 → 候选集变大、召回更高、但速度变慢；调小 → 速度快但可能漏掉真近邻。</li>
+        </ol>
+    </div>
+</section>
+
+<section>
+    <h2>2. 算法原理</h2>
+
+    <h3>2.1 随机分割超平面</h3>
+    <div class="intuition-primer">
+        <b>直觉铺垫（几何视角）：</b>
+        到 <b>p 和 q 距离相等</b> 的所有点，构成的图形就是 <b>p 和 q 的中垂线</b>（2D 是一条直线，高维是一个超平面）。
+        用一行代数推导：<code>&#8214;x&minus;p&#8214;² = &#8214;x&minus;q&#8214;²</code>
+        &nbsp;⇒&nbsp; <code>&#8214;x&#8214;² &minus; 2⟨p, x⟩ + &#8214;p&#8214;² = &#8214;x&#8214;² &minus; 2⟨q, x⟩ + &#8214;q&#8214;²</code>
+        &nbsp;⇒&nbsp; <code>⟨q&minus;p, x⟩ = (&#8214;q&#8214;² &minus; &#8214;p&#8214;²) / 2</code>。
+        令 <b>n = q &minus; p</b>、<b>b = (&#8214;q&#8214;² &minus; &#8214;p&#8214;²) / 2</b>，这个超平面就是 <code>⟨n, x⟩ = b</code>。
+        判断 x 在 p 侧还是 q 侧，只需要看 <code>⟨n, x⟩ − b</code> 的符号——一次内积搞定。
+    </div>
+    <svg class="geom-svg" width="440" height="240" viewBox="0 0 440 240" xmlns="http://www.w3.org/2000/svg">
+        <!-- Perpendicular bisector (vertical-ish line) -->
+        <line x1="220" y1="20" x2="220" y2="220" stroke="#199a55" stroke-width="1.6" stroke-dasharray="5 3"/>
+        <text x="228" y="35" font-size="12" fill="#199a55" font-weight="bold">中垂线 ⟨n, x⟩ = b</text>
+        <!-- Point p (left) -->
+        <circle cx="110" cy="120" r="6" fill="#3b7ddd"/>
+        <text x="85" y="112" font-size="13" fill="#3b7ddd" font-weight="bold">p</text>
+        <!-- Point q (right) -->
+        <circle cx="330" cy="120" r="6" fill="#d93025"/>
+        <text x="340" y="112" font-size="13" fill="#d93025" font-weight="bold">q</text>
+        <!-- Sample "equidistant" point on the bisector -->
+        <circle cx="220" cy="80" r="4" fill="#7b3fd7"/>
+        <text x="200" y="72" font-size="11" fill="#7b3fd7">x</text>
+        <!-- Distance p-x -->
+        <line x1="110" y1="120" x2="220" y2="80" stroke="#3b7ddd" stroke-width="1" stroke-dasharray="2 2"/>
+        <!-- Distance q-x -->
+        <line x1="330" y1="120" x2="220" y2="80" stroke="#d93025" stroke-width="1" stroke-dasharray="2 2"/>
+        <text x="150" y="93" font-size="11" fill="#3b7ddd">‖x−p‖</text>
+        <text x="270" y="93" font-size="11" fill="#d93025">‖x−q‖</text>
+        <!-- Equal marks -->
+        <text x="175" y="105" font-size="14" fill="#111" font-weight="bold">=</text>
+        <!-- Another point on bisector -->
+        <circle cx="220" cy="180" r="4" fill="#7b3fd7"/>
+        <line x1="110" y1="120" x2="220" y2="180" stroke="#3b7ddd" stroke-width="1" stroke-dasharray="2 2"/>
+        <line x1="330" y1="120" x2="220" y2="180" stroke="#d93025" stroke-width="1" stroke-dasharray="2 2"/>
+        <!-- Arrow n = q - p -->
+        <line x1="115" y1="140" x2="325" y2="140" stroke="#111" stroke-width="1" marker-end="url(#arr)"/>
+        <defs>
+            <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" fill="#111"/>
+            </marker>
+        </defs>
+        <text x="205" y="158" font-size="12" fill="#111">n = q − p</text>
+        <!-- Labels for sides -->
+        <text x="30" y="215" font-size="11" fill="#3b7ddd">离 p 更近的一侧</text>
+        <text x="330" y="215" font-size="11" fill="#d93025">离 q 更近的一侧</text>
+    </svg>
+    <p>
+        对当前节点的点集，随机采样两个点 <code>p, q</code>，
+        分割向量 <code>n = q − p</code>，分割阈值 <code>b = (‖q‖² − ‖p‖²) / 2</code>（欧氏度量下等价于中垂线）。
+    </p>
+    <p>对任一点 x：<code>side(x) = sign(⟨n, x⟩ − b)</code>；同侧的点归入同一子树。</p>
+
+    <h3>2.2 构建（伪代码）</h3>
+    <pre class="code"><span class="kw">def</span> <span class="fn">build_tree</span>(points, leaf_size):
+    <span class="kw">if</span> <span class="fn">len</span>(points) &lt;= leaf_size:
+        <span class="kw">return</span> Leaf(points)
+    p, q = <span class="fn">random.sample</span>(points, <span class="num">2</span>)
+    n = q - p
+    b = (dot(q,q) - dot(p,p)) / <span class="num">2</span>
+    left  = [x <span class="kw">for</span> x <span class="kw">in</span> points <span class="kw">if</span> dot(n, x) &lt;  b]
+    right = [x <span class="kw">for</span> x <span class="kw">in</span> points <span class="kw">if</span> dot(n, x) &gt;= b]
+    <span class="kw">return</span> Split(n, b,
+        <span class="fn">build_tree</span>(left,  leaf_size),
+        <span class="fn">build_tree</span>(right, leaf_size),
+    )
+
+<span class="kw">def</span> <span class="fn">build_forest</span>(points, n_trees, leaf_size):
+    <span class="kw">return</span> [<span class="fn">build_tree</span>(points, leaf_size) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(n_trees)]</pre>
+
+    <h3>2.3 查询（伪代码）</h3>
+    <pre class="code"><span class="kw">def</span> <span class="fn">query</span>(forest, q, k, search_k):
+    heap = []                               <span class="cmt"># (priority, node, tree_id)</span>
+    <span class="kw">for</span> t_id, tree <span class="kw">in</span> <span class="fn">enumerate</span>(forest):
+        <span class="fn">heappush</span>(heap, (INF, tree, t_id))
+
+    candidates = <span class="fn">set</span>()
+    <span class="kw">while</span> heap <span class="kw">and</span> <span class="fn">len</span>(candidates) &lt; search_k:
+        prio, node, tid = <span class="fn">heappop</span>(heap)
+        <span class="kw">if</span> node.is_leaf:
+            candidates.<span class="fn">update</span>(node.points)
+        <span class="kw">else</span>:
+            margin = dot(node.n, q) - node.b
+            <span class="cmt"># 主侧优先，另一侧按 |margin| 作 penalty 入堆</span>
+            near = node.left <span class="kw">if</span> margin &lt; <span class="num">0</span> <span class="kw">else</span> node.right
+            far  = node.left <span class="kw">if</span> margin &gt;= <span class="num">0</span> <span class="kw">else</span> node.right
+            <span class="fn">heappush</span>(heap, (prio, near, tid))
+            <span class="fn">heappush</span>(heap, (prio + <span class="fn">abs</span>(margin), far, tid))
+
+    <span class="cmt"># 精确排序返回 top-k</span>
+    <span class="kw">return</span> <span class="fn">sorted</span>(candidates, key=<span class="kw">lambda</span> x: <span class="fn">dist</span>(q,x))[:k]</pre>
+
+    <h3>2.4 为什么森林有效？</h3>
+    <p>
+        每棵树的失误集合彼此独立。假设一棵树把真近邻放到"错的一侧"的概率是 <code>p</code>，
+        则 <code>t</code> 棵树全部失误的概率约为 <code>p<sup>t</sup></code>——指数下降。
+        这就是 <b>多样性带来的鲁棒性</b>，也是 <b>随机化</b> 与 <b>集成</b> 思路在 ANN 领域的典型应用。
+    </p>
+</section>
+
+<section>
+    <h2>3. 交互式演示：多棵树森林</h2>
+    <p>点击左侧画布添加点，拖动红色查询点。右侧展示 <b>森林中每棵树独立的分割</b> 与候选叶节点。</p>
+    <div class="canvas-wrap">
+        <div class="col-left">
+            <canvas id="mainCanvas" width="520" height="440"></canvas>
+            <div class="controls">
+                <button id="btnRandom">随机 40 点</button>
+                <button id="btnClusters" class="secondary">簇状分布</button>
+                <button id="btnRebuild" class="secondary">重建森林</button>
+                <button id="btnClear" class="danger">清空</button>
+            </div>
+            <div class="legend">
+                <span><span class="dot" style="background:#3b7ddd"></span>数据点</span>
+                <span><span class="dot" style="background:#d93025"></span>查询点</span>
+                <span><span class="dot" style="background:#199a55"></span>精确 KNN</span>
+                <span><span class="dot" style="background:#e0a800"></span>候选集</span>
+                <span><span class="dot" style="background:#7b3fd7"></span>Annoy 结果</span>
+            </div>
+        </div>
+        <div class="col-right">
+            <div class="param">
+                <label>n_trees：</label>
+                <input type="range" id="nTrees" min="1" max="8" value="4">
+                <span id="nTreesVal">4</span>
+                <label>&nbsp;search_k：</label>
+                <input type="range" id="searchK" min="5" max="120" value="30">
+                <span id="searchKVal">30</span>
+            </div>
+            <div class="param">
+                <label>leaf_size：</label>
+                <input type="range" id="leafSize" min="1" max="10" value="4">
+                <span id="leafVal">4</span>
+                <label>&nbsp;k 近邻：</label>
+                <input type="range" id="kInput" min="1" max="5" value="1">
+                <span id="kVal">1</span>
+            </div>
+            <div class="step-info" id="stepInfo">
+                在左侧添加点并调节参数。<br>
+                <b>关键观察</b>：当 n_trees 或 search_k 增大，Annoy 找到的近邻与精确 KNN 一致的概率显著提高。
+            </div>
+            <div class="forest-grid" id="forestGrid"></div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <h2>4. 单棵树结构可视化</h2>
+    <p>选中某棵树查看其 SVG 树结构：内部节点是分割超平面，叶节点存点集。</p>
+    <div class="param">
+        <label>树索引：</label>
+        <input type="range" id="treeIdx" min="0" max="3" value="0">
+        <span id="treeIdxVal">0</span>
+    </div>
+    <svg id="treeSvg" class="tree-view" viewBox="0 0 640 380"></svg>
+</section>
+
+<section>
+    <h2>5. 案例逐步讲解</h2>
+    <p>12 个点、2 棵树，逐步展示 Annoy 构建 + 查询流程。</p>
+    <div class="canvas-wrap">
+        <div class="col-left">
+            <canvas id="stepCanvas" width="520" height="380"></canvas>
+            <div class="controls">
+                <button id="btnStepPrev" class="secondary">上一步</button>
+                <button id="btnStepNext">下一步</button>
+                <button id="btnStepReset" class="secondary">重置</button>
+            </div>
+        </div>
+        <div class="col-right">
+            <div class="step-info" id="stepDetail">阶段：等待开始。</div>
+            <pre class="code" id="stepCode" style="max-height:280px;overflow:auto;"></pre>
+        </div>
+    </div>
+</section>
+
+<section>
+    <h2>6. 复杂度分析</h2>
+    <table class="complexity">
+        <thead>
+            <tr><th>操作</th><th>复杂度</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>单棵构建</td><td>O(N log N)</td><td>递归深度 log N，每层扫描全体点。</td></tr>
+            <tr><td>森林构建</td><td>O(T · N log N)</td><td>T 棵树独立构建，可并行。</td></tr>
+            <tr><td>单次查询</td><td>O(T log N + search_k · D)</td><td>先在每棵树上走到叶（对数），再对候选做精确排序。</td></tr>
+            <tr><td>空间</td><td>O(T · N)</td><td>每棵树存储 N 个点的分割结构。</td></tr>
+        </tbody>
+    </table>
+    <p><b>召回 vs 速度 trade-off</b>：n_trees ↑ 提高召回、增加构建时间；search_k ↑ 提高召回、增加查询时间。</p>
+</section>
+
+<section>
+    <h2>7. 可调参数</h2>
+    <table class="param-hint-table">
+        <thead><tr><th>参数</th><th>控制什么</th><th>调大的影响</th><th>调小的影响</th><th>调节建议</th></tr></thead>
+        <tbody>
+            <tr><td><code>n_trees</code></td><td><b>召回质量</b>（森林多样性）</td><td>召回更高，索引内存变大，构建更慢</td><td>速度快、内存省，召回可能崩塌</td><td>生产环境 10~100；&lt; 5 通常召回不稳</td></tr>
+            <tr><td><code>search_k</code></td><td><b>查询速度 vs 精度</b></td><td>候选集大，召回高，但查询变慢</td><td>候选少，查询快，可能漏真近邻</td><td>经验值 <code>≈ n_trees × k</code></td></tr>
+            <tr><td><code>leaf_size / K</code></td><td><b>叶子容量与内存</b></td><td>树浅，叶子内暴力扫描代价上升</td><td>树深、节点多，内存爆炸</td><td>默认 <code>K ≈ 2 × n_trees</code></td></tr>
+            <tr><td><code>metric</code></td><td>距离度量</td><td colspan="2">支持 <code>euclidean / manhattan / angular / dot / hamming</code>；<b>切换 metric 需要整体重建索引</b></td><td>cosine 用 angular</td></tr>
+        </tbody>
+    </table>
+    <ul>
+        <li><b>n_trees</b>：森林大小。Spotify 生产环境常用 10~100。越多越准，占用内存也越大。</li>
+        <li><b>search_k</b>：查询时候选点数。Annoy 官方推荐 <code>search_k ≈ n_trees × k</code>。</li>
+        <li><b>leaf_size</b> / K：叶子中最多存的点。默认 K ≈ 2 × n_trees，可用于粗略控制树高。</li>
+        <li><b>metric</b>：Annoy 支持 <code>euclidean / manhattan / angular / dot / hamming</code>。angular 用于 cosine 相似度。</li>
+    </ul>
+</section>
+
+<section>
+    <h2>8. 优缺点 & 适用场景</h2>
+    <div class="pros-cons">
+        <div class="pros">
+            <h4>优点</h4>
+            <ul>
+                <li>支持 <b>内存映射</b>（mmap），索引可跨进程共享，冷启动极快。</li>
+                <li>构建后 <b>只读</b>，天然线程安全。</li>
+                <li>参数少、易调优；召回率高时依然快。</li>
+                <li>C++ 实现，Python 绑定简洁；已在 Spotify 音乐推荐上线多年。</li>
+            </ul>
+        </div>
+        <div class="cons">
+            <h4>缺点</h4>
+            <ul>
+                <li>索引 <b>不可增量更新</b>，新数据必须整体重建。</li>
+                <li>召回率对 search_k 敏感，可能需要多次调参。</li>
+                <li>在超高维稀疏数据上不如 HNSW / IVF-PQ。</li>
+            </ul>
+        </div>
+    </div>
+    <p><b>适用场景</b>：静态推荐候选集（歌曲、商品向量）、嵌入检索、静态知识库向量搜索。</p>
+</section>
+
+<section>
+    <h2>9. 代码调用示例</h2>
+    <h3>Python (annoy)</h3>
+    <pre class="code"><span class="kw">from</span> annoy <span class="kw">import</span> AnnoyIndex
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+D = <span class="num">64</span>
+index = <span class="fn">AnnoyIndex</span>(D, <span class="str">'angular'</span>)         <span class="cmt"># cosine 相似度</span>
+<span class="kw">for</span> i, v <span class="kw">in</span> <span class="fn">enumerate</span>(np.<span class="fn">random</span>.<span class="fn">rand</span>(<span class="num">10000</span>, D)):
+    index.<span class="fn">add_item</span>(i, v)
+
+index.<span class="fn">build</span>(n_trees=<span class="num">20</span>)                <span class="cmt"># 一次性构建</span>
+index.<span class="fn">save</span>(<span class="str">'index.ann'</span>)
+
+<span class="cmt"># 查询</span>
+q = np.<span class="fn">random</span>.<span class="fn">rand</span>(D)
+ids = index.<span class="fn">get_nns_by_vector</span>(q, <span class="num">10</span>, search_k=<span class="num">200</span>)
+<span class="fn">print</span>(ids)</pre>
+
+    <h3>加载已有索引（mmap 零拷贝）</h3>
+    <pre class="code">u = <span class="fn">AnnoyIndex</span>(D, <span class="str">'angular'</span>)
+u.<span class="fn">load</span>(<span class="str">'index.ann'</span>)                    <span class="cmt"># mmap 加载，极快</span>
+u.<span class="fn">get_nns_by_item</span>(<span class="num">0</span>, <span class="num">10</span>)</pre>
+</section>
+
+<section>
+    <h2>10. 常见误区</h2>
+    <div class="pitfall">
+        <h4>初学者容易踩的三个坑</h4>
+        <ol>
+            <li><b>Annoy 是只读结构，插入必须整体重建。</b> <code>build()</code> 一旦调用就不能再 <code>add_item</code>。想支持增量更新的场景请考虑 HNSW（可以动态添加）或双缓冲重建方案（离线重建 + 在线切换）。</li>
+            <li><b>n_trees 太少召回崩塌，太多内存爆炸。</b> 只建 1~2 棵树时，召回率经常掉到 60% 以下，森林的"多样性对冲"根本没生效；而 1000 棵树也不会显著提升召回，反而占爆内存。生产环境按数据量取 10~100，先跑一次召回评估再调参。</li>
+            <li><b>不同 metric 需要重建索引。</b> <code>angular</code>（cosine）和 <code>euclidean</code> 走完全不同的距离运算，索引里保存的分割结构也不同。切换度量必须重新 <code>add_item</code> + <code>build</code>，不能复用旧文件。</li>
+        </ol>
+    </div>
+</section>
+
+<section>
+    <h2>11. 下一步学什么</h2>
+    <div class="next-steps">
+        <p><b>推荐路径：</b>Annoy 是"随机 + 集成"思路的经典代表，理解它之后可以自然过渡到更现代的大规模检索方案。</p>
+        <ul>
+            <li>上一站：<a href="./ball-tree.html">Ball Tree / VP-Tree</a>——精确 KNN 的度量空间基线。</li>
+            <li>下一站：<code>HNSW</code>（Hierarchical Navigable Small World）——用分层小世界图代替树，支持增量插入、召回优异，已成 Faiss / Milvus / pgvector 主流索引之一。</li>
+            <li>大规模压缩方案：<code>IVF-PQ</code>（倒排 + 乘积量化）——用聚类和量化把亿级向量压到几 GB 内存，检索毫秒级。</li>
+            <li>综合评测：<a href="http://ann-benchmarks.com" target="_blank">ann-benchmarks.com</a>——各主流 ANN 库在标准数据集上的召回-QPS 对比。</li>
+        </ul>
+    </div>
+</section>
+
+</main>
+
+<footer>ANN 教学演示 · Annoy 随机投影树森林 · 纯 HTML5 Canvas + SVG 实现</footer>
+
+<script>
+"use strict";
+
+/* ============================================================
+ * 基本工具
+ * ============================================================ */
+function dist(a, b) {
+    const dx = a[0]-b[0], dy = a[1]-b[1];
+    return Math.sqrt(dx*dx + dy*dy);
+}
+function dot(a, b) { return a[0]*b[0] + a[1]*b[1]; }
+
+// 简易可复现随机
+function makeRng(seed) {
+    let s = seed || 1;
+    return function() {
+        s = (s * 1103515245 + 12345) & 0x7fffffff;
+        return s / 0x7fffffff;
+    };
+}
+
+/* ============================================================
+ * Annoy 树（2D 版本）
+ * 每个内部节点：n（分割向量），b（阈值），left，right
+ * 叶节点：points
+ * ============================================================ */
+class AnnNode {
+    constructor() {
+        this.isLeaf = false;
+        this.points = null;
+        this.n = null;
+        this.b = 0;
+        this.left = null;
+        this.right = null;
+        this.p1 = null; // 用于可视化：抽样的两点
+        this.p2 = null;
+        this.bbox = null;
+        this.depth = 0;
+    }
+}
+
+// bbox 用于绘制分割线：把分割超平面裁剪到 bbox 内
+function splitBBox(bbox, n, b) {
+    // 找到超平面 n·x = b 在矩形 bbox 内的两个交点
+    const [x0,y0,x1,y1] = bbox;
+    const pts = [];
+    // 左边 x=x0
+    if (Math.abs(n[1]) > 1e-9) {
+        const y = (b - n[0]*x0)/n[1];
+        if (y >= y0 && y <= y1) pts.push([x0,y]);
+        const y2 = (b - n[0]*x1)/n[1];
+        if (y2 >= y0 && y2 <= y1) pts.push([x1,y2]);
+    }
+    if (Math.abs(n[0]) > 1e-9) {
+        const x = (b - n[1]*y0)/n[0];
+        if (x >= x0 && x <= x1) pts.push([x,y0]);
+        const x2 = (b - n[1]*y1)/n[0];
+        if (x2 >= x0 && x2 <= x1) pts.push([x2,y1]);
+    }
+    // 去重
+    const uniq = [];
+    for (const p of pts) {
+        if (!uniq.some(q => Math.hypot(q[0]-p[0], q[1]-p[1]) < 1e-3)) uniq.push(p);
+    }
+    return uniq.slice(0,2);
+}
+
+// bbox 一分为二
+function subBBox(bbox, n, b, side) {
+    // side < 0 表示 dot(n,x) < b 的一侧
+    // 简单处理：使用原 bbox（保持简单，视觉上仍然清楚，实际分割显示由 bbox 全画即可）
+    return bbox.slice();
+}
+
+function buildAnnTree(points, leafSize, rng, bbox, depth=0) {
+    const node = new AnnNode();
+    node.bbox = bbox;
+    node.depth = depth;
+    if (points.length <= leafSize) {
+        node.isLeaf = true; node.points = points.slice();
+        return node;
+    }
+    // 随机采样两个不同点
+    let a = points[Math.floor(rng()*points.length)];
+    let b = points[Math.floor(rng()*points.length)];
+    let tries = 0;
+    while ((a[0]===b[0] && a[1]===b[1]) && tries<10) {
+        b = points[Math.floor(rng()*points.length)]; tries++;
+    }
+    if (a[0]===b[0] && a[1]===b[1]) {
+        // 退化：全部相同
+        node.isLeaf = true; node.points = points.slice();
+        return node;
+    }
+    // n = b - a, b_val = (|b|^2 - |a|^2)/2
+    const n = [b[0]-a[0], b[1]-a[1]];
+    const bv = (dot(b,b) - dot(a,a)) / 2;
+    node.p1 = a; node.p2 = b; node.n = n; node.b = bv;
+
+    const left = [], right = [];
+    for (const x of points) {
+        if (dot(n, x) < bv) left.push(x); else right.push(x);
+    }
+    if (left.length === 0 || right.length === 0) {
+        // 退化：所有点在同侧，作为叶子
+        node.isLeaf = true; node.points = points.slice(); return node;
+    }
+    node.left  = buildAnnTree(left,  leafSize, rng, bbox, depth+1);
+    node.right = buildAnnTree(right, leafSize, rng, bbox, depth+1);
+    return node;
+}
+
+function buildForest(points, nTrees, leafSize, bbox) {
+    const forest = [];
+    for (let i = 0; i < nTrees; i++) {
+        const rng = makeRng((i+1)*7919 + points.length*31);
+        forest.push(buildAnnTree(points, leafSize, rng, bbox));
+    }
+    return forest;
+}
+
+/* Best-first 查询：模拟 Annoy 的 priority-queue */
+function queryForest(forest, q, k, searchK) {
+    // 简易 min-heap 用数组
+    const heap = [];
+    function push(item) { heap.push(item); heap.sort((a,b)=>a.prio-b.prio); }
+    function pop() { return heap.shift(); }
+
+    forest.forEach((root, id) => push({ prio: -Infinity, node: root, tid: id }));
+    const candidates = new Map(); // key: point string
+    const leafHits = new Set();
+
+    while (heap.length && candidates.size < searchK) {
+        const cur = pop();
+        const n = cur.node;
+        if (n.isLeaf) {
+            leafHits.add(n);
+            for (const p of n.points) {
+                candidates.set(p[0]+','+p[1], p);
+            }
+            continue;
+        }
+        const margin = dot(n.n, q) - n.b;
+        const near = margin < 0 ? n.left  : n.right;
+        const far  = margin < 0 ? n.right : n.left;
+        push({ prio: cur.prio, node: near, tid: cur.tid });
+        push({ prio: cur.prio + Math.abs(margin), node: far, tid: cur.tid });
+    }
+    // 从 candidates 精确排序 top-k
+    const arr = [...candidates.values()];
+    arr.sort((a,b)=>dist(q,a)-dist(q,b));
+    return { top: arr.slice(0, k), candidates: arr, leafHits };
+}
+
+/* 精确 KNN，用于对比 */
+function exactKNN(points, q, k) {
+    return points.slice().sort((a,b)=>dist(q,a)-dist(q,b)).slice(0,k);
+}
+
+/* ============================================================
+ * 主画布
+ * ============================================================ */
+const mainCanvas = document.getElementById('mainCanvas');
+const mCtx = mainCanvas.getContext('2d');
+
+let mPoints = [];
+let mQuery = [280, 220];
+let mForest = [];
+let mNTrees = 4;
+let mSearchK = 30;
+let mLeafSize = 4;
+let mK = 1;
+
+function seedRandom() {
+    mPoints = [];
+    for (let i = 0; i < 40; i++) {
+        mPoints.push([30 + Math.random()*(mainCanvas.width-60),
+                      30 + Math.random()*(mainCanvas.height-60)]);
+    }
+    rebuild();
+}
+function seedClusters() {
+    mPoints = [];
+    const centers = [[130,120],[400,110],[200,320],[400,320],[300,220]];
+    centers.forEach(c => {
+        for (let i = 0; i < 8; i++) {
+            const a = Math.random()*Math.PI*2, r=Math.random()*45;
+            mPoints.push([c[0]+Math.cos(a)*r, c[1]+Math.sin(a)*r]);
+        }
+    });
+    rebuild();
+}
+function rebuild() {
+    if (mPoints.length === 0) { mForest=[]; drawMain(); renderForestGrid(); drawSvgTree(); return; }
+    mForest = buildForest(mPoints, mNTrees, mLeafSize,
+        [0,0,mainCanvas.width, mainCanvas.height]);
+    drawMain();
+    renderForestGrid();
+    drawSvgTree();
+    // 更新 tree index 范围
+    const ti = document.getElementById('treeIdx');
+    ti.max = mNTrees - 1;
+    if (parseInt(ti.value) >= mNTrees) ti.value = 0;
+    document.getElementById('treeIdxVal').textContent = ti.value;
+}
+
+function drawSplitLine(ctx, node, bbox, colorAlpha) {
+    if (!node || node.isLeaf) return;
+    const pts = splitBBox(bbox, node.n, node.b);
+    if (pts.length === 2) {
+        ctx.strokeStyle = colorAlpha;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        ctx.lineTo(pts[1][0], pts[1][1]);
+        ctx.stroke();
+    }
+    drawSplitLine(ctx, node.left,  bbox, colorAlpha);
+    drawSplitLine(ctx, node.right, bbox, colorAlpha);
+}
+
+function drawMain() {
+    mCtx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+
+    // 画每棵树的分割线（叠加浅色）
+    const treeColors = ['#3b7ddd','#e0a800','#7b3fd7','#199a55','#d93025','#0aabc9','#a0522d','#c71585'];
+    mForest.forEach((root, i) => {
+        const c = treeColors[i % treeColors.length];
+        // 用透明度分离多棵树
+        drawSplitLine(mCtx, root, root.bbox, c + '55');
+    });
+
+    // 数据点
+    for (const p of mPoints) {
+        mCtx.fillStyle = '#3b7ddd';
+        mCtx.beginPath(); mCtx.arc(p[0],p[1],4,0,Math.PI*2); mCtx.fill();
+    }
+
+    if (mForest.length && mPoints.length) {
+        const res = queryForest(mForest, mQuery, mK, mSearchK);
+        const exact = exactKNN(mPoints, mQuery, mK);
+
+        // 候选集用黄色小环
+        res.candidates.forEach(p => {
+            mCtx.strokeStyle = 'rgba(224,168,0,0.6)';
+            mCtx.beginPath(); mCtx.arc(p[0],p[1],7,0,Math.PI*2); mCtx.stroke();
+        });
+
+        // 精确 KNN
+        exact.forEach(p => {
+            mCtx.strokeStyle = '#199a55';
+            mCtx.lineWidth = 2;
+            mCtx.beginPath(); mCtx.arc(p[0],p[1],10,0,Math.PI*2); mCtx.stroke();
+        });
+
+        // Annoy 结果
+        res.top.forEach(p => {
+            mCtx.strokeStyle = '#7b3fd7';
+            mCtx.lineWidth = 2.5;
+            mCtx.beginPath(); mCtx.arc(p[0],p[1],13,0,Math.PI*2); mCtx.stroke();
+        });
+
+        // 召回统计
+        const exactSet = new Set(exact.map(p=>p[0]+','+p[1]));
+        const annoyHits = res.top.filter(p => exactSet.has(p[0]+','+p[1])).length;
+        const recall = mK > 0 ? (annoyHits / mK * 100).toFixed(0) : 0;
+        document.getElementById('stepInfo').innerHTML =
+            `<b>候选集大小：</b>${res.candidates.length}　` +
+            `<b>访问叶子数：</b>${res.leafHits.size}　` +
+            `<b>召回率：</b>${recall}%（Annoy top-${mK} ∩ 精确 top-${mK}）<br>` +
+            '增大 n_trees 或 search_k 可显著提升召回率。';
+    }
+
+    // 查询点
+    mCtx.fillStyle = '#d93025';
+    mCtx.beginPath(); mCtx.arc(mQuery[0], mQuery[1], 6, 0, Math.PI*2); mCtx.fill();
+    mCtx.strokeStyle = 'rgba(217,48,37,0.4)';
+    mCtx.beginPath(); mCtx.arc(mQuery[0], mQuery[1], 10, 0, Math.PI*2); mCtx.stroke();
+}
+
+/* 森林 grid：每棵树一个小 canvas */
+function renderForestGrid() {
+    const grid = document.getElementById('forestGrid');
+    grid.innerHTML = '';
+    const treeColors = ['#3b7ddd','#e0a800','#7b3fd7','#199a55','#d93025','#0aabc9','#a0522d','#c71585'];
+    mForest.forEach((root, i) => {
+        const cell = document.createElement('div');
+        cell.className = 'forest-cell';
+        const cv = document.createElement('canvas');
+        cv.width = 220; cv.height = 160;
+        const ctx = cv.getContext('2d');
+        // 缩放坐标到 small canvas
+        const sx = cv.width / mainCanvas.width;
+        const sy = cv.height / mainCanvas.height;
+        function drawSmall(node) {
+            if (!node) return;
+            if (!node.isLeaf) {
+                const pts = splitBBox(node.bbox, node.n, node.b);
+                if (pts.length === 2) {
+                    ctx.strokeStyle = treeColors[i % treeColors.length] + 'aa';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(pts[0][0]*sx, pts[0][1]*sy);
+                    ctx.lineTo(pts[1][0]*sx, pts[1][1]*sy);
+                    ctx.stroke();
+                }
+                drawSmall(node.left); drawSmall(node.right);
+            }
+        }
+        drawSmall(root);
+        for (const p of mPoints) {
+            ctx.fillStyle = '#3b7ddd';
+            ctx.beginPath(); ctx.arc(p[0]*sx, p[1]*sy, 2, 0, Math.PI*2); ctx.fill();
+        }
+
+        // 查询叶子
+        if (mPoints.length) {
+            const res = queryForest([root], mQuery, mK, mSearchK);
+            res.candidates.forEach(p => {
+                ctx.fillStyle = '#e0a800';
+                ctx.beginPath(); ctx.arc(p[0]*sx, p[1]*sy, 3, 0, Math.PI*2); ctx.fill();
+            });
+        }
+
+        // 查询点
+        ctx.fillStyle = '#d93025';
+        ctx.beginPath(); ctx.arc(mQuery[0]*sx, mQuery[1]*sy, 3.5, 0, Math.PI*2); ctx.fill();
+        cell.appendChild(cv);
+        const cap = document.createElement('div');
+        cap.className = 'caption';
+        cap.textContent = 'Tree ' + i;
+        cell.appendChild(cap);
+        grid.appendChild(cell);
+    });
+}
+
+/* 单棵树 SVG 结构 */
+function drawSvgTree() {
+    const svg = document.getElementById('treeSvg');
+    svg.innerHTML = '';
+    if (!mForest.length) return;
+    const idx = parseInt(document.getElementById('treeIdx').value);
+    const root = mForest[Math.min(idx, mForest.length-1)];
+
+    const total = countAnnNodes(root);
+    let i = 0;
+    const W = 640;
+    function layout(n, d) {
+        if (!n) return;
+        layout(n.left, d+1);
+        n._x = (i+0.5)*(W/total);
+        n._y = 30 + d*45;
+        i++;
+        layout(n.right, d+1);
+    }
+    layout(root, 0);
+
+    function draw(n) {
+        if (!n) return;
+        if (n.left)  { addLine(n._x,n._y,n.left._x,n.left._y);  draw(n.left); }
+        if (n.right) { addLine(n._x,n._y,n.right._x,n.right._y); draw(n.right); }
+        const color = n.isLeaf ? '#199a55' : '#7b3fd7';
+        addCircle(n._x, n._y, color, n.isLeaf ? ('L' + n.points.length) : 'H');
+        if (n.isLeaf) addLabel(n._x, n._y+22, n.points.length + ' 点');
+    }
+    function addLine(x1,y1,x2,y2) {
+        const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+        l.setAttribute('x1',x1); l.setAttribute('y1',y1);
+        l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+        l.setAttribute('stroke','#c0c6cf'); svg.appendChild(l);
+    }
+    function addCircle(x,y,color,text) {
+        const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+        c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',11);
+        c.setAttribute('fill',color); svg.appendChild(c);
+        const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+        t.setAttribute('x',x); t.setAttribute('y',y+4); t.setAttribute('text-anchor','middle');
+        t.setAttribute('font-size',10); t.setAttribute('fill','white'); t.textContent=text;
+        svg.appendChild(t);
+    }
+    function addLabel(x,y,text) {
+        const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+        t.setAttribute('x',x); t.setAttribute('y',y); t.setAttribute('text-anchor','middle');
+        t.setAttribute('font-size',9); t.setAttribute('fill','#555'); t.textContent=text;
+        svg.appendChild(t);
+    }
+    draw(root);
+}
+function countAnnNodes(n) { return n ? 1 + countAnnNodes(n.left) + countAnnNodes(n.right) : 0; }
+
+/* 事件 */
+mainCanvas.addEventListener('click', (e)=>{
+    const r = mainCanvas.getBoundingClientRect();
+    const x = e.clientX-r.left, y = e.clientY-r.top;
+    if (Math.abs(x-mQuery[0])<12 && Math.abs(y-mQuery[1])<12) return;
+    mPoints.push([x,y]); rebuild();
+});
+let mDragging=false;
+mainCanvas.addEventListener('mousedown',(e)=>{
+    const r=mainCanvas.getBoundingClientRect();
+    const x=e.clientX-r.left, y=e.clientY-r.top;
+    if (Math.abs(x-mQuery[0])<14 && Math.abs(y-mQuery[1])<14) mDragging=true;
+});
+mainCanvas.addEventListener('mousemove',(e)=>{
+    if (!mDragging) return;
+    const r=mainCanvas.getBoundingClientRect();
+    mQuery=[e.clientX-r.left, e.clientY-r.top];
+    drawMain();
+    renderForestGrid();
+});
+window.addEventListener('mouseup', ()=>mDragging=false);
+
+document.getElementById('btnRandom').onclick = seedRandom;
+document.getElementById('btnClusters').onclick = seedClusters;
+document.getElementById('btnRebuild').onclick = rebuild;
+document.getElementById('btnClear').onclick = ()=>{ mPoints=[]; rebuild(); };
+document.getElementById('nTrees').oninput = (e)=>{
+    mNTrees = parseInt(e.target.value);
+    document.getElementById('nTreesVal').textContent = mNTrees;
+    rebuild();
+};
+document.getElementById('searchK').oninput = (e)=>{
+    mSearchK = parseInt(e.target.value);
+    document.getElementById('searchKVal').textContent = mSearchK;
+    drawMain(); renderForestGrid();
+};
+document.getElementById('leafSize').oninput = (e)=>{
+    mLeafSize = parseInt(e.target.value);
+    document.getElementById('leafVal').textContent = mLeafSize;
+    rebuild();
+};
+document.getElementById('kInput').oninput = (e)=>{
+    mK = parseInt(e.target.value);
+    document.getElementById('kVal').textContent = mK;
+    drawMain(); renderForestGrid();
+};
+document.getElementById('treeIdx').oninput = (e)=>{
+    document.getElementById('treeIdxVal').textContent = e.target.value;
+    drawSvgTree();
+};
+
+seedClusters();
+
+/* ============================================================
+ * 案例逐步讲解：12 个点，2 棵树
+ * ============================================================ */
+const stepCanvas = document.getElementById('stepCanvas');
+const sCtx = stepCanvas.getContext('2d');
+const stepDetail = document.getElementById('stepDetail');
+const stepCode = document.getElementById('stepCode');
+
+const demoPts = [
+    [80, 70], [140, 130], [90, 220], [180, 280],
+    [250, 100], [300, 200], [280, 300], [370, 130],
+    [420, 240], [430, 320], [200, 200], [340, 350]
+];
+const demoLabels = ['A','B','C','D','E','F','G','H','I','J','K','L'];
+const demoQ = [310, 240];
+const demoBBox = [0,0,stepCanvas.width, stepCanvas.height];
+
+let stepIdx = 0;
+const steps = [];
+
+(function planSteps() {
+    // 用两个不同 seed 构建 2 棵树
+    const rng1 = makeRng(11), rng2 = makeRng(29);
+    const trees = [];
+    const buildTrace = [];
+    function build(pts, ls, rng, tid, depth) {
+        const node = new AnnNode();
+        node.depth = depth; node.bbox = demoBBox;
+        if (pts.length <= ls) { node.isLeaf = true; node.points = pts.slice();
+            buildTrace.push({ tid, node, action: 'leaf' });
+            return node;
+        }
+        let a = pts[Math.floor(rng()*pts.length)];
+        let b = pts[Math.floor(rng()*pts.length)];
+        let t = 0;
+        while ((a[0]===b[0] && a[1]===b[1]) && t<10) {
+            b = pts[Math.floor(rng()*pts.length)]; t++;
+        }
+        const n = [b[0]-a[0], b[1]-a[1]];
+        const bv = (dot(b,b) - dot(a,a))/2;
+        node.n = n; node.b = bv; node.p1 = a; node.p2 = b;
+        buildTrace.push({ tid, node, action: 'split', a, b, n, bv });
+        const L = pts.filter(x=>dot(n,x) < bv);
+        const R = pts.filter(x=>dot(n,x) >= bv);
+        if (L.length===0 || R.length===0) { node.isLeaf = true; node.points = pts.slice(); return node; }
+        node.left  = build(L, ls, rng, tid, depth+1);
+        node.right = build(R, ls, rng, tid, depth+1);
+        return node;
+    }
+    trees.push(build(demoPts, 3, rng1, 0, 0));
+    trees.push(build(demoPts, 3, rng2, 1, 0));
+
+    steps.push({
+        type: 'init',
+        text: '初始化：12 个点、2 棵随机投影树 (n_trees=2)、leaf_size=3、search_k=6。查询点 Q=' + JSON.stringify(demoQ) + '。',
+        code: 'forest = [ build_tree(P, 3) for _ in range(2) ]'
+    });
+
+    // build steps
+    buildTrace.forEach((t, i) => {
+        if (t.action === 'split') {
+            steps.push({
+                type: 'build',
+                tid: t.tid,
+                trees,
+                revealBuildUpTo: i+1,
+                buildTrace,
+                text: '树 ' + t.tid + ' 内部节点：随机采样两点 ' +
+                    '(' + t.a[0].toFixed(0) + ',' + t.a[1].toFixed(0) + ') 和 ' +
+                    '(' + t.b[0].toFixed(0) + ',' + t.b[1].toFixed(0) + ')，构造中垂线分割超平面。',
+                code: 'a, b = sample(points, 2)\nn = b - a\nb_val = (|b|^2 - |a|^2)/2\n# 左：dot(n,x) < b_val\n# 右：dot(n,x) >= b_val'
+            });
+        } else if (t.action === 'leaf') {
+            steps.push({
+                type: 'build',
+                tid: t.tid,
+                trees,
+                revealBuildUpTo: i+1,
+                buildTrace,
+                text: '树 ' + t.tid + ' 到达叶子节点，保存 ' + t.node.points.length + ' 个点。',
+                code: 'if len(points) <= leaf_size: return Leaf(points)'
+            });
+        }
+    });
+
+    // query: 用 search_k=6, k=1
+    const res = queryForest(trees, demoQ, 1, 6);
+    // 简化：把叶子命中和精确排序作为两步
+    steps.push({
+        type: 'query-collect',
+        trees, buildTrace,
+        candidates: res.candidates,
+        leafHits: [...res.leafHits],
+        text: '查询阶段（步 1）：在 2 棵树上做 best-first 走向叶子，累计候选集直至 ≥ search_k(6)。得到候选点：' +
+              res.candidates.map(p => demoLabels[demoPts.findIndex(x=>x[0]===p[0]&&x[1]===p[1])]).join(', '),
+        code: 'while len(candidates) < search_k:\n    node = heap.pop()\n    if node.is_leaf: candidates |= node.points\n    else: heap.push(near); heap.push(far, penalty)'
+    });
+
+    steps.push({
+        type: 'query-rank',
+        trees, buildTrace,
+        candidates: res.candidates,
+        top: res.top,
+        text: '查询阶段（步 2）：对候选集精确计算距离，排序返回 top-1 = ' +
+              demoLabels[demoPts.findIndex(x=>x[0]===res.top[0][0]&&x[1]===res.top[0][1])] +
+              ' (距离 ' + dist(demoQ, res.top[0]).toFixed(1) + ')。',
+        code: 'return sorted(candidates, key=lambda x: dist(q,x))[:k]'
+    });
+})();
+
+function drawStep() {
+    sCtx.clearRect(0,0,stepCanvas.width, stepCanvas.height);
+    const s = steps[stepIdx];
+
+    // 数据点 + 标签
+    demoPts.forEach((p,i)=>{
+        sCtx.fillStyle = '#3b7ddd';
+        sCtx.beginPath(); sCtx.arc(p[0],p[1],5,0,Math.PI*2); sCtx.fill();
+        sCtx.fillStyle = '#111';
+        sCtx.font = '11px sans-serif';
+        sCtx.fillText(demoLabels[i], p[0]+7, p[1]-7);
+    });
+
+    // 依据 buildTrace 绘制分割线
+    if (s.buildTrace) {
+        const upto = s.revealBuildUpTo || s.buildTrace.length;
+        const treeColors = ['#3b7ddd', '#7b3fd7'];
+        for (let i = 0; i < upto; i++) {
+            const t = s.buildTrace[i];
+            if (t.action === 'split') {
+                const pts = splitBBox(demoBBox, t.n, t.bv);
+                if (pts.length === 2) {
+                    sCtx.strokeStyle = treeColors[t.tid] + 'aa';
+                    sCtx.lineWidth = 1.5;
+                    sCtx.beginPath();
+                    sCtx.moveTo(pts[0][0], pts[0][1]);
+                    sCtx.lineTo(pts[1][0], pts[1][1]);
+                    sCtx.stroke();
+                }
+                // 最近一次分割高亮两个采样点
+                if (i === upto-1) {
+                    sCtx.strokeStyle = '#e0a800';
+                    sCtx.lineWidth = 2;
+                    sCtx.beginPath(); sCtx.arc(t.a[0], t.a[1], 9, 0, Math.PI*2); sCtx.stroke();
+                    sCtx.beginPath(); sCtx.arc(t.b[0], t.b[1], 9, 0, Math.PI*2); sCtx.stroke();
+                }
+            }
+        }
+    }
+
+    // 查询点
+    sCtx.fillStyle = '#d93025';
+    sCtx.beginPath(); sCtx.arc(demoQ[0], demoQ[1], 6, 0, Math.PI*2); sCtx.fill();
+    sCtx.fillStyle = '#111'; sCtx.fillText('Q', demoQ[0]+7, demoQ[1]-7);
+
+    // 候选集
+    if (s.candidates) {
+        s.candidates.forEach(p => {
+            sCtx.strokeStyle = '#e0a800';
+            sCtx.lineWidth = 2;
+            sCtx.beginPath(); sCtx.arc(p[0],p[1],9,0,Math.PI*2); sCtx.stroke();
+        });
+    }
+    if (s.top) {
+        s.top.forEach(p => {
+            sCtx.strokeStyle = '#7b3fd7';
+            sCtx.lineWidth = 3;
+            sCtx.beginPath(); sCtx.arc(p[0],p[1],12,0,Math.PI*2); sCtx.stroke();
+            sCtx.strokeStyle = 'rgba(123,63,215,0.5)';
+            sCtx.beginPath(); sCtx.moveTo(demoQ[0], demoQ[1]); sCtx.lineTo(p[0], p[1]); sCtx.stroke();
+        });
+    }
+
+    stepDetail.innerHTML = '<b>阶段：</b>' + s.text;
+    stepCode.textContent = s.code || '';
+}
+
+document.getElementById('btnStepNext').onclick = ()=>{
+    if (stepIdx < steps.length-1) { stepIdx++; drawStep(); }
+};
+document.getElementById('btnStepPrev').onclick = ()=>{
+    if (stepIdx > 0) { stepIdx--; drawStep(); }
+};
+document.getElementById('btnStepReset').onclick = ()=>{ stepIdx=0; drawStep(); };
+drawStep();
+</script>
+</body>
+</html>

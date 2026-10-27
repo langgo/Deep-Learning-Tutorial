@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SPANN - 微软的内存粗聚类 + 磁盘倒排</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    background: #f5f7fa;
+    color: #2c3e50;
+    line-height: 1.7;
+    padding: 24px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  header {
+    background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%);
+    color: #fff;
+    padding: 32px;
+    border-radius: 14px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 16px rgba(124, 58, 237, 0.25);
+  }
+  header h1 { font-size: 30px; margin-bottom: 8px; }
+  header p { opacity: 0.92; font-size: 15px; }
+  .back-link {
+    display: inline-block;
+    margin-bottom: 12px;
+    color: #fff;
+    text-decoration: none;
+    font-size: 14px;
+    opacity: 0.9;
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.18);
+    border-radius: 6px;
+  }
+  .back-link:hover { opacity: 1; background: rgba(255,255,255,0.28); }
+  .card {
+    background: #fff;
+    padding: 22px 26px;
+    margin-bottom: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  }
+  .card h2 {
+    font-size: 22px;
+    color: #7c3aed;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #ede9fe;
+    margin-bottom: 14px;
+  }
+  .card h3 { font-size: 17px; color: #34495e; margin: 14px 0 8px; }
+  p, li { font-size: 14.5px; color: #4a5568; }
+  ul, ol { padding-left: 22px; margin: 8px 0; }
+  li { margin-bottom: 4px; }
+  code {
+    background: #ede9fe;
+    color: #6d28d9;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 13px;
+  }
+  pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 10px 0;
+  }
+  .analogy {
+    background: #fff8e6;
+    border-left: 4px solid #f0b429;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+  }
+  .tip {
+    background: #f5f3ff;
+    border-left: 4px solid #7c3aed;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+  }
+  .demo-area {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 18px;
+  }
+  @media (max-width: 900px) { .demo-area { grid-template-columns: 1fr; } }
+  .canvas-wrap {
+    background: #fafbfd;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px;
+    position: relative;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    background: #fff;
+    border-radius: 8px;
+    cursor: crosshair;
+  }
+  .controls {
+    background: #f8fafc;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+  }
+  .param { margin-bottom: 12px; }
+  .param label {
+    display: flex; justify-content: space-between;
+    font-size: 13px; font-weight: 600; color: #334155;
+    margin-bottom: 4px;
+  }
+  .param label span.val { color: #7c3aed; font-family: monospace; }
+  .param input[type=range] { width: 100%; accent-color: #7c3aed; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  button {
+    background: #7c3aed; color: #fff; border: 0;
+    padding: 8px 14px; border-radius: 6px;
+    font-size: 13px; cursor: pointer; font-weight: 600;
+    transition: all 0.15s;
+  }
+  button:hover { background: #6d28d9; transform: translateY(-1px); }
+  button.ghost { background: #fff; color: #7c3aed; border: 1px solid #7c3aed; }
+  button.ghost:hover { background: #f5f3ff; }
+  button.warn { background: #db2777; }
+  button.warn:hover { background: #be185d; }
+  .status {
+    background: #1e293b; color: #c4b5fd;
+    padding: 10px 14px; border-radius: 8px;
+    font-family: monospace; font-size: 12.5px;
+    margin-top: 10px;
+    min-height: 90px; max-height: 220px;
+    overflow-y: auto; line-height: 1.6;
+  }
+  .status .hi { color: #fbbf24; }
+  .status .ok { color: #34d399; }
+  .status .head { color: #f472b6; }
+  .status .disk { color: #a5b4fc; }
+  .legend {
+    display: flex; flex-wrap: wrap;
+    gap: 10px; margin-top: 10px;
+    font-size: 12.5px; color: #475569;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  table.compare {
+    width: 100%; border-collapse: collapse;
+    margin: 10px 0; font-size: 13.5px;
+  }
+  table.compare th, table.compare td {
+    padding: 8px 10px; border: 1px solid #e2e8f0; text-align: left;
+  }
+  table.compare th { background: #ede9fe; color: #6d28d9; }
+  table.compare tr:nth-child(even) td { background: #f8fafc; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  .pill {
+    display: inline-block; background: #ede9fe; color: #6d28d9;
+    padding: 3px 8px; border-radius: 20px;
+    font-size: 12px; margin-right: 4px;
+  }
+  .storage-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .storage-box {
+    background: #fff;
+    border: 2px solid #e2e8f0;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+  .storage-box.mem { border-color: #db2777; }
+  .storage-box.disk { border-color: #6366f1; }
+  .storage-box h4 {
+    font-size: 13px; margin-bottom: 4px;
+  }
+  .storage-box.mem h4 { color: #db2777; }
+  .storage-box.disk h4 { color: #6366f1; }
+  .rule-box {
+    background: #fef3c7;
+    border: 2px dashed #f59e0b;
+    padding: 14px 18px;
+    border-radius: 10px;
+    margin: 10px 0;
+  }
+  .rule-box b { color: #d97706; }
+  footer { text-align: center; color: #94a3b8; font-size: 13px; padding: 20px 0; }
+  .metric-row {
+    display: flex; gap: 10px; margin-top: 8px;
+    font-size: 12px;
+  }
+  .metric-row .mm {
+    background: #f5f3ff; border: 1px solid #ddd6fe;
+    padding: 4px 10px; border-radius: 6px;
+    color: #6d28d9; font-family: monospace;
+  }
+  /* --- 教学增强样式 --- */
+  .prereq-bar { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.92rem; }
+  .prereq-bar .pill { display: inline-block; background: white; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; margin: 0 4px; color: #1e40af; text-decoration: none; font-size: 0.85rem; }
+  .glossary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+  .glossary summary { cursor: pointer; font-weight: 600; color: #374151; padding: 4px 0; }
+  .glossary dt { font-weight: 600; color: #1f2937; margin-top: 8px; }
+  .glossary dd { margin: 2px 0 0 0; color: #4b5563; font-size: 0.92rem; }
+  .new-user-tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+  .pitfall { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+  .pitfall h4 { color: #92400e; margin-top: 0; }
+  .next-steps { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 20px 0; border-radius: 4px; }
+  .next-steps a { color: #047857; font-weight: 600; }
+  .intuition-box { background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 14px 18px; margin: 16px 0; border-radius: 4px; }
+  .intuition-box h4 { color: #6d28d9; margin-top: 0; }
+  .symbol-table { width: 100%; font-size: 0.88rem; margin: 12px 0; border-collapse: collapse; }
+  .symbol-table th, .symbol-table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+  .symbol-table th { background: #f9fafb; color: #374151; }
+  .legend-guide { background: #f0fdf4; border-left: 3px solid #10b981; padding: 10px 14px; margin: 12px 0; border-radius: 4px; font-size: 0.9rem; }
+  .legend-guide .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<a href="../index.html" class="back-link">返回上级目录</a>
+
+<header>
+  <h1>SPANN - 内存粗聚类 + 磁盘倒排列表</h1>
+  <p>Microsoft Research NeurIPS 2021 - "SPANN: Highly-efficient Billion-scale ANN Search"<br>把 IVF 思想推向极致: 内存只放聚类中心, 全部向量放磁盘倒排</p>
+</header>
+
+<!-- 前置阅读 -->
+<div class="prereq-bar">
+  <b>前置：</b>
+  <span class="pill">IVF-PQ（必读，理解倒排索引）</span>
+  <span class="pill"><a href="diskann.html" style="color:#1e40af;text-decoration:none">DiskANN（磁盘 IO 基础）</a></span>
+  <br>
+  <b>建议顺序：</b> <a class="pill" href="hnsw.html">HNSW</a> → <a class="pill" href="nsg.html">NSG</a> → <a class="pill" href="diskann.html">DiskANN</a> → SPANN <b>(当前)</b>
+</div>
+
+<!-- 关键术语速查 -->
+<details class="glossary" open>
+  <summary>关键术语速查（点击展开/折叠）</summary>
+  <dl>
+    <dt>posting list（倒排列表）</dt>
+    <dd>每个桶（簇）内向量的列表。SPANN 把每个 posting 存到磁盘上一段连续区域，便于顺序读。</dd>
+    <dt>head（中心）</dt>
+    <dd>每个 posting 对应的桶质心向量，全部驻留内存。查询先用 head 找 nprobe 个候选桶。</dd>
+    <dt>边界点复制</dt>
+    <dd>处于两个桶交界处的点，同时复制进多个 posting，避免因硬边界漏检。是对经典 IVF 的重要改进。</dd>
+    <dt>query-aware truncation（查询感知截断）</dt>
+    <dd>查询时按 <b>该 posting head 与查询点的距离比例</b> 截断 posting 尾部——远离查询的 posting 只读少数向量，节省 IO。</dd>
+    <dt>gamma（松弛因子）</dt>
+    <dd>truncation 的松紧度：gamma 越大保留 posting 越完整（IO 长），gamma 越小截得越激进（快但可能漏）。</dd>
+    <dt>SPTAG</dt>
+    <dd>微软开源的 ANN 库（Space Partition Tree And Graph），SPANN 用它组织 head 集合上的图导航。</dd>
+    <dt>HBC（Hierarchy Balanced Clustering）</dt>
+    <dd>层次平衡聚类：递归划分保证 posting 大小均衡，避免 IVF 里常见的"某个桶特别大导致查询慢"问题。</dd>
+  </dl>
+</details>
+
+<!-- 新手引导 -->
+<div class="new-user-tip">
+  <b>新手引导（按顺序操作）：</b>
+  <ol style="margin:6px 0 0 22px">
+    <li>拖 K（簇数）滑块选定 head 数量，点【构建 SPANN】</li>
+    <li>观察画布中每个 head（大粉圆）周围的圆环 —— 就是它的 posting list 覆盖范围</li>
+    <li>观察橙色白环的点 —— 那是被复制到多个 posting 的<b>边界点</b>（拉大 epsilon 复制率上升）</li>
+    <li>拖 nprobe 滑块，点【查询模式】+ 画布任意位置发起查询</li>
+    <li>观察 IO 计数 —— nprobe 增大 IO 增多但召回变好</li>
+  </ol>
+</div>
+
+<section class="card">
+  <h2>一、直观理解: IVF 的极端形式</h2>
+  <p style="color:#64748b;font-size:13.5px;margin-bottom:8px">
+    <b>本方案解决了什么问题：</b> DiskANN 用<b>随机 IO</b> 访问 SSD，每次拿一个节点；SPANN 换用<b>顺序 IO</b>，一次读一整个 posting（几百个向量）。在同等 SSD 带宽下，顺序读吞吐 5~10× 于随机读，QPS 更高。<br>
+    如果不熟悉 IVF/PQ 或 DiskANN，请先看 <a href="../3-quantization/pq.html" style="color:#7c3aed">PQ 页面</a> 与 <a href="diskann.html" style="color:#7c3aed">DiskANN 页面</a>。
+  </p>
+  <p>SPANN 的名字来自 <b>S</b>calable <b>P</b>artition-based <b>ANN</b>。核心一句话: <b>把 IVF 的簇心放内存, 所有向量放磁盘</b>, 查询时先在内存找簇再从磁盘拉 posting。</p>
+
+  <div class="analogy">
+    <b>类比: 图书馆的"分类总目 + 分区书架"</b><br>
+    - 内存: 只放"分类目录卡"(每类的中心向量, 即 head)<br>
+    - 磁盘: 每类对应一个"书架格子"(posting list, 存放这类所有真实向量)<br>
+    - 查询: 先在目录卡里翻找 nprobe 个最相关的类, 再去磁盘对应的格子里精查
+  </div>
+
+  <div class="analogy">
+    <b>对比 DiskANN vs SPANN</b><br>
+    - DiskANN: <b>图</b>结构存磁盘, 一次 IO 读一个节点+邻居, 有依赖(必须走完再读下一个)<br>
+    - SPANN: <b>倒排</b>结构存磁盘, 一次读整个 posting list (可能几百个向量), 顺序 IO 更快
+  </div>
+
+  <div class="tip">
+    <b>核心 4 大关键设计:</b><br>
+    1. <b>Hierarchical Balanced Clustering (HBC)</b>: 保证每个 posting list 大小均匀 (~100 向量)<br>
+    2. <b>Duplicating boundary points</b>: 边界点复制到多个 posting, 提升召回<br>
+    3. <b>Query-aware posting truncation</b>: 查询时提前截断远离查询点的 posting 尾部<br>
+    4. <b>Head 用图索引组织</b>: 内存的 head 之间用 SPTAG 图导航
+  </div>
+</section>
+
+<section class="card">
+  <h2>二、算法原理</h2>
+
+  <h3>2.1 索引构建</h3>
+  <ol>
+    <li><b>K-Means 递归划分</b>: 用 HBC 把 N 个向量分为 ~ √N 个簇, 每簇约 √N 个向量, 相对均匀</li>
+    <li><b>Head 生成</b>: 每簇的中心 c_i 作为该 posting 的 head</li>
+    <li><b>边界点复制</b>: 若点 x 到多个 head 的距离比 (relative distance) &lt; RNG-rule 阈值, 复制 x 到那些 posting (通常一个点复制 8 份)</li>
+    <li><b>Head 图</b>: 对 head 集合再建 SPTAG 图 (类似 HNSW), 支持 head 之间快速 nprobe 搜索</li>
+    <li><b>磁盘布局</b>: 每个 posting 存磁盘 (顺序读友好), head 图存内存</li>
+  </ol>
+
+  <h3>2.2 边界点复制规则 (Multi-Assignment)</h3>
+  <div class="rule-box">
+    <b>对于点 x, 找到最近的 head c_1:</b><br>
+    &emsp;把 x 加入 c_1 的 posting<br>
+    <b>对次近的 head c_2, c_3, ..., c_k:</b><br>
+    &emsp;若 <code>d(x, c_i) / d(x, c_1) &lt; epsilon</code> (通常 epsilon ≈ 1.1)<br>
+    &emsp;&emsp;把 x 也加入 c_i 的 posting<br>
+    <b>直到复制数达上限 (通常 8)</b>
+  </div>
+  <p>直观: 处于"两个簇之间"的点会同时出现在两个 posting list, 保证查询任一 posting 都能命中它。</p>
+
+  <div class="intuition-box">
+    <h4>直觉：边界点复制的 RNG 判定</h4>
+    <p>SPANN 的复制规则用<b>相对邻近图（RNG）</b>思想：如果一个点 x 在 head A 与 head B 的"中间地带"，而且 A 和 B 之间<b>没有一个更近的 head 挡在中间</b>，就复制 x 到两个 posting。</p>
+    <p>反之，如果 A、B 之间还有一个 head C 比 x 更近，那 x 大概率属于 C 的 posting，不需要额外复制到 B。这样能避免"链式复制"导致 SSD 空间爆炸。</p>
+    <p>本页演示为简化，只用 <code>d(x,c_i)/d(x,c_1) &lt; epsilon</code> 判定，实际 SPANN 会加上 RNG 剪枝。</p>
+  </div>
+
+  <h3>2.3 查询流程</h3>
+  <pre>function SPANN_SEARCH(q, k, nprobe):
+    # 阶段 1: 内存搜索 head 图
+    top_heads = SPTAG_search(q, nprobe)     # 找 nprobe 个最近 head
+
+    # 阶段 2: 拉取 posting lists 从 SSD (并行 IO)
+    candidates = []
+    for h in top_heads:
+        posting = READ_SSD(h.posting_ptr)    # 顺序读 posting_size 个向量
+        # Query-aware truncation:
+        # 剪掉 posting 尾部 (dist > threshold) 的向量
+        for x in posting:
+            if d(q, h) - d(x, h) < gamma * d(q, top_heads[0]):
+                candidates.append(x)
+
+    # 阶段 3: 内存中精确排序
+    return top-k of candidates by dist(q, ·)</pre>
+
+  <div class="intuition-box">
+    <h4>直觉：query-aware truncation 的三角不等式</h4>
+    <p>假设查询 q 的最近 head 是 h_1，距离为 <code>d(q, h_1)</code>。对另一个 head h_i（距离更远），posting 里的一个点 x 到 q 的距离满足：</p>
+    <p style="text-align:center"><code>d(q, x) ≥ |d(q, h_i) − d(x, h_i)|</code> &nbsp;（三角不等式）</p>
+    <p>如果<b>右边</b>都已经比 <code>γ · d(q, h_1)</code> 还大，那 x 不可能进入 top-k，可以整段截断。整个 posting list 若都不满足条件，直接<b>跳过整个 posting</b>——省一次 SSD IO。</p>
+    <p>这就是为什么 SPANN 单次查询实际读的向量数远小于 <code>nprobe × 平均 posting 大小</code>。</p>
+  </div>
+
+  <h3>2.4 为什么 SPANN 比 IVF 快很多</h3>
+  <ul>
+    <li>IVF 在内存中做全部工作 (posting 也在内存), 内存开销大</li>
+    <li>SPANN 只把 head 放内存, posting 放磁盘, 内存需求从 O(N) 变 O(√N)</li>
+    <li>Query-aware truncation 让 SSD 顺序读实际只读 posting 的前 30~50%</li>
+    <li>Head 图 (SPTAG) 比 IVF 暴力找 head 快 10 倍</li>
+  </ul>
+</section>
+
+<section class="card">
+  <h2>三、交互式演示: Head 聚类 + Posting 列表</h2>
+  <p>点画布空白处添加向量; 构建后点击查询模式发起查询, 观察 nprobe head 和边界点分配。</p>
+
+  <div class="legend-guide">
+    <b>三态可视化图例：</b>
+    <span><i class="dot" style="background:#94a3b8"></i> 已访问节点（灰色实心）</span>&nbsp;·&nbsp;
+    <span><i class="dot" style="background:#fde047;border:1px solid #eab308"></i> 候选队列 W（黄色空心）</span>&nbsp;·&nbsp;
+    <span><i class="dot" style="background:#ef4444;box-shadow:0 0 6px #ef4444"></i> 当前扩展节点（红色发光）</span>
+    <br>本页面中：<b>粉色大圆 = head</b>，其周围半透明圆环 = posting 覆盖范围；<b>橙色白环点</b> = 被复制到多个 posting 的边界点；<b>蓝色</b> = 本次查询命中的 posting 成员。
+  </div>
+
+  <div class="demo-area">
+    <div>
+      <div class="canvas-wrap">
+        <canvas id="cv" width="820" height="500"></canvas>
+      </div>
+      <div class="legend">
+        <span><i class="dot" style="background:#334155"></i> 普通向量</span>
+        <span><i class="dot" style="background:#db2777"></i> Head (簇心)</span>
+        <span><i class="dot" style="background:#f97316"></i> 边界点(复制)</span>
+        <span><i class="dot" style="background:#0ea5e9"></i> 命中 posting</span>
+        <span><i class="dot" style="background:#22c55e"></i> 结果</span>
+        <span><i class="dot" style="background:#eab308"></i> 查询点</span>
+      </div>
+      <div class="storage-panel">
+        <div class="storage-box mem">
+          <h4>内存: Head 集合 (Head 图)</h4>
+          <div id="memList" style="font-family:monospace;font-size:11.5px;color:#64748b"></div>
+        </div>
+        <div class="storage-box disk">
+          <h4>SSD: Posting Lists</h4>
+          <div id="diskList" style="font-family:monospace;font-size:11.5px;color:#64748b"></div>
+        </div>
+      </div>
+      <div class="metric-row">
+        <div class="mm">Head 数: <span id="mHeads">0</span></div>
+        <div class="mm">总向量 (含复制): <span id="mVec">0</span></div>
+        <div class="mm">复制率: <span id="mDup">0%</span></div>
+        <div class="mm">本次 IO: <span id="mIO">0</span></div>
+      </div>
+      <div class="status" id="log"></div>
+    </div>
+
+    <div class="controls">
+      <h3 style="margin-top:0;color:#7c3aed;">参数控制</h3>
+
+      <div class="param">
+        <label>簇数 K (Head 数量) <span class="val" id="Kv">10</span></label>
+        <input type="range" id="K" min="3" max="30" value="10">
+      </div>
+
+      <div class="param">
+        <label>nprobe (查询 head 数) <span class="val" id="npv">3</span></label>
+        <input type="range" id="np" min="1" max="10" value="3">
+      </div>
+
+      <div class="param">
+        <label>epsilon (复制阈值) <span class="val" id="epsv">1.10</span></label>
+        <input type="range" id="eps" min="100" max="200" value="110">
+      </div>
+
+      <div class="param">
+        <label>复制上限 (每点最多归属) <span class="val" id="mrv">4</span></label>
+        <input type="range" id="mr" min="1" max="8" value="4">
+      </div>
+
+      <div class="param">
+        <label>节点数 N <span class="val" id="Nv">150</span></label>
+        <input type="range" id="N" min="50" max="300" value="150">
+      </div>
+
+      <div class="param">
+        <label>Query-aware trunc gamma <span class="val" id="gv">1.30</span></label>
+        <input type="range" id="g" min="100" max="200" value="130">
+      </div>
+
+      <div class="btn-row">
+        <button id="regen">重生成点</button>
+        <button id="build">构建 SPANN</button>
+      </div>
+      <div class="btn-row">
+        <button class="warn" id="query">查询模式</button>
+        <button class="ghost" id="autoQ">随机查询</button>
+      </div>
+      <div class="btn-row">
+        <button class="ghost" id="stepBuild">分步构建</button>
+        <button class="ghost" id="reset">重置</button>
+      </div>
+
+      <div class="param" style="margin-top:12px">
+        <label>动画速度 <span class="val" id="spdv">400 ms</span></label>
+        <input type="range" id="spd" min="80" max="1200" value="400">
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>四、参数解释</h2>
+  <table class="compare">
+    <tr><th>参数</th><th>作用</th><th>典型值</th><th>调大后果</th></tr>
+    <tr><td><code>K</code></td><td>Head 数量 (通常 ≈ √N)</td><td>√N ~ 4√N</td><td>Head 图内存↑, posting 变小</td></tr>
+    <tr><td><code>nprobe</code></td><td>查询时探测的 posting 数</td><td>8 ~ 32</td><td>召回↑, 磁盘 IO↑</td></tr>
+    <tr><td><code>epsilon</code></td><td>边界点复制阈值</td><td>1.05 ~ 1.15</td><td>复制率↑, 磁盘占用↑, 召回↑</td></tr>
+    <tr><td><code>maxRep</code></td><td>每点最大复制数</td><td>4 ~ 8</td><td>SSD 空间↑, 边界召回稳定</td></tr>
+    <tr><td><code>gamma</code></td><td>Query-aware trunc 松弛度</td><td>1.2 ~ 1.5</td><td>posting 读得更全, IO 时长↑</td></tr>
+  </table>
+
+  <h3>符号速查表</h3>
+  <table class="symbol-table">
+    <tr><th>符号</th><th>含义</th><th>默认量级</th></tr>
+    <tr><td><code>nlist</code> / <code>K</code></td><td>Head 数量（≈ √N）</td><td>√N ~ 4√N</td></tr>
+    <tr><td><code>nprobe</code></td><td>查询探测的 posting 数</td><td>8 ~ 32</td></tr>
+    <tr><td><code>gamma</code> (γ)</td><td>Query-aware trunc 松弛因子</td><td>1.2 ~ 1.5</td></tr>
+    <tr><td><code>epsilon</code> (ε)</td><td>边界点复制距离比阈值</td><td>1.05 ~ 1.15</td></tr>
+    <tr><td><code>max_replicas</code></td><td>每点最大复制数</td><td>4 ~ 8</td></tr>
+    <tr><td>posting_size</td><td>单 posting 平均向量数</td><td>50 ~ 200</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>五、复杂度 与 内存 vs 磁盘</h2>
+  <table class="compare">
+    <tr><th>指标</th><th>值</th><th>说明</th></tr>
+    <tr><td>Head 图内存</td><td>O(√N · d)</td><td>10 亿点约 30GB (若 d=128)</td></tr>
+    <tr><td>SSD 占用</td><td>O(N · d · replicaRatio)</td><td>replicaRatio ≈ 2~4</td></tr>
+    <tr><td>查询 IO 次数</td><td>nprobe (顺序读)</td><td>典型 nprobe=8, 8 次顺序读 8-16MB</td></tr>
+    <tr><td>QPS</td><td>200 ~ 800</td><td>单机 NVMe, 依赖 posting 大小</td></tr>
+    <tr><td>构建成本</td><td>O(N · K · iter)</td><td>HBC 迭代成本高</td></tr>
+  </table>
+  <div class="tip">
+    对比 DiskANN: SPANN 用<b>顺序读</b>取代<b>随机读</b>, 单次 IO 数据量更大但次数更少。对 SSD 带宽利用更好, 但延迟略高 (nprobe 个 posting 需处理)。
+  </div>
+</section>
+
+<section class="card">
+  <h2>六、优缺点 &amp; 适用场景</h2>
+  <div class="grid2">
+    <div>
+      <h3>优点</h3>
+      <ul>
+        <li><span class="pill">内存超省</span>只需 √N 级别</li>
+        <li><span class="pill">顺序 IO</span>SSD 带宽利用充分</li>
+        <li><span class="pill">易分片</span>posting 独立可分布式</li>
+        <li><span class="pill">易增量</span>新数据插入对应 posting 尾部</li>
+      </ul>
+    </div>
+    <div>
+      <h3>缺点</h3>
+      <ul>
+        <li><span class="pill">召回损失</span>粗聚类 + 硬边界导致漏检</li>
+        <li><span class="pill">复制开销</span>SSD 空间 2-4 倍原始</li>
+        <li><span class="pill">K-Means 慢</span>大数据集构建耗时</li>
+        <li><span class="pill">调参多</span>K, nprobe, eps, gamma 需联调</li>
+      </ul>
+    </div>
+  </div>
+  <h3>适用场景</h3>
+  <ul>
+    <li>数据规模: 10 亿 ~ 万亿级 (SPANN 是当前 SSD 索引的最大规模冠军)</li>
+    <li>内存资源极度受限, 允许 SSD 换内存</li>
+    <li>查询 QPS 较低 (&lt; 1000) 且延迟可接受 20-50ms</li>
+    <li>典型用户: Bing 网页搜索, TikTok 视频推荐, 图片搜索引擎</li>
+  </ul>
+</section>
+
+<section class="pitfall">
+  <h4>常见误区</h4>
+  <ol>
+    <li><b>nprobe 大 ≠ 召回线性提升</b>：越靠后的 posting 命中真近邻的概率越低，收益递减。实际 nprobe=8~16 通常已经吃掉召回上限。</li>
+    <li><b>复制上限过大耗尽 SSD</b>：max_replicas=8、epsilon=1.15 时复制率可能达到 3~4× 原始数据；对 10 亿数据集意味着 SSD 从 500GB 涨到 2TB，务必权衡。</li>
+    <li><b>head 训练分布不均</b>：K-Means 若初始化差，某些 head 的 posting 会特别大——查询时读它就变成延迟毛刺。这就是 SPANN 必须用 HBC 而不是普通 K-Means 的原因。</li>
+    <li><b>gamma 与 nprobe 需联调</b>：只调其中一个可能得不到最优点；生产上通常按召回目标网格搜索 (gamma, nprobe) 对。</li>
+    <li><b>不适合高 QPS 场景</b>：单查询 20~50ms 决定了单机 QPS 上限在几百级别，需要多机复制/分片才能撑起大流量。</li>
+  </ol>
+</section>
+
+<section class="next-steps">
+  <h4>下一步学什么</h4>
+  <ul>
+    <li>→ <a href="../5-hybrid/">混合方案</a>：IVF+HNSW+PQ 等生产系统级组合</li>
+    <li>→ <b>Bing / Milvus / Weaviate 混合方案</b>：真实系统里 SPANN + 内存 HNSW head 图 + PQ + 分片</li>
+    <li>→ FreshDiskANN：可更新的磁盘 ANN 索引</li>
+  </ul>
+</section>
+
+<footer>SPANN 交互式演示 · Chen et al. NeurIPS 2021 · Microsoft Research</footer>
+
+</div>
+
+<script>
+"use strict";
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const logEl = document.getElementById('log');
+const memListEl = document.getElementById('memList');
+const diskListEl = document.getElementById('diskList');
+
+function log(msg, cls='') {
+  const line = document.createElement('div');
+  line.innerHTML = cls ? `<span class="${cls}">${msg}</span>` : msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() { logEl.innerHTML = ''; }
+
+function dist(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+// 状态
+let nodes = [];
+let heads = [];        // 簇心 [{x, y, id, posting: [nodeId,...]}]
+let assignment = [];   // 每点 -> [head_id, ...] (可能多个)
+let K = 10, nprobe = 3, epsilon = 1.10, maxRep = 4, N = 150, gamma = 1.30;
+let animSpeed = 400;
+let queryMode = false;
+let queryPoint = null;
+let anim = null;
+let ioCount = 0;
+
+// 颜色调色板
+const clusterColors = [
+  '#7c3aed', '#db2777', '#0ea5e9', '#10b981', '#f97316',
+  '#84cc16', '#eab308', '#06b6d4', '#8b5cf6', '#ec4899',
+  '#f43f5e', '#14b8a6', '#f59e0b', '#a855f7', '#3b82f6',
+  '#22c55e', '#e11d48', '#65a30d', '#0891b2', '#7c2d12'
+];
+
+function generatePoints(n) {
+  nodes = [];
+  const clusters = 4 + Math.floor(Math.random()*3);
+  const cs = [];
+  for (let i = 0; i < clusters; i++) {
+    cs.push({ x: 150 + Math.random() * (cv.width - 300),
+              y: 100 + Math.random() * (cv.height - 200) });
+  }
+  for (let i = 0; i < n; i++) {
+    const c = cs[i % clusters];
+    let x = c.x + (Math.random() - 0.5) * 220;
+    let y = c.y + (Math.random() - 0.5) * 180;
+    x = Math.max(30, Math.min(cv.width - 30, x));
+    y = Math.max(30, Math.min(cv.height - 30, y));
+    nodes.push({ id: i, x, y });
+  }
+  heads = [];
+  assignment = nodes.map(() => []);
+}
+
+// ---------- K-Means (平衡版) ----------
+function balancedKMeans(k, iters) {
+  // 初始化: K-Means++
+  const centers = [];
+  centers.push({ x: nodes[Math.floor(Math.random()*nodes.length)].x,
+                 y: nodes[Math.floor(Math.random()*nodes.length)].y });
+  while (centers.length < k) {
+    const dists = nodes.map(n => {
+      let md = Infinity;
+      for (const c of centers) {
+        const d = dist(n, c);
+        if (d < md) md = d;
+      }
+      return md * md;
+    });
+    const sum = dists.reduce((a,b)=>a+b, 0);
+    if (sum === 0) {
+      centers.push({ ...nodes[Math.floor(Math.random()*nodes.length)] });
+      continue;
+    }
+    let r = Math.random() * sum;
+    let idx = 0;
+    for (let i = 0; i < dists.length; i++) {
+      r -= dists[i];
+      if (r <= 0) { idx = i; break; }
+    }
+    centers.push({ x: nodes[idx].x, y: nodes[idx].y });
+  }
+  // K-Means 迭代
+  const targetSize = Math.ceil(nodes.length / k);
+  for (let iter = 0; iter < iters; iter++) {
+    const assigned = centers.map(() => []);
+    // 排序距离, 分配 (简化的平衡: 不严格 balance, 但用中心近的先分)
+    const cands = [];
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = 0; j < centers.length; j++) {
+        cands.push({ pt: i, c: j, d: dist(nodes[i], centers[j]) });
+      }
+    }
+    cands.sort((a,b) => a.d - b.d);
+    const pointAssigned = new Set();
+    for (const cd of cands) {
+      if (pointAssigned.has(cd.pt)) continue;
+      if (assigned[cd.c].length >= targetSize + 3) continue;
+      assigned[cd.c].push(cd.pt);
+      pointAssigned.add(cd.pt);
+    }
+    // 剩余点强制分配到最近
+    for (let i = 0; i < nodes.length; i++) {
+      if (!pointAssigned.has(i)) {
+        let best = 0, bd = Infinity;
+        for (let j = 0; j < centers.length; j++) {
+          const dd = dist(nodes[i], centers[j]);
+          if (dd < bd) { bd = dd; best = j; }
+        }
+        assigned[best].push(i);
+      }
+    }
+    // 更新中心
+    for (let j = 0; j < centers.length; j++) {
+      if (assigned[j].length === 0) continue;
+      let sx = 0, sy = 0;
+      for (const pi of assigned[j]) { sx += nodes[pi].x; sy += nodes[pi].y; }
+      centers[j].x = sx / assigned[j].length;
+      centers[j].y = sy / assigned[j].length;
+    }
+  }
+  return centers;
+}
+
+// ---------- 构建 SPANN ----------
+function buildSPANN() {
+  clearLog();
+  log(`<span class="hi">构建 SPANN: K=${K}, epsilon=${epsilon.toFixed(2)}, maxRep=${maxRep}</span>`);
+  log('步骤 1: 平衡 K-Means 聚类');
+  const centers = balancedKMeans(K, 8);
+  heads = centers.map((c, i) => ({ id: i, x: c.x, y: c.y, posting: [] }));
+  log(`  得到 ${heads.length} 个 head`, 'head');
+
+  log('步骤 2: 每个点分配到最近 head + 边界点复制');
+  assignment = nodes.map(() => []);
+  let totalReplicas = 0;
+  for (let i = 0; i < nodes.length; i++) {
+    // 计算到所有 head 的距离
+    const ds = heads.map((h, hi) => ({ hi, d: dist(nodes[i], h) })).sort((a,b) => a.d - b.d);
+    const d1 = ds[0].d;
+    // 复制: 至多 maxRep 个 head, 距离比 < epsilon
+    let repl = 0;
+    for (const cd of ds) {
+      if (repl === 0 || (cd.d < d1 * epsilon && repl < maxRep)) {
+        assignment[i].push(cd.hi);
+        heads[cd.hi].posting.push(i);
+        repl++;
+      } else break;
+    }
+    totalReplicas += repl - 1;
+  }
+  const totalVec = nodes.length + totalReplicas;
+  log(`  总向量 (含复制) = ${totalVec}, 复制率 = ${(totalReplicas / nodes.length * 100).toFixed(1)}%`, 'disk');
+  log('步骤 3: Head 图构建 (SPTAG, 此处简化)', 'head');
+  log('构建完成', 'ok');
+  updateMetrics();
+  refreshStorage();
+  draw();
+}
+
+// 分步构建 (动画)
+let stepState = null;
+function startStepBuild() {
+  clearLog();
+  log('<span class="hi">分步构建 SPANN</span>');
+  const centers = balancedKMeans(K, 8);
+  heads = centers.map((c, i) => ({ id: i, x: c.x, y: c.y, posting: [] }));
+  assignment = nodes.map(() => []);
+  stepState = { step: 0 };
+  log(`  聚类完成: ${heads.length} 个 head`, 'head');
+  draw();
+  setTimeout(stepAssign, animSpeed);
+}
+function stepAssign() {
+  if (!stepState) return;
+  const i = stepState.step;
+  if (i >= nodes.length) {
+    let totalReplicas = 0;
+    for (const a of assignment) totalReplicas += a.length - 1;
+    log(`完成: 复制率 = ${(totalReplicas / nodes.length * 100).toFixed(1)}%`, 'ok');
+    updateMetrics();
+    refreshStorage();
+    stepState = null;
+    return;
+  }
+  const ds = heads.map((h, hi) => ({ hi, d: dist(nodes[i], h) })).sort((a,b) => a.d - b.d);
+  const d1 = ds[0].d;
+  let repl = 0;
+  for (const cd of ds) {
+    if (repl === 0 || (cd.d < d1 * epsilon && repl < maxRep)) {
+      assignment[i].push(cd.hi);
+      heads[cd.hi].posting.push(i);
+      repl++;
+    } else break;
+  }
+  if (repl > 1) log(`  点 ${i}: 复制到 ${repl} 个 head [${assignment[i].join(',')}]`, 'head');
+  stepState.step++;
+  updateMetrics();
+  refreshStorage();
+  draw();
+  setTimeout(stepAssign, Math.max(20, animSpeed / 5));
+}
+
+// ---------- 查询 ----------
+function startQuery(x, y) {
+  if (heads.length === 0) { log('请先构建 SPANN', 'rej'); return; }
+  queryPoint = { x, y };
+  clearLog();
+  log(`<span class="hi">查询 q=(${x.toFixed(0)},${y.toFixed(0)}), nprobe=${nprobe}, gamma=${gamma.toFixed(2)}</span>`);
+  ioCount = 0;
+  // 阶段 1: 在 head 上找最近
+  const headDists = heads.map(h => ({ hi: h.id, d: dist(queryPoint, h) })).sort((a,b) => a.d - b.d);
+  const topHeads = headDists.slice(0, nprobe);
+  log(`阶段 1: 内存搜索 head, top-${nprobe} = [${topHeads.map(t=>t.hi).join(',')}] (d=${topHeads.map(t=>t.d.toFixed(1)).join(',')})`, 'head');
+  anim = {
+    kind: 'search',
+    topHeads,
+    step: 0,
+    candidates: [],
+    truncationScore: 0,
+    done: false
+  };
+  draw();
+  setTimeout(pullPosting, animSpeed);
+}
+
+function pullPosting() {
+  if (!anim || anim.done) return;
+  if (anim.step >= anim.topHeads.length) {
+    // 精排
+    const cands = anim.candidates;
+    cands.sort((a,b) => a.d - b.d);
+    const uniq = [];
+    const seen = new Set();
+    for (const c of cands) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      uniq.push(c);
+      if (uniq.length >= 5) break;
+    }
+    log(`<span class="ok">阶段 3: 精排, top-5 = ${uniq.map(u=>`${u.id}(${u.d.toFixed(1)})`).join(', ')}</span>`, 'ok');
+    anim.result = uniq;
+    anim.done = true;
+    updateMetrics();
+    draw();
+    return;
+  }
+  const h = anim.topHeads[anim.step];
+  const posting = heads[h.hi].posting;
+  ioCount++;
+  // Query-aware truncation
+  const dqh = h.d;
+  // gamma 越大, threshold 越松, 保留更多
+  const threshold = gamma * dqh;
+  let kept = 0;
+  for (const pi of posting) {
+    const dqp = dist(queryPoint, nodes[pi]);
+    if (dqp <= threshold) {
+      anim.candidates.push({ id: pi, d: dqp });
+      kept++;
+    }
+  }
+  log(`阶段 2: SSD 读 posting[${h.hi}], 大小=${posting.length}, 保留=${kept}`, 'disk');
+  anim.step++;
+  updateMetrics();
+  draw();
+  setTimeout(pullPosting, animSpeed);
+}
+
+// ---------- 绘制 ----------
+function draw() {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  // 绘制 Voronoi 图 (简化: 每个点着色对应 head)
+  // 为了避免颜色过重, 用淡色圆环表示每个 posting 的范围
+  if (heads.length > 0) {
+    for (let i = 0; i < heads.length; i++) {
+      const h = heads[i];
+      const posting = h.posting;
+      // 计算 posting 半径
+      let maxR = 0;
+      for (const pi of posting) {
+        const dd = dist(nodes[pi], h);
+        if (dd > maxR) maxR = dd;
+      }
+      const col = clusterColors[i % clusterColors.length];
+      // 半透明填充圆
+      ctx.fillStyle = col + '18';
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, maxR, 0, Math.PI*2);
+      ctx.fill();
+      // 边线 (查询时高亮命中的 head)
+      if (anim && anim.kind === 'search' && !anim.done) {
+        const hit = anim.topHeads.slice(0, anim.step).find(t => t.hi === i);
+        if (hit) {
+          ctx.strokeStyle = '#0ea5e9';
+          ctx.lineWidth = 2;
+        } else {
+          ctx.strokeStyle = col + '55';
+          ctx.lineWidth = 1;
+        }
+      } else if (anim && anim.done && anim.topHeads.find(t => t.hi === i)) {
+        ctx.strokeStyle = '#0ea5e9';
+        ctx.lineWidth = 2;
+      } else {
+        ctx.strokeStyle = col + '55';
+        ctx.lineWidth = 1;
+      }
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, maxR, 0, Math.PI*2);
+      ctx.stroke();
+    }
+  }
+
+  // 绘制节点
+  for (const n of nodes) {
+    let col = '#334155', r = 3;
+    // 边界点(复制) 高亮
+    if (assignment[n.id] && assignment[n.id].length > 1) {
+      col = '#f97316';
+      r = 4.5;
+    } else if (assignment[n.id] && assignment[n.id].length === 1) {
+      const hi = assignment[n.id][0];
+      col = clusterColors[hi % clusterColors.length] + 'bb';
+    }
+    // 查询命中
+    if (anim && anim.kind === 'search') {
+      const inCand = anim.candidates.find(c => c.id === n.id);
+      if (inCand) { col = '#0ea5e9'; r = 5; }
+      if (anim.done && anim.result && anim.result.find(re => re.id === n.id)) {
+        col = '#22c55e'; r = 6.5;
+      }
+    }
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+    ctx.fill();
+    // 边界点画白环
+    if (assignment[n.id] && assignment[n.id].length > 1) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  // 绘制 Head (大)
+  for (const h of heads) {
+    const col = clusterColors[h.id % clusterColors.length];
+    ctx.fillStyle = '#db2777';
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, 9, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    // head ID 标签
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px monospace';
+    const label = String(h.id);
+    const tx = h.x, ty = h.y + 3.5;
+    ctx.textAlign = 'center';
+    ctx.fillText(label, tx, ty);
+    ctx.textAlign = 'left';
+  }
+
+  // 查询点 - 到 head 的连线
+  if (anim && anim.kind === 'search' && queryPoint) {
+    for (let i = 0; i < Math.min(anim.step, anim.topHeads.length); i++) {
+      const h = heads[anim.topHeads[i].hi];
+      ctx.strokeStyle = '#0ea5e9';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(queryPoint.x, queryPoint.y);
+      ctx.lineTo(h.x, h.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // 查询点
+  if (queryPoint) {
+    ctx.fillStyle = '#eab308';
+    ctx.beginPath();
+    ctx.arc(queryPoint.x, queryPoint.y, 9, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = '#eab308'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(queryPoint.x-13, queryPoint.y);
+    ctx.lineTo(queryPoint.x+13, queryPoint.y);
+    ctx.moveTo(queryPoint.x, queryPoint.y-13);
+    ctx.lineTo(queryPoint.x, queryPoint.y+13);
+    ctx.stroke();
+  }
+
+  // 信息
+  ctx.fillStyle = '#64748b';
+  ctx.font = '11px monospace';
+  const info = `N=${nodes.length}  K=${K}  nprobe=${nprobe}  eps=${epsilon.toFixed(2)}`;
+  ctx.fillText(info, 10, 16);
+}
+
+// ---------- 存储可视化 ----------
+function refreshStorage() {
+  // 内存: head 列表
+  const memHtml = heads.slice(0, 30).map(h => {
+    return `Head ${h.id}: posting_size=${h.posting.length}`;
+  }).join('<br>');
+  memListEl.innerHTML = memHtml || '尚未构建';
+  // 磁盘: posting 详情
+  const diskHtml = heads.slice(0, 15).map(h => {
+    const list = h.posting.slice(0, 8).join(',') + (h.posting.length > 8 ? '...' : '');
+    return `[H${h.id}] posting = [${list}]`;
+  }).join('<br>');
+  diskListEl.innerHTML = diskHtml || '尚未构建';
+}
+
+function updateMetrics() {
+  document.getElementById('mHeads').textContent = heads.length;
+  const totalVec = heads.reduce((a,h) => a + h.posting.length, 0);
+  document.getElementById('mVec').textContent = totalVec;
+  const dup = nodes.length > 0 ? ((totalVec - nodes.length) / nodes.length * 100).toFixed(1) : 0;
+  document.getElementById('mDup').textContent = dup + '%';
+  document.getElementById('mIO').textContent = ioCount;
+}
+
+// ---------- 绑定 ----------
+function bindSlider(id, valId, transform, cb) {
+  const s = document.getElementById(id);
+  const v = document.getElementById(valId);
+  s.oninput = () => {
+    v.textContent = transform ? transform(s.value) : s.value;
+    if (cb) cb(s.value);
+  };
+}
+bindSlider('K', 'Kv', null, v => { K = parseInt(v); });
+bindSlider('np', 'npv', null, v => { nprobe = parseInt(v); });
+bindSlider('eps', 'epsv', v => (v/100).toFixed(2), v => { epsilon = v/100; });
+bindSlider('mr', 'mrv', null, v => { maxRep = parseInt(v); });
+bindSlider('N', 'Nv');
+bindSlider('g', 'gv', v => (v/100).toFixed(2), v => { gamma = v/100; });
+bindSlider('spd', 'spdv', v => v + ' ms', v => { animSpeed = parseInt(v); });
+document.getElementById('spdv').textContent = '400 ms';
+document.getElementById('epsv').textContent = '1.10';
+document.getElementById('gv').textContent = '1.30';
+
+document.getElementById('regen').onclick = () => {
+  N = parseInt(document.getElementById('N').value);
+  generatePoints(N);
+  clearLog();
+  log(`生成 ${N} 个点`);
+  ioCount = 0;
+  updateMetrics();
+  refreshStorage();
+  draw();
+};
+document.getElementById('build').onclick = buildSPANN;
+document.getElementById('stepBuild').onclick = startStepBuild;
+document.getElementById('query').onclick = () => {
+  queryMode = !queryMode;
+  document.getElementById('query').textContent = queryMode ? '(点画布)' : '查询模式';
+  log('查询模式: ' + (queryMode ? '开' : '关'), 'hi');
+};
+document.getElementById('autoQ').onclick = () => {
+  const qx = 60 + Math.random() * (cv.width - 120);
+  const qy = 60 + Math.random() * (cv.height - 120);
+  startQuery(qx, qy);
+};
+document.getElementById('reset').onclick = () => {
+  anim = null; queryPoint = null; ioCount = 0;
+  clearLog();
+  updateMetrics();
+  draw();
+};
+
+cv.addEventListener('click', (e) => {
+  const rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (cv.width / rect.width);
+  const y = (e.clientY - rect.top) * (cv.height / rect.height);
+  if (queryMode) {
+    startQuery(x, y);
+  } else {
+    nodes.push({ id: nodes.length, x, y });
+    assignment.push([]);
+    log(`加点 ${nodes.length-1}: (${x.toFixed(0)},${y.toFixed(0)})`);
+    updateMetrics();
+    draw();
+  }
+});
+
+// 初始化
+generatePoints(150);
+updateMetrics();
+refreshStorage();
+draw();
+log('提示: 点"构建 SPANN"开始, 或用"分步构建"看每点如何分配到 posting', 'hi');
+
+</script>
+</body>
+</html>
