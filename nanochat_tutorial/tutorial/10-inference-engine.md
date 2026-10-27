@@ -1,234 +1,1194 @@
-# 第 10 章：Inference：KV 缓存与高效生成
+# 第 10 章　推理引擎：KV 缓存与高效生成
 
-> **源码地图**：调度器在 `nanochat/nanochat/engine.py`，模型读写缓存的位置在 `nanochat/nanochat/gpt.py`，注意力内核/回退在 `nanochat/nanochat/flash_attention.py`，命令行流式聊天在 `nanochat/scripts/chat_cli.py`，性能测量在 `nanochat/scripts/infer_bench.py`，行为测试在 `nanochat/tests/test_engine.py`。  
-> **调用链**：`chat_cli.py → Engine.generate → GPT.forward(..., kv_cache=...) → CausalSelfAttention.forward → flash_attn_with_kvcache`。不需要流式显示时，`Engine.generate_batch` 消费前者的 generator；`chat_eval.py` 和 `chat_rl.py` 都走这条批量路径。
-
-训练时，模型一次看到一段 `(B,T)` token，并行计算每个位置的下一个 token 损失。推理时却必须先生成第一个 token，才能生成第二个。这个自回归依赖无法消除；但我们可以避免在每一步把已经读过的 prompt 再算一遍。本章的主角 KV 缓存正是为此而来。
-
-## 学习目标
-
-完成本章后，你应能：
-
-1. 指出朴素生成的重复计算，并解释 prefill 与 decode 的分工；
-2. 说清 `KVCache` 的真实维度、位置计数和 GQA 对缓存的影响；
-3. 读懂单行 prefill 后复制到多样本 decode 的过程；
-4. 区分 greedy、temperature、top-k，以及 generator 如何流式返回 token；
-5. 解释 `RowState`、强制 token 和计算器状态机；
-6. 用显存带宽、TTFT、TPOT、MFU/MBU 理解推理性能；
-7. 明确 `eval` 的有限防护不是强安全沙箱。
-
-## 前置概念
-
-建议先读[第 04 章：GPT attention](./04-gpt-attention.md)、[第 05 章：GPT MLP / 现代技巧](./05-gpt-mlp-tricks.md)和[第 09 章：监督微调 SFT](./09-sft.md)。本章在其后解释真正的生成与 rollout。记号如下。
-
-| 符号 | 含义 | 源码对应 |
-|---|---|---|
-| `B` | 并行生成的行数 | `num_samples` / `batch_size` |
-| `P` | prompt token 数 | `len(tokens)` |
-| `L` | Transformer 层数 | `config.n_layer` |
-| `H_q`, `H_kv` | Q 头数、KV 头数 | `n_head`, `n_kv_head` |
-| `D` | 头维度，`n_embd / n_head` | `self.head_dim` |
-| `V` | 真实词表大小 | `config.vocab_size` |
-
-token id 是整数；KV cache 存的是各层注意力投影产生的浮点 key/value，不是 token id，也不是最终 logits。
+> **本章定位**　第三部分·从基础模型到聊天模型。第 09 章得到了 SFT checkpoint，本章解释它怎样真正生成回答。
+>
+> **中心问题**　回答必须逐 token 生成，但已经读过的 prompt 为什么不必每次重算？缓存保存什么、下一 token 怎样读取它？工具返回的结果又怎样加入生成过程？
+>
+> **范围**　朴素生成与 KV cache、prefill / decode 两阶段、位置与 RoPE、多样本生成、greedy / temperature / top-k、工具调用和推理性能测量。聊天评分在[第 11 章](./11-chat-evaluation.md)，RL 采样在[第 12 章](./12-rl.md)。
+>
+> **先决条件**　读过[第 04 章](./04-gpt-attention.md)的 Q/K/V 和 RoPE、[第 05 章](./05-gpt-mlp-tricks.md)的 smear，以及[第 09 章](./09-sft.md)的对话与工具协议。
+>
+> **本章产物**　一条“**prompt → prefill → 首 token → 单 token decode → 回答结束**”的主线；能解释缓存更新、多样本复制、采样和工具输出分别在哪一步发生。
+>
+> **源码入口**　`nanochat/engine.py`、`nanochat/gpt.py::GPT.forward`、`nanochat/flash_attention.py`、`scripts/chat_cli.py`、`scripts/infer_bench.py`、`tests/test_engine.py`。
 
 ---
 
-## 1. 经典基线：正确但越来越慢的朴素生成
+## 本章讲什么
 
-给定前缀 \(x_{1:t}\)，模型输出末位置 logits \(z_t\in\mathbb R^V\)，并定义：
+训练时，示范答案已经知道，模型可以在一次 forward 中并行预测各个位置。推理时，后面应该写什么还不知道，必须先得到一个 token，才能把它放进前缀、继续预测下一 token：
 
-\[
-p(x_{t+1}\mid x_{1:t})=\operatorname{softmax}(z_t).
-\]
+```text
+prompt → token 1 → token 2 → token 3 → ...
+```
 
-其中 `softmax` 把词表中 `V` 个未归一化分数变为概率。选一个 token，附到前缀尾部，再预测下一个，这就是自回归生成。
+本章讨论的是 nanochat 当前的普通自回归生成：**输出之间的先后依赖仍在，但旧前缀的重复计算可以省掉**。
 
-`nanochat/nanochat/gpt.py::GPT.generate` 保留了最清楚的基线（以下是教学摘录）：
+例如 prompt 有 500 个 token，想生成 100 个新 token：
+
+```text
+朴素：输入长度依次为 500、501、502、...、599
+缓存：先输入 500 个 prompt token，然后每轮只输入一个新 token
+```
+
+KV cache 的作用，就是保留每层已经计算好的历史 K/V，让新 token 仍能读取上文，却不用重新计算旧 token 的层输出。
+
+完整调用链是：
+
+```text
+chat_cli：把聊天历史和用户问题编码为 prompt token ids
+  → Engine.generate：prefill、采样、decode、处理工具
+  → GPT.forward(..., kv_cache=...)：计算新输入的位置和表示
+  → 各层 attention：写入新 K/V，读取历史 K/V
+  → 返回 logits，选出下一个 token
+  → 返回给调用者，并在继续生成时送回模型
+```
+
+**读完本章你应该能**：
+
+1. 解释 KV cache 节省了什么，为什么新 token 仍要经过全部 Transformer 层；
+2. 用一个小例子追踪 prefill、首 token 和 decode 的顺序；
+3. 读懂缓存形状、缓存位置和 RoPE 为什么必须一致；
+4. 区分一次 prompt 的多样本生成与不同 prompt 的请求 batch；
+5. 用 logits 的具体数字解释 temperature 和 top-k；
+6. 区分模型生成的 token、工具插入的 token 与终止 token；
+7. 分别用首 token 延迟、decode 延迟、吞吐和显存评价推理。
+
+> **读法建议**：§1–§3 讲生成主线和缓存；§4–§6 展开多样本、采样、工具；§7 是工具执行的安全边界；§8 再把计算流程换算成延迟、带宽与显存账。
+
+---
+
+## 预备词汇
+
+| 名称 | 含义 | 代码对应 |
+|---|---|---|
+| `prompt` | 本次生成已经提供的全部上文，聊天时包括历史消息和角色标记 | `tokens: list[int]` |
+| `prompt_len` | prompt 的 token 数，不是模型参数量 | `len(tokens)` |
+| `num_new_tokens` | 推导中计划输出的新增 token 列数；包括工具插入和终止标记，不等于正文长度 | 有限的 `max_tokens` 上限 |
+| `B` | 同一个 prompt 并行生成的样本数 | `num_samples` |
+| `T` | 本次 forward 实际输入的 token 数；prefill 为 prompt_len，decode 通常为 1 | `idx.shape[1]` |
+| `L` | Transformer 层数 | `config.n_layer` |
+| `H_q` / `H_kv` | query 头数 / key-value 头数 | `n_head` / `n_kv_head` |
+| `head_dim` | 每个 attention 头的向量长度 | `n_embd // n_head` |
+| `C` | 模型隐藏宽度 | `n_embd` |
+| `V` | 词表大小 | logits 最后一维 |
+| `T_max` | 本次缓存预分配的容量，不是当前已经写入的长度 | `KVCache.max_seq_len` |
+| `cache_seqlens` | 每行已经处理并写入缓存的 token 数 | `(B,)` int32 张量 |
+
+**KV cache 存的是每层 attention 使用的 K/V 浮点张量，不是 token id，也不是 logits。** 历史 token id 还用于组织聊天文本，历史 K/V 用于计算 attention，两者职责不同。后文的 `q₀...q₃` 是 prompt token 的简写；attention 公式里的 `q_t` 才是 query 向量，不要混为一谈。
+
+---
+
+## 1. 从 prompt 到下一个 token：先把生成过程看清楚
+
+先把模型看成一个函数：输入一串已经知道的 token，模型会为每个位置给出“下一个 token 可能是什么”的分数。生成文本时，我们取出最后一个位置的分数，选出一个新 token，把它接到输入末尾，然后重复这个过程。
+
+### 1.1 一次 forward 并不会直接返回一句话
+
+假设“法国的首都是”被切成 4 个 token。这里的切分只为说明过程，不代表 tokenizer 的真实切分：
+
+```text
+[法国] [的] [首都] [是]
+```
+
+送入模型后，一次 forward 返回的不是字符串“巴黎”，而是一张 logits 分数表：
+
+```text
+输入 ids shape： (1, 4)
+输出 logits：    (1, 4, V)
+```
+
+`V` 是词表大小。4 个输入位置各有一行、每行有 `V` 个分数：
+
+```text
+位置 0 的 logits：根据“法国”预测后一个 token
+位置 1 的 logits：根据“法国 的”预测后一个 token
+位置 2 的 logits：根据“法国 的 首都”预测后一个 token
+位置 3 的 logits：根据“法国 的 首都 是”预测后一个 token
+```
+
+我们现在要续写整个 prompt，所以只关心最后一行：
 
 ```python
-ids = torch.tensor([tokens])       # (1, P)
+next_token_logits = logits[:, -1, :]  # shape=(1, V)
+```
+
+再从这 `V` 个分数中选择一个 token。可以直接选最高分，也可以按概率采样；假设这次选中“巴黎”。然后把它接到末尾：
+
+```text
+[法国] [的] [首都] [是] [巴黎]
+```
+
+要继续生成，就用这条更长的前缀再预测一次。于是文本生成本质上是一个很小的循环：
+
+```text
+对当前前缀做 forward
+  → 取最后位置的 logits
+  → 选择一个新 token
+  → 把新 token 接回前缀
+  → 重复
+```
+
+`GPT.generate` 正是这个朴素版本。下面先只看“选最高分”的 greedy 分支：
+
+```python
+ids = torch.tensor([tokens], dtype=torch.long, device=model.get_device())
 for _ in range(max_tokens):
-    logits = self.forward(ids)     # (1, 当前长度, V)
-    next_ids = logits[:, -1, :].argmax(dim=-1, keepdim=True)  # greedy: (1, 1)
-    ids = torch.cat((ids, next_ids), dim=1)
+    logits = model(ids)                          # 计算当前完整前缀
+    next_ids = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+    ids = torch.cat((ids, next_ids), dim=1)      # 新 token 接回前缀
     yield next_ids.item()
 ```
 
-它没有错，却会反复计算旧前缀。生成 `N` 个 token 时，送入网络的位置数是：
+这段代码慢，但非常重要：后面的高效引擎只是在避免重复计算，生成逻辑并没有改变。
 
-\[
-P+(P+1)+\cdots+(P+N-1)=NP+\frac{N(N-1)}2.
-\]
+### 1.2 聊天里的 prompt 到底包含什么
 
-第 20 个新 token 到来时，前 19 个新 token 和整个 prompt 又经过 embedding、所有 Transformer 层、MLP。这里要分清两种“重复”：历史 token 的 MLP、Q/K/V 投影乃至 attention 输出都被重复算；同时，新末位置的 attention 还会再次读取历史。KV cache 只消除前一种重复，后一种读取是让新 token 使用上下文所必需的。
-
-例如 `P=4`、只生成 `N=3`：朴素基线依次前向 `(1,4)`、`(1,5)`、`(1,6)`，共处理 15 个输入位置；缓存版本是一次 `(1,4)` prefill，之后每步 `(1,1)` decode，共处理 7 个新送入网络的位置。两者最终给出的第三个 token 应相同（在同一权重、同一采样规则下），但这不代表二者运行时间必然按 `15/7` 成比例：attention、矩阵乘和内存读写的占比会随形状变化。
-
-`engine.py` 的 `__main__` 用这个慢基线与 `Engine.generate` 在温度零下比较 token 序列，目的正是验证加速不改变结果。它是一个很好的工程习惯：先以简单、显然正确的实现作为 oracle，再写复杂的缓存路径；不要只因“更快”就假定位置和状态没有错。
-
-## 2. KV 缓存：保存不会被未来改变的部分
-
-一层注意力先投影：
-
-\[
-Q=xW_Q,\qquad K=xW_K,\qquad V=xW_V.
-\]
-
-当前位置的输出可写作：
-
-\[
-\operatorname{softmax}(Q_tK_{\leq t}^{\mathsf T}/\sqrt D)V_{\leq t}.
-\]
-
-因果 mask 保证旧位置看不到未来。因此某个旧 token 的 K、V 一旦算好，未来 token 不会改变它们。新 token 只需算自己的 Q/K/V：用新 Q 查询历史 K/V，然后把自己的 K/V 追加进去。**KV cache 复用的正是历史 K/V。**
-
-它不让模型“跳过 forward”：每个新 token 仍须走全部层、MLP、lm head，仍须注意历史；它只免除了历史 token 的重复投影和重复前向。缓存位置错误会使结果错误，不只是变慢。
-
-### 真实维度与位置
-
-`engine.py::KVCache.__init__` 预分配：
+在命令行里，用户看见的可能只有一句：
 
 ```text
-k_cache, v_cache: (L, B, T_max, H_kv, D)
-cache_seqlens:    (B,) ，设备上的 int32
+法国的首都是哪里？
 ```
 
-注意本仓库面向 Flash Attention 3：单层 cache 视图是 `(B,T_max,H_kv,D)`，不是许多旧实现的 `(B,H,T,D)`。`tests/test_engine.py::test_kv_cache_basic` 明确检查这一点。
+但模型不会自动知道“这是用户的问题，现在轮到助手回答”。调用模型前，`chat_cli.py` 会把角色标记和聊天历史一起编码成 `conversation_tokens`。
 
-设 `L=2, B=3, T_max=12, H_q=4, H_kv=2, n_embd=32`，则 `D=8`，总缓存形状为 `(2,3,12,2,8)`。已 prefill 5 个 token 后，`cache_seqlens=[5,5,5]`。下一步 decode 输入 `(3,1)`；本层 Q 是 `(3,1,4,8)`，K/V 是 `(3,1,2,8)`，新 K/V 写在位置 5，当前 Q 对长度 6 的缓存注意力。
+第一轮聊天的 prompt 类似：
 
-GQA 让 `H_kv` 小于等于 `H_q`。`gpt.py::CausalSelfAttention.forward` 中 Q reshape 为 `(B,T,H_q,D)`，K/V 为 `(B,T,H_kv,D)`；多个 Q 头共享 KV 头。因此 KV 显存与 `H_kv` 成正比，GQA 是架构层面的推理减负。注意 `D` 仍由 query 头数计算，即 `n_embd // n_head`；KV 头变少并不把每个 head 的通道变宽。
-
-### 谁写 cache，谁推进位置？
-
-真正的写入发生在 `nanochat/nanochat/gpt.py::CausalSelfAttention.forward`。推理分支先通过 `kv_cache.get_layer_cache(self.layer_idx)` 取得这一层的 `(B,T_max,H_kv,D)` 视图，再把新的 `k`、`v` 和当前 `cache_seqlens` 传给 `flash_attn.flash_attn_with_kvcache(...)`。FA3 会原地更新缓存；`nanochat/nanochat/flash_attention.py::flash_attn_with_kvcache` 的 SDPA fallback 也显式执行相同语义的切片赋值。`KVCache` 本身不是每层都 append 一次的 Python list，它是预先分配的一整块张量。
-
-`cache_seqlens` 是 `(B,)` 而不是单个 Python 整数，符合 FA3 的接口；但 `KVCache.get_pos()` 和 fallback 当前都假设各行处在相同位置，并读取第 0 行。`Engine.generate` 的所有样本每轮都走一次 forward，即使某行已结束也继续送入 token，所以这个“同一步长”假设得以保持。最后一层才调用 `kv_cache.advance(T)`：若每层都加 `T`，第 2 层会错误地从 prompt 之后的位置开始写，破坏层间对齐。
-
-## 3. 两个阶段：prefill 与 decode
-
-### Prefill：并行读 prompt
-
-`Engine.generate` 先给 batch=1 建 `kv_cache_prefill`：
-
-```python
-ids = torch.tensor([tokens], dtype=torch.long, device=device)  # (1, P)
-logits = self.model.forward(ids, kv_cache=kv_cache_prefill)
-logits = logits[:, -1, :].expand(num_samples, -1)              # (B, V)
+```text
+BOS
++ user_start + 用户问题 1 + user_end
++ assistant_start
 ```
 
-这次新输入长度为 `P`。`GPT.forward` 以 `T0 = kv_cache.get_pos()` 切 RoPE：
+模型生成回答 1 后，回答及其 `assistant_end` 也会追加到 `conversation_tokens`。因此第二轮的 prompt 变成：
+
+```text
+BOS
++ user_start + 用户问题 1 + user_end
++ assistant_start + 助手回答 1 + assistant_end
++ user_start + 用户问题 2 + user_end
++ assistant_start
+```
+
+所以这里的 **prompt** 不是“用户刚输入的那句话”，而是：
+
+> 在开始生成本轮回答之前，模型能够看到的完整 token 前缀。
+
+末尾的 `assistant_start` 也很重要。它相当于告诉模型：“前面的用户消息结束了，接下来应按 assistant 的身份续写。”程序提供这个标记，模型生成它后面的回答正文。
+
+> **其他入口怎样构造 prompt**：评估和 RL 使用 `render_for_completion(conversation)`。它会拿掉最后一条作为标准答案的 assistant 消息，再渲染上文并追加 `assistant_start`。这样模型看到的是题目和已有历史，不会提前看到参考答案。
+
+### 1.3 为什么旧前缀可以复用，新 token 仍要经过模型
+
+得到“巴黎”后，为了预测再下一个 token，朴素的 `GPT.generate` 会重新输入全部 5 个 token：
+
+```text
+[法国] [的] [首都] [是] [巴黎]
+```
+
+问题是：前 4 个位置刚刚已经计算过。继续生成时，前缀越来越长，这些旧位置也会一遍遍重算。
+
+#### 旧位置为什么不需要重算
+
+模型使用因果 attention。位置 0 只能看位置 0，位置 1 只能看位置 0～1，以此类推。后来把“巴黎”追加到位置 4，不会改变位置 0～3 当时能看到的内容：
+
+```text
+追加前：旧位置看不到未来的“巴黎”
+追加后：旧位置仍然看不到“巴黎”
+```
+
+因此，只要模型权重、旧 token 和位置不变，旧位置先前算出的结果就可以复用。
+
+#### 新位置需要从旧位置读取什么
+
+现在只看 Transformer 的某一层。令：
+
+- `t`：新 token“巴黎”所在的位置；
+- `j`：它可以查看的某个历史位置。
+
+这一层会为新位置计算 Query、Key 和 Value，分别简写为 `q_t、k_t、v_t`。可以先用“查资料”理解它们：
+
+```text
+q_t：新位置提出的查询
+k_j：位置 j 的检索标签，用来判断它与查询是否相关
+v_j：位置 j 真正提供的内容
+```
+
+新位置用自己的 `q_t` 与各位置的 `k_j` 比较，再对对应的 `v_j` 加权求和：
+
+```text
+相关性分数：scores_j = q_t · k_j / √head_dim
+权重：      weights = softmax(scores)
+输出：      output_t = Σ_j weights_j · v_j
+```
+
+因此，计算新位置时需要历史位置的 K/V，却不需要历史 Q。历史 Q 已经完成了“旧位置当时查询什么”的工作；现在发起新查询的是 `q_t`。
+
+这就是 **KV cache**：把每层旧位置的 K/V 保存下来，下一轮直接读取。
+
+```text
+旧 token：不再经过这一层，读取已经保存的 K/V
+新 token：计算自己的 Q/K/V，并把新 K/V 追加到缓存
+```
+
+#### 有 cache，为什么新 token 还要 forward
+
+因为缓存里只有历史计算结果，不包含新 token 的结果。“巴黎”仍要从头经过模型：
+
+```text
+embedding
+→ 第 0 层：计算新 Q/K/V，读取第 0 层的历史 K/V
+→ 第 1 层：计算新 Q/K/V，读取第 1 层的历史 K/V
+→ ...
+→ 最后一层和 lm_head
+→ 得到预测再下一个 token 的 logits
+```
+
+每一层处理新 token 时，都依赖上一层刚产生的新表示，所以每一层都必须执行，也都需要保存自己那一层的 K/V。
+
+一句话总结：**KV cache 省掉的是旧 token 的重复 forward；新 token 仍要完整经过模型。**
+
+### 1.4 KV cache 到底少算了多少
+
+继续用一个长度为 4 的 prompt，并生成 3 个新 token。
+
+朴素版本每次重算完整前缀：
+
+| 要得到的输出 | 本轮送入模型的内容 | 本轮位置数 |
+|---|---|---:|
+| 新 token 1 | 4 个 prompt token | 4 |
+| 新 token 2 | prompt + 新 token 1 | 5 |
+| 新 token 3 | prompt + 新 token 1、2 | 6 |
+| **合计** |  | **15** |
+
+理想的缓存版本先处理一次 prompt，首个新 token 直接来自 prompt 最后位置的 logits；之后每轮只送回刚生成的一个 token：
+
+| 要得到的输出 | 本轮送入模型的内容 | 本轮位置数 |
+|---|---|---:|
+| 新 token 1 | 4 个 prompt token，即 prefill | 4 |
+| 新 token 2 | 只送入新 token 1 | 1 |
+| 新 token 3 | 只送入新 token 2 | 1 |
+| **合计** |  | **6** |
+
+这就是后文两个术语的直觉：
+
+- **prefill**：一次处理已知的完整 prompt，并填好历史 cache；
+- **decode**：之后一次只处理一个刚生成的 token。
+
+若 prompt 长度为 `prompt_len`，计划生成 `num_new_tokens` 个 token，朴素版本处理的位置总数是：
+
+```text
+prompt_len × num_new_tokens
++ num_new_tokens × (num_new_tokens - 1) / 2
+```
+
+例如 prompt 有 500 个 token、输出 100 个 token：
+
+```text
+朴素版本：500 + 501 + ... + 599 = 54,950 个输入位置
+理想缓存：500 + 99 = 599 个输入位置
+```
+
+缓存版本为什么只加 99？因为处理 500-token prompt 的那次 forward 已经给出了第 1 个新 token；为了得到后面 99 个，才需要再做 99 次单 token decode。
+
+不过，**位置数减少到约 1/92，不代表墙钟时间一定快 92 倍**。decode 虽然只输入一个新 token，但 attention 仍要读取历史 K/V；prefill 和 decode 使用的 kernel、并行度与内存访问模式也不同。这里只是在数避免了多少重复输入位置，不是在直接预测速度。
+
+> 本节比较的是理想缓存流程。当前 `Engine.generate` 作为 Python generator 还有一次不产生新输出的尾部 forward；等 §3.5 讲完 `yield` 的暂停位置后，再看这个实现细节。
+
+---
+
+## 2. KV cache：把每层算过的 K/V 按位置存下来
+
+§1 已经说明了为什么要缓存：旧 token 的 K/V 不会因为末尾多了一个 token 而改变。现在来看这些 K/V 具体存在哪里，以及“下一次写入位置”怎样推进。
+
+继续使用长度为 4 的 prompt。为了让形状容易展开，先假设模型有 2 层、每次只生成 1 条回答。
+
+### 2.1 从一个 token 的 K/V，搭出完整缓存
+
+先只看**一层、一个 token**。
+
+这一层会为该 token 计算 K 和 V。若模型有 `H_kv` 个 KV 头，每个头的宽度是 `head_dim`，那么一个 token 的形状是：
+
+```text
+K：(H_kv, head_dim)
+V：(H_kv, head_dim)
+```
+
+接下来逐步增加维度：
+
+```text
+一个 token：              (H_kv, head_dim)
+一条样本的所有 token：    (T_max, H_kv, head_dim)
+一个 batch 的所有样本：   (B, T_max, H_kv, head_dim)
+模型的所有层：            (L, B, T_max, H_kv, head_dim)
+```
+
+因此 `KVCache` 分别预分配两个五维张量：
+
+```text
+k_cache：(L, B, T_max, H_kv, head_dim)
+v_cache：(L, B, T_max, H_kv, head_dim)
+```
+
+可以把它想成：**每一层都有两本按 token 位置排列的账本，一本记 K，一本记 V。** 不同层不能共用同一本账，因为同一个 token 经过不同层后会产生不同的 K/V。
+
+先用“不共享 KV 头”的简单配置代入：
+
+```text
+层数 L=2
+batch 大小 B=1
+最多容纳 T_max=12 个位置
+query 头数 H_q=2
+KV 头数 H_kv=2
+隐藏宽度 C=16
+head_dim = C / H_q = 8
+
+k_cache.shape = v_cache.shape = (2, 1, 12, 2, 8)
+```
+
+先只读 shape：模型有 2 层、1 条样本、每层最多存 12 个位置；每个位置有 2 个 KV 头，每个头保存 8 个数。
+
+> **GQA 分支**：缓存最后两维取决于 `H_kv`，不是 `H_q`。如果改成 `H_q=4、H_kv=2、C=32`，`head_dim` 仍是 8，cache shape 也仍以 2 个 KV 头计为 `(2,1,12,2,8)`。这表示每 2 个 Q 头共享一组历史 K/V。当前 base 配方默认 `H_q=H_kv`，实际值以 checkpoint 为准。
+
+### 2.2 `T_max` 是容量，`cache_seqlens` 才是当前长度
+
+预分配 12 个位置，只表示“这块内存最多能放 12 个 token”，不表示 12 个位置都已经有效。还需要一个游标记录已经写了多少，这就是 `cache_seqlens`。
+
+刚创建 cache 时：
+
+```text
+位置：              0  1  2  3  4  5  ... 11
+是否有效：          ·  ·  ·  ·  ·  ·      ·
+cache_seqlens：    [0]
+下一次写入位置：    0
+```
+
+长度为 4 的 prompt 完成 prefill 后：
+
+```text
+位置：              0  1  2  3  4  5  ... 11
+是否有效：          ✓  ✓  ✓  ✓  ·  ·      ·
+cache_seqlens：    [4]
+下一次写入位置：    4
+```
+
+注意 `cache_seqlens=[4]` 表示“前 4 个位置有效”，所以有效索引是 `0、1、2、3`，下一个空位才是 4。
+
+现在假设模型已经选出了新 token“巴黎”。下一次 forward 只输入这个 token：
+
+```text
+开始时 cache_seqlens=[4]
+  → 把“巴黎”在当前层的新 K/V 写到位置 4
+  → 它的新 Q 可以读取位置 0...4 的 K/V，包括自己的 K/V
+  → 所有层处理完成后，cache_seqlens 变成 [5]
+```
+
+于是位置 4 也变成有效历史，下一次写入位置是 5。
+
+所以这里先记住一个关系：
+
+```text
+0 <= cache_seqlens <= T_max
+已写范围是 [0, cache_seqlens)
+下一次从 cache_seqlens 开始写
+```
+
+> **实现边界**：滑动窗口层可能只读取最近一段有效 K/V，但当前实现仍按完整 `T_max` 预分配空间，不会用环形缓存回收旧槽位。`Engine` 在多样本生成时还会把 prefill cache 复制到更大的 decode cache，这留到 §4 再展开。
+
+### 2.3 token 的位置跨层不变，游标只能在最后一层推进
+
+一个 token 会依次经过所有 Transformer 层。假设 prompt 已占据位置 `0...3`，现在处理位置 4 的“巴黎”：
+
+```text
+第 0 层：把第 0 层算出的 K/V 写入“第 0 层账本”的位置 4
+第 1 层：把第 1 层算出的 K/V 写入“第 1 层账本”的位置 4
+```
+
+层号从 0 变成 1，但 token 在序列中的位置仍然是 4。因此，第 0 层写完以后不能马上把公共游标推进到 5；否则第 1 层会误以为自己正在处理下一个 token，把同一个“巴黎”写到位置 5。
+
+源码让每层先取得自己的缓存切片，但所有层共享本轮开始时的 `cache_seqlens`：
 
 ```python
+k_cache, v_cache = kv_cache.get_layer_cache(self.layer_idx)
+y = flash_attn.flash_attn_with_kvcache(
+    q, k_cache, v_cache,
+    k=k, v=v,
+    cache_seqlens=kv_cache.cache_seqlens,
+    causal=True,
+    window_size=window_size,
+)
+if self.layer_idx == kv_cache.n_layers - 1:
+    kv_cache.advance(T)  # 最后一层完成后，才统一推进 T 个位置
+```
+
+两层模型处理一个 decode token 的时序是：
+
+```text
+开始：cache_seqlens=[4]
+第 0 层写位置 4：cache_seqlens 仍为 [4]
+第 1 层写位置 4：写完后 advance(1)
+结束：cache_seqlens=[5]
+```
+
+prefill 也是同样逻辑，只是本轮 `T=4`：每层都写位置 `0...3`，最后一层完成后一次执行 `advance(4)`。
+
+> **源码边界**：cache 保存的是该层真正交给 attention 的 K/V。K 已经过 RoPE、QK norm 和缩放，V 也可能混入 value embedding。FA3 在 kernel 内原地写入；SDPA fallback 在 Python 中显式写入，但对外表现相同。
+
+### 2.4 为什么代码只读取第 0 行的 cache 位置
+
+`cache_seqlens` 的 shape 是 `(B,)`，理论上可以分别记录 B 行的已写长度。但当前代码取位置时只读取第 0 行：
+
+```python
+def get_pos(self):
+    return self.cache_seqlens[0].item()
+```
+
+这段代码成立，依赖一个重要前提：
+
+> 当前 Engine 要求 batch 中所有行始终拥有相同的 cache 长度。
+
+这个前提是怎样维持的？当前 `B` 行来自同一个 prompt 的 B 条候选回答。假设 prompt 长度为 4、`B=3`：
+
+```text
+prefill 后：cache_seqlens = [4, 4, 4]
+```
+
+之后每次 decode 都给三行各输入一个 token：
+
+```text
+输入 shape=(3,1)
+第 0 行写位置 4
+第 1 行写位置 4
+第 2 行写位置 4
+完成后统一 advance(1)
+
+结果：cache_seqlens = [5, 5, 5]
+```
+
+下一轮仍是三行各输入一个 token，因此变成 `[6,6,6]`。既然所有值始终相同，读取第 0 行就能得到全体共同的写入位置。
+
+这也解释了当前实现的限制：它不能让某一行独自停在长度 5，而其他行继续增长到 6、7。某行生成结束标记后，`generate_batch` 只是不再把它后续产生的 token 加入最终答案；底层仍保留这行并同步 forward，直到所有行结束。
+
+所以本节的结论不是“所有 KV cache 天生都要求等长”，而是：
+
+> **nanochat 用“所有行同步前进”简化了位置管理，因此可以只读第 0 行；代价是提前结束的行会产生无效计算，也不能承载长度不同、动态加入或退出的独立请求。**
+
+§4 会解释为什么当前场景恰好是同一个 prompt 的 B 条候选回答，以及它们怎样共享一次 prefill。
+
+---
+
+## 3. 一次回答怎样生成：Prefill → 首 token → Decode
+
+§1 讲了原理，§2 讲了 cache 的结构。现在只追踪一次真实生成：模型何时读 prompt、何时选出首 token、何时把新 token 写回 cache。
+
+沿用 4-token prompt，并把它们记为 `p₀、p₁、p₂、p₃`。这里改用字母 `p`，避免与 attention 的 Query 符号 `q` 混淆。
+
+### 3.1 Prefill：一次处理完整 prompt
+
+Engine 首先建立空 cache，把整个 prompt 一次送入模型：
+
+```text
+输入：[p₀, p₁, p₂, p₃]，shape=(1,4)
+  → 每层计算四个位置的表示
+  → 每层把四个位置的 K/V 写入 cache
+  → cache 已写长度从 0 变为 4
+  → 取位置 3 的 logits，选择首个回答 token a₀
+```
+
+这一步叫 **prefill**：用已经知道的 prompt 填充 cache。
+
+prompt 的四个位置可以在一次 forward 中并行计算；因果 mask 仍确保 `p₀` 看不到后面的 token、`p₁` 只能看见 `p₀～p₁`，以此类推。
+
+最容易混淆的一点是：**首 token `a₀` 已经由 prefill 的最后位置 logits 选出，不需要额外做一次 decode。** 但此时 cache 中只有 `p₀～p₃`，还没有 `a₀`，因为 `a₀` 尚未作为模型输入。
+
+### 3.2 Decode：输入刚生成的 token，预测再下一个
+
+要继续生成，Engine 把刚选出的 `a₀` 送回模型：
+
+```text
+输入：a₀，shape=(1,1)，它在完整序列中的位置是 4
+  → 每层计算 a₀ 的新 Q/K/V
+  → 把 a₀ 的 K/V 写到 cache 位置 4
+  → a₀ 的 Q 读取 prompt 和自己的 K/V
+  → cache 已写长度从 4 变为 5
+  → logits 用来选择 a₁
+```
+
+接下来重复同一过程：
+
+```text
+prefill [p₀,p₁,p₂,p₃] → 选择 a₀
+输入 a₀                → 选择 a₁
+输入 a₁                → 选择 a₂
+输入 a₂                → 选择 a₃
+```
+
+这就是 **decode**：每轮只输入刚刚确定的一个 token，利用历史 cache 预测再下一个 token。
+
+因此，“decode 生成 `a₁`”的完整含义是：**decode 输入 `a₀`，得到 logits，再从中选出 `a₁`。** 输出 token 总是比本轮输入向后一步。
+
+### 3.3 单 token 输入仍要使用它在完整序列中的位置
+
+decode 张量只有一个 token，shape 是 `(1,1)`；但 `a₀` 在完整序列中位于位置 4，不是位置 0。
+
+`GPT.forward` 从 cache 读取本轮起点 `T0`，据此选择 RoPE 参数：
+
+```python
+T0 = kv_cache.get_pos()
 cos_sin = self.cos[:, T0:T0+T], self.sin[:, T0:T0+T]
 ```
 
-空缓存的 `T0=0`，所以 prompt 使用位置 `0...P-1`。每层调用 `flash_attn_with_kvcache` 原地写 K/V；只有最后层 `kv_cache.advance(T)`。这是必要的：同一批 token 的所有层必须从同一旧位置读写，不能让第 0 层先推进位置。
+| forward | 本轮输入 | `T0` | RoPE 位置 |
+|---|---|---:|---|
+| prefill | `p₀、p₁、p₂、p₃` | 0 | 0、1、2、3 |
+| decode 1 | `a₀` | 4 | 4 |
+| decode 2 | `a₁` | 5 | 5 |
 
-prompt 内矩阵乘可以并行，prefill 通常更接近**计算受限**。`infer_bench.py::bench_generate` 把第一次 `next(generator)` 的时间记为 TTFT（首 token 时间）；它包含 prefill、缓存复制和第一次采样。
+所以要区分两个概念：
 
-### Decode：每轮只送一个 token
-
-随后每轮是：
-
-```python
-ids = torch.tensor(token_column, dtype=torch.long, device=device).unsqueeze(1)
-# (B, 1)
-logits = self.model.forward(ids, kv_cache=kv_cache_decode)[:, -1, :]  # (B, V)
+```text
+本轮张量中的局部位置：a₀ 是唯一一个 token，局部下标为 0
+完整序列中的绝对位置：a₀ 接在四个 prompt token 后，位置为 4
 ```
 
-此时 `T=1`，缓存位置使 RoPE 正确落在新绝对位置。更具体地说，`GPT.forward` 取 `T0 = kv_cache.get_pos()`，再切 `self.cos[:, T0:T0+T]`、`self.sin[:, T0:T0+T]`。因而 prompt 的 `T0=0` 使用位置 `0...P-1`；它完成后位置推进到 `P`；第一枚生成 token 使用位置 `P`。若忘记这个 offset，decode 虽不一定报错，却会反复把每个新 token 当作位置 0，RoPE 的相对位置信息就不再与训练时一致。
+如果每次 decode 都错误地使用 RoPE 位置 0，新 Q/K 与历史 K 的位置关系就会错乱。
 
-`GPT.forward` 还维护 `KVCache.prev_embedding`：模型的 smear 机制需要上一 token 的归一化 embedding。整段训练可以直接用切片取前一位置；单 token decode 没有它，所以缓存额外保存该状态，保证 prefill 与 decode 边界的计算一致。它在 prefill 时保存最后一个 `(B,1,C)` embedding，在下一次 `T=1` decode 时参与当前 embedding 的混合。KV cache 因而是一个广义的“增量状态”：在这个模型里，除了 K/V 还含有这项额外状态。
+### 3.4 nanochat 还要保存 smear 的上一 token embedding
 
-decode 每步的时间称 TPOT。它算得少，却需要反复读取模型权重和不断变长的 KV，因此小 batch、长上下文下常常是**显存带宽受限**，而非算力受限。
+KV cache 解决的是 attention 历史，但 nanochat 的 smear 还依赖前一个 token 的归一化 embedding。
 
-## 4. 一次 prefill，复制给多个候选
+prefill 一次收到整段 prompt，`p₃` 的前一个 token `p₂` 就在同一张量中。decode 只收到 `a₀`，它看不到同一张量里的 `p₃`，所以需要额外保存：
 
-同一 prompt 要生成 `B` 个候选时，nanochat 不做 B 次 prompt 前向，而是：
+```text
+prefill 完成：prev_embedding 保存 p₃ 的 embedding
+输入 a₀：     读取 p₃ 与 a₀ 做 smear，再把 prev_embedding 更新为 a₀
+输入 a₁：     读取 a₀ 与 a₁ 做 smear，再更新为 a₁
+```
 
-1. batch=1 prefill 共享前缀；
-2. 建 batch=B 的 decode cache；
-3. `KVCache.prefill(other)` 复制已写 K/V、位置和 smear 状态；
-4. 将末 logits 展开为 `(B,V)`，每行独立抽第一个 token；
-5. B 行从此独立 decode。
+这揭示了一个通用原则：**增量推理必须保存模型中所有跨 token 的状态，不只是 attention 的 K/V。** `KVCache.prev_embedding` 是当前模型特有的附加状态。
 
-`prefill` 要求目标 cache 为空，检查层数、KV 头数、头维和容量；只复制到 `:other_pos`。`prev_embedding` 若存在，会从 `(1,1,C)` 扩展并 `clone` 为每行独立状态。`test_kv_cache_prefill` 用写入 K=1、V=2 的小缓存检查复制和位置。
+### 3.5 `yield` 的暂停位置决定 token 何时写入 cache
 
-这节省共享 prompt 的**计算**，并不节省 B 份缓存的**显存**。还有一个容量细节：prefill cache 的 `seq_len=len(tokens)`，因为它只装 prompt；decode cache 的长度是 `len(tokens)+max_tokens`（若未指定 `max_tokens`，则使用模型 `sequence_len`）。这是为了给后续位置预留槽位；`Engine.generate` 不会自动裁剪超出预分配长度的生成。
+`Engine.generate` 是 Python generator。调用 `Engine.generate(...)` 只得到 generator 对象；第一次 `next(generator)` 才开始执行。遇到 `yield` 后，函数暂停，下一次 `next` 才从暂停处继续。
 
-`test_multi_sample_first_token_diversity` 还守护一个易错点：展开 logits 后须逐行采样，不能抽一个 token 再广播；均匀 logits 下 16 行全相同几乎必然是实现错误。独立采样不意味着“答案彼此完全独立”：它们共享同一个随机数生成器和同一个模型/前缀，只是 `torch.multinomial` 在 `(B,V)` 的每一行各做一次选择。固定 `seed` 是复现实验的工具，不是保证不同硬件和不同 PyTorch 内核严格逐位一致的承诺。
+对于 4-token prompt、`max_tokens=3`：
 
-## 5. 从 logits 选 token：greedy、温度、top-k
+| 调用 | 恢复后送入模型 | 返回给调用者 | 暂停时 cache 包含 |
+|---|---|---|---|
+| `next` 1 | prompt `p₀～p₃` | `a₀` | `p₀～p₃` |
+| `next` 2 | `a₀` | `a₁` | `p₀～p₃, a₀` |
+| `next` 3 | `a₁` | `a₂` | `p₀～p₃, a₀, a₁` |
 
-`engine.py::sample_next_token(logits, rng, temperature, top_k)` 接收 `(B,V)` 并返回 `(B,1)`。
+关键规律是：
 
-- **经典 greedy**：`temperature == 0.0` 时直接 `argmax`，即 \(\arg\max_i z_i\)。它确定、适合基准；`test_temperature_zero_determinism` 验证 seed 不影响它。
-- **temperature 采样**：对 \(\tau>0\)，\(p_i=\exp(z_i/\tau)/\sum_j\exp(z_j/\tau)\)。低温使分布尖锐，高温提高随机性。源码用同设备的 `torch.Generator` 和 `seed`，相同 seed 可复现（`test_seed_reproducibility`）。温度改变抽样，不会修改模型知识。
-- **top-k**：若 `top_k=k>0`，只保留最高 `min(k,V)` 个 logits，在其中 softmax 与采样，再映回原 id；`None` 或非正数则使用全词表。它不是 top-p，本文件没有 nucleus sampling。
+> token 先被选出并 yield，下一次恢复 generator 时，才作为输入写入 cache。
 
-## 6. 流式聊天与 RowState 工具状态机
+因此 yield `a₂` 的瞬间，cache 中还没有 `a₂`。如果后面还要预测 `a₃`，才需要输入 `a₂`。
 
-`Engine.generate` 是 generator，每轮 `yield token_column, token_masks`：前者是 B 行 token，后者标示该 token 是模型采样的 `1` 还是引擎强制注入的 `0`。所以 `chat_cli.py` 能立即 `decode([token])` 并 `print(..., flush=True)`，不必等整段回答。
+当前代码在调用者继续请求第 4 次 `next` 时，会先输入 `a₂`，然后循环回顶部发现已经达到 `max_tokens=3`，最终抛出 `StopIteration`。这就是 §1.4 提到的不产生新输出的尾部 forward。若 `generate_batch` 看到所有行都已返回终止 token，会主动停止消费 generator，不需要再回写最后的终止列。
 
-CLI 维护 `conversation_tokens`，拼入 `<|user_start|>...<|user_end|><|assistant_start|>`。采到 `<|assistant_end|>` 或 `<|bos|>`，对应 `RowState.completed=True`；所有行完成或达到 `max_tokens` 后停止。CLI 的参数默认温度 `0.6`、top-k `50`，不要误写成 `Engine.generate` 默认值（后者为 `1.0` 与 `None`）。若 CLI 因 256 token 上限结束，会补 `<|assistant_end|>` 以保持下一轮格式完整。
+> **运行边界**：`max_tokens` 统计 generator yield 的新增 token 列，工具插入和终止 token 也占预算。Engine 不会自动滚动或截断超长历史；调用者必须保证 prompt 与生成上限适配模型上下文、RoPE 和 cache 容量。
 
-每行的 `RowState` 保存 `current_tokens`、待注入的 `forced_tokens` 队列、`in_python_block`、表达式 token 和完成标记。模型采到 `<|python_start|>` 后，引擎收集 token；遇 `<|python_end|>`，解码表达式、调用 `use_calculator`，再把 `<|output_start|> 结果 <|output_end|>` 排进 `forced_tokens`。下一轮循环优先从 `deque.popleft()` 取这些 token，而不是使用刚采样的 token；不过所有 token——包括强制输出——仍会被喂回 `GPT.forward`，以便模型能以工具结果为条件继续生成解释。
+> **模式边界**：checkpoint 加载时的 `model.eval()` 控制模型训练/评估模式；`torch.inference_mode()` 关闭梯度记录。二者职责不同，都与 §7 中计算表达式使用的 Python `eval(...)` 无关。
 
-强制 token 不来自模型抽样，故 `token_masks` 为 0；采样 token 为 1。`generate_batch` 一面累积最终 token 序列，一面累积这些 mask，并且不把终止的 `<|assistant_end|>` 或 BOS 放入结果。这正是后续 RL 能分辨“哪些位置是模型动作、哪些是环境工具返回”的接口。训练端 `tokenizer.py::render_conversation` 对 `python_output` 同样不监督：它应由工具给出，而非让模型背诵。
+### 3.6 一份 cache 只服务于当前这次回答
 
-状态机只是协议执行器，不会理解 Python 语义。没有闭合的 `<|python_end|>` 不会执行；计算失败或被过滤时 `use_calculator` 返回 `None`，引擎不会插入 output token；一旦采到 assistant end 或 BOS，行被标记 completed。虽然 completed 行仍保持 batch 对齐而继续进行 forward，它们的后续 token 不会由 `generate_batch` 写入结果。这个选择以少量无效计算换取简单的固定形状批处理。
+多轮聊天中需要区分两种状态：
 
-### `eval` 不是强沙箱
+```text
+conversation_tokens：跨轮保存历史 token id
+KV cache：            当前一次 Engine.generate 内的临时计算结果
+```
 
-`use_calculator` 会移除数字逗号；数学分支只容许数字和基本运算符、拒绝 `**`；字符串分支只允许 `.count()` 相关字符并拒绝 `__`、`import`、`open` 等模式。`eval_with_timeout` 用空 `__builtins__` 和 3 秒 `SIGALRM` 超时执行。
+第一轮：
 
-这只是有限防护，**不是强安全沙箱**。黑名单、字符检查、语言对象模型、资源耗尽和平台差异都可能留下风险，`SIGALRM` 也不是跨平台隔离。绝不可把不可信文本当生产环境代码执行；应采用不含 `eval` 的 AST 白名单解析器，并在权限最小化的独立进程/容器中执行。
+```text
+完整 prompt → 新建 cache → prefill → decode 回答 1
+回答结束 → generate 结束 → 这份 cache 不再保留
+回答 1 的 token id → 追加到 conversation_tokens
+```
 
-## 7. 性能账本：省计算，也消耗显存与带宽
+第二轮：
 
-`GPT.kv_bytes_per_token()` 的每行缓存成本是：
+```text
+conversation_tokens + 用户问题 2 + assistant_start
+→ 再次调用 Engine.generate
+→ 新建 cache
+→ 对包含第一轮问答的完整 prompt 重新 prefill
+```
 
-\[
-\text{bytes/token}=L\times2\times H_{kv}\times D\times s,
-\]
+所以 cache 避免的是**生成同一个回答期间**的重复计算。下一轮能够看见旧对话，是因为历史 token id 被重新送入模型，不是因为上一轮的 K/V 仍在。
 
-其中 2 是 K 和 V，`s` 是 `COMPUTE_DTYPE.itemsize`。上面的玩具模型若为 float32，结果是 `2×2×2×8×4=256` 字节/token。真实模型的层数和上下文远大得多，batch 增大时 KV 很快成为 VRAM 主角。
+### 3.7 可选自检：缓存路径应与完整前缀重算一致
 
-`GPT.kv_read_bytes(context_len)` 还估计每个 decode step 读取的历史 K/V；滑动窗口层只读约 `min(context_len, left_window)` 的历史（实际 attention 的 left-window 边界还包含当前位置），全上下文层读更长历史。GQA 与滑动窗口是**核心架构选择**；预分配缓存、FA3 原地更新以及 CPU/MPS/不兼容 CUDA 时的 SDPA 回退是**工程实现优化**；warmup、batch sweep、中位数 TPOT 与 roofline 指标则是**实验性速度测量技巧**，不能被说成模型能力提升。
+缓存不仅要快，还要保证新位置的结果与完整前缀重算一致。下面在 `nanochat/` 的 Python 环境中运行；先用 `NANOCHAT_DTYPE=float32 python` 启动解释器，固定为 fp32 CPU 自检。不用 checkpoint，构造一个随机初始化的小 GPT，比较两条路径的最后位置 logits。
 
-`infer_bench.py` 在 batch=1 prefill 上报告 MFU（实际 FLOPs/峰值 FLOPs），在 decode 上以权重字节加 batch 倍 KV 读取字节计算 MBU（实际带宽/峰值带宽）。小 batch 时每步几乎都要重读全部权重；提高 batch 往往提高总 token/s，直到算力或 VRAM 饱和，但会改变延迟。这里 `tok/s` 是整个 batch 的总产出，不能与单请求的 TPOT 混为一谈。
+```python
+import torch
+from nanochat.common import COMPUTE_DTYPE
+from nanochat.gpt import GPT, GPTConfig
+from nanochat.engine import KVCache
 
-脚本的测量边界也值得准确理解。`bench_generate` 第一次 `next(generator)` 计作 TTFT，故它不只是“模型算 prompt”的纯 prefill 时间，还包括 cache 分配/复制和第一次抽样；随后每次 `next` 才被记录为 decode step。它先 warmup，再用 decode step 时间的中位数作为 TPOT，减少内核首次编译、分配器和偶发抖动的影响。这些是有用的实验方法，不是推理算法本身。
+torch.manual_seed(42)
+config = GPTConfig(sequence_len=16, vocab_size=64, n_layer=2,
+                   n_head=4, n_kv_head=2, n_embd=32, window_pattern="L")
+with torch.device("meta"):
+    model = GPT(config)
+model.to_empty(device="cpu")
+model.init_weights()
+# 默认 attention 输出投影是零；自检改为非零，让错误的 K/V 真正影响 logits。
+for block in model.transformer.h:
+    torch.nn.init.normal_(block.attn.c_proj.weight, std=0.02)
+model.eval()
 
-该脚本明确要求 CUDA 和单 GPU，且把 `prompt + decode` 限制在 `sequence_len` 内。它会报告 `weight_bytes(model)`、`model.kv_bytes_per_token()` 和 `model.kv_read_bytes(context_mid)`；不要在没有实际运行测量时虚构某块 GPU 的 MBU、MFU 或 tokens/s。架构估算提供上界和解释，真实性能仍依赖 GPU、dtype、attention 实现、batch 和上下文长度。
+cache = KVCache(batch_size=1, num_heads=2, seq_len=16, head_dim=8,
+                num_layers=2, device="cpu", dtype=COMPUTE_DTYPE)
+ids = torch.tensor([[1, 2, 3, 4, 5, 6]])
+with torch.inference_mode():
+    full_prompt = model(ids[:, :4])[:, -1, :]
+    cached_prompt = model(ids[:, :4], kv_cache=cache)[:, -1, :]
+    torch.testing.assert_close(cached_prompt, full_prompt, atol=1e-5, rtol=1e-5)
+    assert cache.get_pos() == 4          # prefill 四个 token，下一位置为 4
+    for pos in (4, 5):
+        full = model(ids[:, :pos+1])[:, -1, :]
+        incremental = model(ids[:, pos:pos+1], kv_cache=cache)[:, -1, :]
+        torch.testing.assert_close(incremental, full, atol=1e-5, rtol=1e-5)
+        assert cache.get_pos() == pos + 1
+```
+
+这个 fp32 CPU 小例子同时走过 attention、RoPE 和 smear 的缓存分支，比较的是**同一固定前缀的 logits**，不是靠两个随机采样结果碰巧相同判断正确。低精度 / 不同后端需调整误差容差，真实 checkpoint 和长上下文仍需另外测试。
+
+---
+
+## 4. 同一个问题生成多条回答：Prompt 只算一次
+
+有时我们希望模型对同一道题给出多条候选答案。例如 RL 要比较同题的不同 rollout，评估也可能从多个候选中选择最佳答案。
+
+### 4.1 `num_samples` 表示一个 prompt 的多条回答
+
+当前接口是：
+
+```python
+Engine.generate(tokens, num_samples=B)
+```
+
+`tokens` 只有一份，因此它表达的是：
+
+```text
+同一个 prompt ─┬→ 回答 0
+                ├→ 回答 1
+                └→ 回答 2
+```
+
+它不是同时传入 B 个不同问题。正因为 prompt 相同，prompt 的 forward 才有机会只做一次。
+
+### 4.2 先用一行 prefill，再复制成 B 行
+
+继续使用 4-token prompt `[p₀,p₁,p₂,p₃]`，同时生成 3 条回答。
+
+第一步只用 batch=1 做 prefill：
+
+```text
+[p₀,p₁,p₂,p₃]
+  → prompt forward 一次
+  → 得到 prompt cache
+  → 得到预测首 token 的 logits，shape=(1,V)
+```
+
+第二步扩展成三行：
+
+```text
+prompt cache ─┬→ 第 0 行 cache
+              ├→ 第 1 行 cache
+              └→ 第 2 行 cache
+
+同一份首 token logits ─┬→ 为第 0 行采样 a₀
+                        ├→ 为第 1 行采样 b₀
+                        └→ 为第 2 行采样 c₀
+```
+
+第三步，三行开始各自 decode：
+
+```text
+本轮输入：[a₀, b₀, c₀]，shape=(3,1)
+第 0 行写入 a₀ 的 K/V
+第 1 行写入 b₀ 的 K/V
+第 2 行写入 c₀ 的 K/V
+```
+
+从这里开始，三条回答可能沿不同 token 继续生成。
+
+### 4.3 Logits 是展开读取，K/V 是实际复制
+
+源码中有两种看似相同、实际不同的操作：
+
+```python
+logits = logits[:, -1, :].expand(num_samples, -1)
+kv_cache_decode.prefill(kv_cache_prefill)
+```
+
+- logits 的 `expand` 创建共享底层存储的视图。这里只需读取相同分数并为每行分别采样，不需要修改 logits；
+- K/V 必须复制到 B 个独立 cache 行，因为后续每行要写入不同回答，不能共享同一块可变存储。
+
+`KVCache.prefill(other)` 这个名字容易让人误以为它会执行 prompt forward。实际上它只做“把 `other` 中已经算好的有效 K/V 复制过来”，同时复制 smear 所需的 `prev_embedding`。
+
+### 4.4 节省的是 prompt 计算，不是 cache 显存
+
+对 B 条回答，优化前后可以这样比较：
+
+```text
+朴素做法：prompt forward B 次，保存 B 份 cache
+当前做法：prompt forward 1 次，再复制成 B 份 cache
+```
+
+所以省掉的是 `B-1` 次重复的 prompt 计算。decode 阶段仍需 B 个独立 cache 行，显存大致随 B 线性增加；创建、清零和复制 cache 本身也有开销。
+
+### 4.5 分别采样不等于保证不同
+
+采样器对 `(B,V)` 的每一行分别选择 token，不会先选一个 token 再广播到所有行。但“分别选择”不保证结果一定不同：
+
+- `temperature=0` 时，每行都取同一个 argmax，同 prompt 的回答通常相同；
+- `temperature>0` 时，每行独立抽取，可能不同，也可能碰巧相同。
+
+每次 `generate` 调用会用 seed 初始化一个随机数生成器。模型、prompt、B 和采样参数都相同时，同 seed 应复现同一批输出；改变 B 会改变随机数的消费顺序，不能期待某一行仍与原来的单样本结果完全一致。
+
+---
+
+## 5. 从 logits 选出一个 token
+
+模型只负责给词表中每个 token 打分；究竟选哪个 token，由采样策略决定。下面始终使用同一组小例子：
+
+```text
+词表 token id：  0    1    2
+logits：          0    2    1
+```
+
+注意：logit `2` 是 token id 1 的分数，不是要返回 token id 2。
+
+### 5.1 Softmax 把分数变成概率
+
+logits 可以为任意实数，尚不是概率。softmax 将它们变为总和为 1 的分布：
+
+```text
+softmax([0,2,1]) ≈ [0.090, 0.665, 0.245]
+```
+
+顺序始终对应原词表 id `0、1、2`。id 1 概率最高，但随机采样仍可能选到 id 0 或 id 2。
+
+### 5.2 `temperature=0`：不采样，直接取最高分
+
+当前实现把温度 0 单独解释为 greedy：
+
+```python
+if temperature == 0.0:
+    return logits.argmax(dim=-1, keepdim=True)
+```
+
+例子中最高 logit 位于索引 1，所以返回 token id 1。这条分支不做 `logits/0`，也不使用随机数，因此 seed 不影响结果。
+
+严格地说，若两个最高分几乎相等，不同硬件或数值精度的微小差异仍可能改变 argmax；这里的“确定”指同一数值结果下不再随机抽样。
+
+### 5.3 `temperature>0`：控制概率有多集中
+
+温度 `τ` 的计算是：
+
+```text
+probs = softmax(logits / τ)
+```
+
+| 温度 | id 0、1、2 的概率约值 | 直觉 |
+|---:|---|---|
+| 0.5 | `[0.016,0.867,0.117]` | 分布更尖，最高分更容易被选中 |
+| 1.0 | `[0.090,0.665,0.245]` | 原始 softmax 分布 |
+| 2.0 | `[0.186,0.506,0.307]` | 分布更平，低分 token 机会增加 |
+
+低温度减少随机性，高温度增加随机性。它只改变本次选择分布，不会改变模型参数；“更随机”也不等于“质量更高”或“更有创意”。
+
+### 5.4 Top-k：只在最高的 k 个候选中抽样
+
+假设 `top_k=2`。先找出最高的两个 logit：
+
+```text
+保留的分数 vals：       [2, 1]
+它们的原词表 id idx：   [1, 2]
+```
+
+id 0 被排除。再只对 `[2,1]` 应用 temperature 和 softmax：
+
+```text
+τ=1 时，候选内部概率约为 [0.731, 0.269]
+```
+
+源码对应：
+
+```python
+vals, idx = torch.topk(logits, k, dim=-1)
+probs = F.softmax(vals / temperature, dim=-1)
+choice = torch.multinomial(probs, 1, generator=rng)
+next_ids = idx.gather(1, choice)
+```
+
+`choice` 是“小候选表中的第几个”，不是原词表 id。例如 `choice=0` 要通过 `idx[0]` 映射回 token id 1，这就是最后一步 `gather` 的作用。
+
+因此 temperature 和 top-k 不是二选一：top-k 先筛候选，temperature 再决定候选内的概率。`top_k=None` 或非正数表示不筛选；超过词表大小时会截到 `V`。当前项目没有实现 top-p。
+
+### 5.5 最终参数由调用者决定
+
+| 入口 | temperature | top_k | `max_tokens` |
+|---|---:|---|---:|
+| `Engine.generate` 函数默认值 | 1.0 | None | None |
+| `chat_cli.py` 默认传入值 | 0.6 | 50 | 256 |
+
+调用 `chat_cli.py` 时，真正生效的是第二行。温度为 0 时采样函数直接进入 greedy 分支，top-k 不再执行。阅读生成行为时应沿调用链看实参，而不是只看底层函数签名。
+
+---
+
+## 6. 工具调用：模型提出请求，Engine 插入结果
+
+普通生成中，每个新 token 都由模型选择。工具调用多了一种来源：模型负责写出“我要计算什么”，Engine 执行工具后把结果插入 token 流，模型再基于结果继续回答。
+
+### 6.1 先看一遍完整的 `2+2`
+
+假设模型生成下面的工具请求：
+
+```text
+python_start  2+2  python_end
+```
+
+Engine 看见完整请求后执行计算器，得到 `4`，并插入：
+
+```text
+output_start  4  output_end
+```
+
+随后模型继续生成正文。整条序列是：
+
+```text
+模型：python_start → 2+2 → python_end
+环境：output_start → 4 → output_end
+模型：答案是 4。→ assistant_end
+```
+
+责任边界很清楚：
+
+| token 区间 | 谁决定内容 | 来源 mask |
+|---|---|---:|
+| `python_start ... python_end` | 模型 | 1 |
+| `output_start ... output_end` | Engine / 工具环境 | 0 |
+| 工具后的回答正文 | 模型 | 1 |
+
+这里的 mask 表示“谁产生了 token”，不是 attention mask。环境插入的 `4` 仍然会送入模型，后续回答当然可以看见它；但 RL 不应把 `4` 当成模型自主选择的动作计算策略梯度。
+
+### 6.2 `RowState` 记录每条回答进行到哪里
+
+多样本生成时，每一行都可能处于不同状态：某行正在写普通回答，另一行可能正在收集工具表达式。`RowState` 为每行保存控制信息：
+
+| 字段 | 作用 |
+|---|---|
+| `current_tokens` | prompt 加上已经选出的续写 token |
+| `in_python_block` | 是否已经生成 `python_start`、正在收集表达式 |
+| `python_expr_tokens` | 当前工具表达式的 token id |
+| `forced_tokens` | Engine 接下来必须插入的工具结果队列 |
+| `completed` | 是否已经遇到 `assistant_end` 或 BOS |
+
+这些是“生成流程走到哪一步”的控制状态。它们不保存 Transformer 各层的历史表示，不能替代 KV cache。
+
+### 6.3 工具结果也要逐 token 送回模型
+
+工具返回 `4` 后，Engine 不会一次性把整个结果偷偷塞进 cache。它仍遵循 §3 的生成节奏：先 yield 一个 token，下一次恢复 generator 时再把它送入模型。
+
+```text
+yield python_end
+  → 执行工具，把 [output_start, 4, output_end] 放入 forced_tokens
+
+下一次：输入 python_end → yield output_start
+再下一次：输入 output_start → yield 4
+再下一次：输入 4 → yield output_end
+再下一次：输入 output_end → 模型基于完整工具结果继续生成
+```
+
+因此“调用者已经收到 token `4`”和“`4` 已经写入 KV cache”仍是两个时刻。只有下一次 forward 处理 `4` 后，它才成为后续预测可读取的历史。
+
+当前实现即使 `forced_tokens` 非空，也会先从 logits 采样一个 token，再用队列首项替换它。被替换的采样不会进入上下文，但会消耗一次随机数；这是实现开销，不改变最终 token 流。
+
+### 6.4 流式接口与批量收集接口
+
+`Engine.generate` 每轮 yield 两个长度为 B 的 Python 列表：
+
+```text
+token_column：本轮每行输出的 token id
+token_masks： 对应来源，1=模型采样，0=Engine 强制插入
+```
+
+`chat_cli.py` 消费这个流并逐 token 打印。
+
+`generate_batch` 则把同一个流收集成完整结果：
+
+```python
+results, masks = engine.generate_batch(tokens, num_samples=4, max_tokens=128)
+```
+
+无工具的单行例子：
+
+```text
+prompt：        [p₀,p₁,p₂,p₃]
+流式输出：      a₀, a₁, assistant_end
+results[0]：   [p₀,p₁,p₂,p₃,a₀,a₁]
+masks[0]：     [ 0, 0, 0, 0, 1, 1]
+```
+
+`results` 包含原 prompt，prompt mask 记为 0；`generate_batch` 识别终止 token，但不把它加入结果。若只需要新增回答，取 `results[i][len(tokens):]`。
+
+### 6.5 失败和结束分别意味着什么
+
+工具请求只有闭合后才执行：
+
+- 没有先生成 `python_start` 的 `python_end` 不触发工具；
+- 始终没有 `python_end` 的表达式不会执行；
+- 表达式不符合过滤规则、求值失败或超时，工具返回 `None`，Engine 不插入输出区间。
+
+生成也有两种不同结束原因：
+
+- 模型生成 `assistant_end` 或 BOS：该行标记为完成；
+- 达到 `max_tokens`：只是预算耗尽，回答可能截在正文甚至工具区间中间。
+
+工具插入 token 和终止 token 都占 `max_tokens`。`chat_cli.py` 在预算耗尽且末尾不是 `assistant_end` 时，会补一个结束标记再存入历史；这只是在修补聊天记录边界，不代表模型主动生成了正确结束，也不会修复一个未闭合的工具协议。
+
+> **显示边界**：一个 BPE token 不一定对应一个完整字符。当前 CLI 对单个 token 调用 `decode([token])` 并立刻打印，跨 token 的 UTF-8 字节片段可能显示为替换字符。严谨的流式 UI 需要缓冲不完整字节。
+
+---
+
+## 7. 工具安全：能过滤一些输入，不等于建立了沙箱
+
+先给结论：当前计算器适合教学和受控实验，**不应直接用于执行不可信用户提供的任意表达式**。
+
+### 7.1 当前代码做了哪些限制
+
+`use_calculator` 先删除数字中的逗号，再只允许两类表达式：
+
+1. 数学表达式：字符只能来自数字、`*+-/.()` 和空格，并额外拒绝 `**`；
+2. 字符串计数：字符受限，必须包含 `.count(`，并拒绝 `__`、`import`、`open` 等关键词。
+
+例如：
+
+```text
+2+2                 → 允许进入求值
+"banana".count("a") → 允许进入求值
+print(2+2)          → 不符合过滤规则
+```
+
+通过过滤后，表达式在清空 builtins 的环境中求值：
+
+```python
+eval(formula, {"__builtins__": {}}, {})
+```
+
+同时用 `SIGALRM` 设置默认 3 秒超时。过滤、执行或超时失败都会返回 `None`，Engine 因而不插入工具结果。
+
+### 7.2 为什么这些措施仍不是安全隔离
+
+可以把当前措施看成“门口检查”，不能把它当成“把代码关进另一间房”：
+
+- 字符白名单和关键词黑名单没有完整理解 Python 语法，容易漏掉未预想的组合；
+- 清空 `__builtins__` 限制了名称访问，但没有隔离 CPU、内存和当前进程；
+- `eval` 与模型推理运行在同一个 Python 进程，异常资源消耗会直接影响 Engine；
+- `SIGALRM` 依赖 POSIX 信号和主线程语义，并不适用于所有平台或并发模型；
+- 修改进程级信号处理器本身也不适合作为通用多请求执行器。
+
+所以“清空 builtins + 3 秒超时”只能降低部分风险，不能给出沙箱级安全保证。
+
+### 7.3 面向真实用户时应该增加什么
+
+如果工具只需算术，最小可靠方案是：解析受限语法，只实现允许的数字、运算符和函数，而不是把字符串交给 Python `eval`。
+
+若必须运行更一般的代码，则至少需要：
+
+```text
+严格语法白名单与输入长度限制
++ 执行时间、内存、输出大小和数值大小限制
++ 与模型服务隔离的进程或受控运行环境
++ 明确的工具权限和审计
+```
+
+AST 白名单可以限制“允许写什么”，但不能单独限制无限计算或内存消耗；语法限制和资源隔离解决的是不同问题。
+
+---
+
+## 8. 推理性能：用户等多久，机器做多少，显存占多少
+
+推理性能不能只报一个“tokens/s”。至少要分三本账：
+
+```text
+延迟：一个用户多久看到首 token，之后多久看到下一个
+吞吐：GPU 每秒为整个 batch 生成多少 token
+显存：模型权重、KV cache 和临时张量占多少空间
+```
+
+### 8.1 先算 KV cache 的显存
+
+一条样本的一个 token，需要在所有层保存 K 和 V：
+
+```text
+每 token 的 cache 字节数
+= L × 2 × H_kv × head_dim × dtype_bytes
+      ↑ K 和 V 两份
+```
+
+B 条样本、每条预留 `T_max` 个位置时：
+
+```text
+cache_bytes = B × T_max × 每 token 的 cache 字节数
+```
+
+例如：
+
+```text
+L=12, H_kv=2, head_dim=8, dtype=float32（4 bytes）
+每 token = 12 × 2 × 2 × 8 × 4 = 1,536 bytes
+
+B=8, T_max=4096
+总 cache = 8 × 4096 × 1536
+           = 50,331,648 bytes
+           = 48 MiB
+```
+
+因此 B 或 `T_max` 翻倍，cache 预分配空间也近似翻倍。bf16/fp16 每元素 2 bytes，相同 shape 下约为 fp32 的一半。当前 Engine 的 cache dtype 取 `COMPUTE_DTYPE`，不一定与所有模型参数的存储 dtype 相同。
+
+这还不是完整峰值显存：还要加模型权重、logits、临时张量，以及 prefill cache 向 decode cache 复制时短暂同时存在的空间。GQA 通过减少 `H_kv` 降低 cache；滑动窗口虽然减少读取范围，但当前实现不会因此缩小预分配容量。
+
+### 8.2 Prefill 和 decode 是两种不同的工作负载
+
+| 阶段 | 输入形态 | 主要工作 | 常见瓶颈倾向 |
+|---|---|---|---|
+| prefill | 一次输入整段 prompt | 大批位置的矩阵计算和 attention | 较容易利用 GPU 算力 |
+| decode | 每行每轮输入一个 token | 模型投影 + 读取历史 K/V | 小 batch 时常受带宽和启动开销影响 |
+
+prefill 的 token 多，矩阵乘规模较大；decode 虽然每轮只有一个新 token，却要反复读取模型权重和越来越长的 K/V。二者不应混成一个平均速度。
+
+这是常见倾向，不是硬规则。batch、上下文长度、模型结构、dtype、量化、attention 后端和硬件都会改变瓶颈。
+
+### 8.3 三个最先要看的指标
+
+| 指标 | 回答的问题 |
+|---|---|
+| TTFT（Time To First Token） | 用户提交 prompt 后，多久看到第一个 token？ |
+| TPOT（Time Per Output Token） | 首 token 之后，平均/典型多久出现下一个 token？ |
+| 总 tok/s | 整个 batch 每秒一共生成多少 token？ |
+
+假设 B=8，每个 decode step 用 10 ms，并且每行都产生一个有效 token：
+
+```text
+单行：每 10 ms 得到 1 token → 100 tok/s
+全 batch：每 10 ms 得到 8 token → 800 tok/s
+```
+
+所以 800 tok/s 是 GPU 总吞吐，不表示单个用户以 800 tok/s 阅读回答。增大 batch 常能提高总吞吐，却可能让单请求延迟不变甚至变差。
+
+`infer_bench.py` 的 TTFT 从第一次 `next(generator)` 前计时，到首列 token 产生并完成 CUDA 同步。它包含 prompt prefill、cache 创建/复制和首次采样，但不包含 checkpoint 加载、分词、网络排队或 UI 显示，因此不是完整线上端到端延迟。
+
+### 8.4 MFU 与 MBU 帮助判断在等算力还是等数据
+
+两个利用率估计回答不同问题：
+
+```text
+MFU = 估算 FLOPs / (耗时 × GPU 理论峰值 FLOPs/s)
+MBU = 估算字节流量 / (耗时 × GPU 理论峰值 bytes/s)
+```
+
+- MFU（Model FLOPs Utilization）看计算单元利用程度；
+- MBU（Model Bandwidth Utilization）看显存带宽利用程度。
+
+例如小 batch decode 的 MFU 很低，可能不是实现“什么都没做”，而是计算单元在等待权重和 K/V 从显存搬入；这时应同时看 MBU。
+
+当前 benchmark 的 decode 估算为：
+
+```text
+每步字节数 ≈ weight_bytes + B × kv_read_bytes(context_len)
+每步 FLOPs ≈ B × estimate_decode_flops(context_len)
+```
+
+这些是根据架构计算的账本，不是 profiler 或硬件计数器直接测得的真实流量。比如 embedding 是按行查询，不能据此断言每个参数每步都从显存完整读取。MFU/MBU 适合比较配置和发现瓶颈线索，最终归因仍需 profiler。
+
+### 8.5 `infer_bench.py` 实际怎样测
+
+在 `nanochat/` 目录运行：
+
+```bash
+python -m scripts.infer_bench -i sft -g d12 \
+    --prompt-tokens 512 --decode-tokens 128 --batch-sizes 1,8,32
+```
+
+脚本当前只支持单张 CUDA GPU，不应使用 `torchrun`。执行流程是：
+
+```text
+加载 checkpoint
+→ 构造指定长度的自然语言 prompt
+→ 若 prompt + decode 超出 sequence_len，则缩短 prompt
+→ warmup
+→ 对每个 batch size 测量一次正式生成
+```
+
+每次正式生成中：
+
+1. 第一次 `next` 的耗时记为 TTFT；
+2. 后续每次成功 yield 的耗时记为 decode step time；
+3. step time 的中位数记为 TPOT；
+4. `B × 成功 decode step 数 / decode 总耗时` 记为 tok/s；
+5. 同时报告 peak allocated VRAM，并估算 MFU/MBU；
+6. 最后一行输出包含相同数据的 JSON，供脚本读取。
+
+这里有两个计数边界：
+
+- 首 token 已计入 TTFT，不进入 decode tok/s；generator 最后的无输出尾部 forward 也不进入“成功 yield”耗时；
+- 若某行提前终止或包含工具强制 token，`B × step 数` 不一定等于有效自然语言正文 token 数。
+
+一份可比较的性能报告至少要写清：checkpoint、GPU、dtype、attention 后端、prompt 长度、生成上限、batch、temperature、实际 decode steps、TTFT、TPOT、tok/s 和峰值显存。缺少这些上下文，单独一个 tok/s 几乎无法解释。
+
+---
 
 ## 常见误区
 
-1. **“KV cache 后不再跑模型。”**错；新 token 仍经过全部层，只是不重算历史 K/V。
-2. **“这里缓存是 `(B,H,T,D)`。”**错；本仓库整体为 `(L,B,T,H_kv,D)`，层视图为 `(B,T,H_kv,D)`。
-3. **“复制 prefill 不增加显存。”**错；它省共享前缀计算，B 行仍各占一份 K/V。
-4. **“温度零等于除以零。”**错；代码专门走 `argmax`。
-5. **“top-k 等于 top-p。”**错；前者固定候选数量，本引擎未实现后者。
-6. **“流式一定降低总耗时。”**它主要降低看到首段文字的等待感。
-7. **“清空 builtins 后 eval 就安全。”**错；这不是不可信代码的隔离机制。
+1. **“首 token 来自第一次 decode。”** 它来自 prefill 最后位置的 logits；第一次 decode 输入的是首个已经生成的 token。
+2. **“缓存后不再执行模型。”** 新 token 仍走全部层，只是不重算历史位置。
+3. **“cache 保存 token id。”** K/V 是每层浮点表示，token id 和控制状态另有用途。
+4. **“每层写完立即推进 cache 位置。”** 所有层共享本轮位置，最后一层才统一推进。
+5. **“每次 decode 的 RoPE 都从 0 开始。”** 应从缓存位置续接，否则与历史 K 的位置关系不一致。
+6. **“一次 prefill 的多样本生成不多占显存。”** 省的是前缀计算，当前仍复制 B 份缓存行。
+7. **“独立采样保证输出不同。”** 随机抽样也可能相同；greedy 下同 prompt 通常相同。
+8. **“token 一输出，就已经在 cache 中。”** 最新输出要在下一次 forward 才写入缓存；工具结果也一样，终止后则不必继续计算它。
+9. **“max_tokens 只统计模型回答正文。”** 工具强制 token 和终止列也占生成预算，正文长度还取决于接口是否排除终止符。
+10. **“空 builtins 和超时就能安全运行任意 Python。”** 当前工具仅允许有限表达式，也不是安全沙箱。
+11. **“高 batch tok/s 等于单个用户生成更快。”** 总吞吐与单请求逐 token 延迟必须分别报告。
+
+---
 
 ## 小结
 
-自回归依赖使 decode 必须逐 token 进行；KV cache 利用因果性，把生成改为一次 prefill 加多次单 token decode。nanochat 用 `(L,B,T_max,H_kv,D)` 缓存、`cache_seqlens` 和 RoPE 偏移保证位置正确，并额外保存 smear 的前一 embedding。`Engine.generate` 还负责复制共享前缀、逐行采样、流式交付、结束控制和工具强制输出。
+主线只有一句话：**先一次性处理 prompt 并缓存 K/V，从最后一个位置选出首 token；之后只把新 token 送入模型，读取历史缓存并续接位置，重复直到结束。**
 
-推理优化不是只看 FLOPs：decode 往往被权重和 KV 的显存带宽限制。GQA、窗口、缓存大小和 batch 共同决定延迟、吞吐与可承载上下文。
+围绕它有几条分支：
+
+- **缓存正确性**：各层保存实际 attention K/V，RoPE 按原序列位置续接，smear 还需上一 embedding；
+- **多样本与采样**：同 prompt 只 prefill 一次，再复制 cache 到多行；每行按温度和 top-k 选择 token；
+- **工具协议**：模型生成请求，环境强制插入结果；继续生成前，已选 token 送回 forward。来源 mask 为 RL 区分动作；
+- **性能与安全**：cache 用显存换掉历史重复计算，TTFT / TPOT / 吞吐分别测；有限过滤器和同进程 eval 不能作为安全沙箱。
+
+---
 
 ## 练习
 
-1. 令 `P=4,N=3`，写出朴素生成每轮输入长度；再写出 KV 版 prefill/decode 的输入长度和缓存位置，比较总处理位置数。
-2. 设 `n_layer=12,n_embd=768,n_head=6,n_kv_head=2,B=8,T_max=512`，求 `D`、完整 K/V 缓存形状，并写出每 token KV 字节公式。
-3. 阅读 `test_seed_reproducibility`、`test_temperature_zero_determinism`、`test_multi_sample_first_token_diversity`，分别说出它们锁定的不变量。
-4. 可选最小实验：复用测试中的 `MockModel`、`ByteTokenizer`，打印 `KVCache` 形状和 `advance(1)` 前后位置，再把 batch=1 cache 复制到 batch=4；不要把均匀 logits 的输出当语言质量。
-5. 设计一个只支持 `+ - * /` 和括号的计算器：列出允许的 AST 节点、拒绝的节点，以及为什么仍应放在隔离进程中。
+1. **顺序追踪**：4-token prompt 生成 3 个 token。逐次写出输入内容、cache 起点、RoPE 位置，以及该次 logits 在预测哪个 token；区分理想缓存位置数和当前尾部 forward。
+2. **显存账**：`L=12,C=768,H_q=6,H_kv=2,B=8,T_max=512,bf16`，求 head_dim、完整 K/V 形状和字节数。KV 头增加到 6 后，哪部分占用会变为 3 倍？
+3. **多样本**：为什么同 prompt、temperature=0 时生成 16 条答案通常没有多样性？增大 B 为什么不等于零成本？
+4. **工具追踪**：`python_start → 2+2 → python_end → output_start → 4 → output_end`，哪些 token 来源 mask=1？哪些 mask=0？哪些会送回模型？
+5. **测试阅读**：`tests/test_engine.py` 的 `test_kv_cache_prefill`、`test_seed_reproducibility`、`test_multi_sample_first_token_diversity` 分别检查什么？为什么它们还不能代替真实 GPT 的 cached/uncached logits 对照？
+6. **性能报告**：B=8 时测到 800 tok/s、TPOT=10 ms，这意味着单个用户每秒得到多少 token？如果 prompt 翻倍，还必须看哪个延迟指标？
+
+---
 
 ## 前后章导航
 
-- ← [第 09 章：监督微调 SFT：教会模型对话](./09-sft.md)：SFT 定义聊天 special token、监督 mask 和模型应学习的动作边界。
-- → [第 11 章：Chat Eval](./11-chat-evaluation.md)：这里的 `Engine.generate_batch` 如何成为分类/生成任务评估中的真实生成路径，将在那里展开。
+- **上一章**：[第 09 章：监督微调——教会模型对话](./09-sft.md)。定义 assistant 与环境 token 的生成责任。
+- **本章**：将 checkpoint 接入逐 token 生成、缓存和工具执行流程。
+- **下一章**：[第 11 章：聊天评估——聊天模型会做题了吗？](./11-chat-evaluation.md)。用同一个 Engine 检验任务完成情况。
+- **后续**：[第 12 章：强化学习](./12-rl.md)。对同 prompt 采样多条回答，使用来源 mask 区分模型动作和工具输出。

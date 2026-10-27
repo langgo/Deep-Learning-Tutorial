@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>RoPE 旋转位置编码 · 可视化(易懂版)</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #fafafa; color: #222;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 1000px; margin: 24px auto; padding: 0 20px; }
+  h1 { margin: 0 0 4px 0; font-size: 24px; }
+  .sub { color: #666; margin-bottom: 24px; font-size: 14px; }
+  .step {
+    background: #fff; border: 1px solid #e4e4e4; border-radius: 10px;
+    padding: 20px 26px; margin-bottom: 22px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  .step h2 {
+    margin: 0 0 10px 0; font-size: 18px; color: #1a1a1a;
+    padding-bottom: 10px; border-bottom: 2px solid #f0f0f0;
+  }
+  .step h2 .num {
+    display: inline-block; background: #0b63d1; color: #fff;
+    width: 26px; height: 26px; border-radius: 50%;
+    text-align: center; line-height: 26px; font-size: 14px;
+    margin-right: 10px; vertical-align: middle;
+  }
+  .controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 12px 0 16px 0; padding: 10px; background: #f9f9f9; border-radius: 6px; }
+  .controls label { font-size: 13px; color: #555; }
+  .controls input[type=range] { width: 220px; vertical-align: middle; }
+  .controls .val { font-family: Menlo, monospace; color: #0b63d1; min-width: 36px; display: inline-block; font-weight: 600; }
+  canvas { display: block; background: #fff; }
+  .legend { font-size: 13px; color: #555; margin-top: 10px; line-height: 1.7; }
+  .legend b { color: #c0392b; }
+  .note { font-size: 13px; color: #555; margin-top: 12px; padding: 12px 14px; background: #fff8e1; border-left: 4px solid #ffb300; border-radius: 4px; }
+  .insight { font-size: 14px; color: #0b4a7a; margin-top: 12px; padding: 14px 16px; background: #e3f2fd; border-left: 4px solid #0b63d1; border-radius: 4px; }
+  .insight b { color: #0b63d1; }
+  code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: Menlo, monospace; font-size: 13px; }
+  .pre { background: #f6f8fa; padding: 12px 16px; border-radius: 6px; font-family: Menlo, monospace; font-size: 13px; white-space: pre; overflow-x: auto; margin: 10px 0; }
+  .q { color: #2980b9; font-weight: 600; }
+  .k { color: #c0392b; font-weight: 600; }
+  .toc { background: #fff; border: 1px solid #e4e4e4; border-radius: 8px; padding: 14px 20px; margin-bottom: 20px; }
+  .toc h3 { margin: 0 0 8px 0; font-size: 15px; color: #666; }
+  .toc ol { margin: 0; padding-left: 24px; }
+  .toc li { margin: 4px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>RoPE 旋转位置编码 · 可视化</h1>
+<div class="sub">
+配合 <code>tutorial/04-gpt-attention.md §6</code> 阅读。本页从零开始铺垫,一步步讲清楚 RoPE 到底在做什么。
+</div>
+
+<div class="toc">
+<h3>阅读路径</h3>
+<ol>
+  <li><b>一个 token 长什么样</b> —— 向量 / 通道 / 通道对</li>
+  <li><b>关键:位置 t 决定旋转角度</b> —— 这就是"位置信息"藏的地方</li>
+  <li><b>多尺度:不同通道对转速不同</b> —— D/2 条位置时钟</li>
+  <li><b>结果:Q·K 为什么只依赖 i−j</b> —— 相对位置的由来</li>
+</ol>
+</div>
+
+<!-- ============ 步骤 1 ============ -->
+<div class="step">
+  <h2><span class="num">1</span>一个 token 长什么样</h2>
+
+  <p>一个 token 进入 attention 时,是一个长度 <code>D</code> 的向量(注意:这里 <code>D</code> 是<b>一个头内部</b>的宽度 <code>head_dim</code>,不是模型总宽度 <code>n_embd</code>)。</p>
+
+  <p>这个向量的每一个数,叫一个<b>通道(channel)</b>。<code>D = 8</code> 时,一个 token 在一个头里就有 8 个通道:</p>
+
+  <canvas id="c-step1" width="920" height="200"></canvas>
+
+  <p style="margin-top: 14px;"><b>RoPE 的第一步:把相邻两个通道配成一对</b>——<code>D = 8</code> 就配成 4 对。每对 <code>(x₀, x₁)</code> 看成一个二维平面上的向量(箭头):</p>
+
+  <canvas id="c-step1b" width="920" height="200"></canvas>
+
+  <div class="insight">
+    <b>要点</b>:现在"一个 token 的向量"变成了"D/2 个 2D 箭头"。RoPE 要做的就是——<b>把每个箭头旋转一个角度</b>。关键是:转多少度?
+  </div>
+</div>
+
+<!-- ============ 步骤 2 ============ -->
+<div class="step">
+  <h2><span class="num">2</span>关键:位置 t 决定旋转角度</h2>
+
+  <p>你问得非常好:<i>"T=0 和 T=1 应该有相对位置关系,但旋转是发生在通道上,怎么反应到 T 上?"</i></p>
+
+  <p>答案是:<b>每一个位置的 token,都是一个独立的向量</b>。位置 0 的 token、位置 1 的 token、位置 2 的 token……它们是 <code>T</code> 个独立的向量。RoPE 对它们的处理是:</p>
+
+  <div class="pre">位置 t = 0:  旋转 0  度       ← 不转
+位置 t = 1:  旋转 θ  度       ← 转一点
+位置 t = 2:  旋转 2θ 度       ← 转两倍
+位置 t = 3:  旋转 3θ 度
+位置 t = 4:  旋转 4θ 度
+...
+位置 t   :  旋转 t·θ 度       ← 和位置成正比</div>
+
+  <p><b>θ 来自哪?</b> θ 是和"通道对编号"有关的频率。本面板先固定看<b>第 0 对通道</b>(高频),你拖动滑块设定序列长度 <code>T</code>:</p>
+
+  <div class="controls">
+    <label>序列长度 T = <span class="val" id="v-T">5</span></label>
+    <input type="range" id="r-T" min="2" max="12" value="5" step="1">
+    <label>通道对编号 c = <span class="val" id="v-c2">0</span></label>
+    <input type="range" id="r-c2" min="0" max="3" value="0" step="1">
+    <label>假设所有位置都是同一个 token</label>
+  </div>
+
+  <canvas id="c-step2" width="920" height="300"></canvas>
+
+  <div class="legend">
+    <b>怎么看</b>:上面是 <code>T</code> 个位置的 token——假设它们的向量内容完全相同(便于隔离位置效应)。但经过 RoPE 后,<b>每个位置的箭头指向都不一样</b>——因为位置不同、旋转角度不同。
+    <br>• 位置 0 的箭头指向正右方(没转);
+    <br>• 位置 1 的箭头转了 <code>θ = freq[c]</code> 弧度;
+    <br>• 位置 t 的箭头转了 <code>t × freq[c]</code> 弧度。
+  </div>
+
+  <div class="insight">
+    <b>核心</b>:<b>"位置信息"没有被加到 token 里,而是用"转了多少度"来表示</b>。<br>
+    位置 0 和位置 1 之间"相差了多少位置",就表现为它们的箭头"相差了多少度"——这就是位置关系在通道上的表达。<br>
+    位置 2 和位置 1 相差 1 个位置、箭头相差 θ 度;位置 5 和位置 3 相差 2 个位置、箭头相差 2θ 度……<b>相对位置差 = 箭头角度差</b>。
+  </div>
+</div>
+
+<!-- ============ 步骤 3 ============ -->
+<div class="step">
+  <h2><span class="num">3</span>多尺度:不同通道对转速不同</h2>
+
+  <p>第 2 步固定看了"第 0 对通道"。但一个 token 有 <code>D/2</code> 对通道,RoPE 让<b>每对的转速(频率)都不同</b>——这是它比朴素位置编码聪明的地方:</p>
+
+  <div class="pre">通道对 0 :  freq[0] = 1               ← 最快,相邻位置差 1 弧度
+通道对 1 :  freq[1] = 1 / 100000^(2/D)   ← 稍慢
+通道对 2 :  freq[2] = 1 / 100000^(4/D)
+...
+通道对 D/2-1:  freq[D/2-1] ≈ 1/100000     ← 最慢,相邻位置几乎看不出差别</div>
+
+  <p>固定一个位置 <code>t</code>,看它所有 <code>D/2</code> 对通道各被转了多少角度:</p>
+
+  <div class="controls">
+    <label>head_dim D = <span class="val" id="v-D">16</span></label>
+    <input type="range" id="r-D" min="4" max="32" value="16" step="2">
+    <label>位置 t = <span class="val" id="v-pos3">4</span></label>
+    <input type="range" id="r-pos3" min="0" max="63" value="4" step="1">
+  </div>
+
+  <canvas id="c-step3" width="920" height="340"></canvas>
+
+  <div class="legend">
+    <b>怎么看</b>:每个小时钟是一对通道。从左到右:高频→低频。拖动位置 <code>t</code>:
+    <br>• <b>左边高频对</b>:位置稍微动一下指针就飞转——编码<b>细粒度位置</b>(第几个 token 立即可辨);
+    <br>• <b>右边低频对</b>:位置变化几十上百指针才动一点——编码<b>粗略范围</b>(第几百个 token、第几千个 token)。
+    <br>所以 RoPE 像<b>一组粗细不同的尺子</b>,同时测量位置的多个尺度。
+  </div>
+
+  <div class="insight">
+    <b>为什么要多尺度?</b> 单一频率会周期性重复(走一圈又回到原点)。多个不同频率组合后,在模型实际使用的有限上下文范围内更容易区分位置尺度;但这不是“数学上永不重复”或“无限长度都唯一”的保证。
+  </div>
+</div>
+
+<!-- ============ 步骤 4 ============ -->
+<div class="step">
+  <h2><span class="num">4</span>结果:Q·K 的分数为什么只依赖 i−j</h2>
+
+  <p>attention 的核心是 <span class="q">Q</span>·<span class="k">K</span>(内积,点积)。RoPE 对位置 <code>i</code> 的 <span class="q">Q</span> 转了 <code>i·freq</code>,对位置 <code>j</code> 的 <span class="k">K</span> 转了 <code>j·freq</code>。于是:</p>
+
+  <div class="pre">内积的结果 ∝ cos(θ_i − θ_j) = cos((i − j) × freq)
+                             ↑
+                   <b>只和相对位置 (i − j) 有关</b></div>
+
+  <p>下面固定一个 <span class="q">Q 在位置 i</span>,计算它和所有位置 <span class="k">K(j)</span> 的内积,画成曲线。为了隔离位置效应,我们让所有 token 的"内容"相同(全 1 向量):</p>
+
+  <div class="controls">
+    <label><span class="q">Q 的位置 i</span> = <span class="val" id="v-i">8</span></label>
+    <input type="range" id="r-i" min="0" max="31" value="8" step="1">
+  </div>
+
+  <canvas id="c-step4" width="920" height="300"></canvas>
+
+  <div class="legend">
+    <b>怎么看</b>:
+    <br>• 蓝色虚线是 <span class="q">Q 的位置 i</span>;
+    <br>• 红色曲线是 <span class="k">K(j)</span> 和 Q(i) 的内积,随 <code>j</code> 变化;
+    <br>• 在这个“所有内容向量相同”的特例中,<code>j=i</code> 处达到最大值;离开后曲线会随多组正弦/余弦<b>振荡</b>,不保证单调衰减。
+    <br><b>关键实验</b>:拖动 <code>i</code> 滑块——同一个相对位移 <code>i−j</code> 对应同样的函数值。有限画布会裁掉曲线两端,所以视觉上不一定是完整曲线的简单平移。
+  </div>
+
+  <div class="insight">
+    <b>收尾</b>:
+    <br>① 第 1 步建立了"向量 → D/2 对通道 → 2D 箭头"的分解;
+    <br>② 第 2 步把<b>位置 t</b> 变成了<b>旋转角度 t·freq</b>——这就是位置信息的物理载体;
+    <br>③ 第 3 步用<b>多尺度频率</b>在有限上下文内提供不同粒度的位置信号;
+    <br>④ 第 4 步揭示:两个位置做 Q·K 时,旋转角之差 <code>(i−j)·freq</code> 自动进入内积——位置依赖只通过相对位移出现。<br>
+    <b>RoPE 提供相对位移信号,但不预设“越近权重越高”;最终注意力仍由内容和训练决定</b>。
+  </div>
+</div>
+
+</div>
+
+<script>
+// ============ 通用:画箭头、画时钟 ============
+function arrow(ctx, x0, y0, x1, y1, color, width) {
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width || 2;
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  const dx = x1 - x0, dy = y1 - y0, a = Math.atan2(dy, dx), h = 8;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 - h * Math.cos(a - 0.4), y1 - h * Math.sin(a - 0.4));
+  ctx.lineTo(x1 - h * Math.cos(a + 0.4), y1 - h * Math.sin(a + 0.4));
+  ctx.closePath(); ctx.fill();
+}
+
+function clock(ctx, cx, cy, r, theta, color) {
+  // 画一个表盘和一个指针
+  ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.stroke();
+  // 12 点刻度
+  ctx.beginPath(); ctx.moveTo(cx + r - 4, cy); ctx.lineTo(cx + r, cy); ctx.stroke();
+  // 指针: 从圆心指向 (cos theta, -sin theta)
+  arrow(ctx, cx, cy, cx + r * Math.cos(theta), cy - r * Math.sin(theta), color, 2);
+}
+
+const BASE = 100000;
+function invFreq(c, D) {
+  return 1.0 / Math.pow(BASE, (2 * c) / D);
+}
+
+// ============ 步骤 1:向量 + 通道对 ============
+(function drawStep1() {
+  const ctx = document.getElementById('c-step1').getContext('2d');
+  const vals = [0.3, -1.1, 0.7, 0.2, 0.5, -0.4, 0.9, -0.6];
+  ctx.clearRect(0, 0, 920, 200);
+  ctx.font = '14px -apple-system';
+  ctx.fillStyle = '#333';
+  ctx.fillText('一个 token 的向量 (D = 8):', 40, 30);
+  const cw = 90, ch = 60, x0 = 40, y0 = 60;
+  for (let i = 0; i < 8; i++) {
+    ctx.strokeStyle = '#aaa';
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x0 + i * cw, y0, cw, ch);
+    ctx.strokeRect(x0 + i * cw, y0, cw, ch);
+    ctx.fillStyle = '#333';
+    ctx.font = '18px Menlo';
+    ctx.fillText(vals[i].toFixed(1), x0 + i * cw + 22, y0 + 37);
+    ctx.font = '12px Menlo';
+    ctx.fillStyle = '#888';
+    ctx.fillText('通道 ' + i, x0 + i * cw + 18, y0 + 55);
+  }
+  ctx.fillStyle = '#0b63d1';
+  ctx.font = '13px -apple-system';
+  ctx.fillText('一共 D = 8 个数,每个数就是一个通道。', 40, y0 + ch + 30);
+})();
+
+(function drawStep1b() {
+  const ctx = document.getElementById('c-step1b').getContext('2d');
+  ctx.clearRect(0, 0, 920, 200);
+  ctx.font = '14px -apple-system';
+  ctx.fillStyle = '#333';
+  ctx.fillText('把 8 个通道两两配对,变成 4 个 2D 箭头:', 40, 25);
+  const pairs = [[0.3, -1.1], [0.7, 0.2], [0.5, -0.4], [0.9, -0.6]];
+  const r = 40;
+  for (let p = 0; p < 4; p++) {
+    const cx = 150 + p * 200, cy = 110;
+    // 坐标轴
+    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx - r - 10, cy); ctx.lineTo(cx + r + 10, cy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy - r - 10); ctx.lineTo(cx, cy + r + 10); ctx.stroke();
+    const [x1, x2] = pairs[p];
+    const scale = r / 1.2;
+    arrow(ctx, cx, cy, cx + x1 * scale, cy - x2 * scale, '#2980b9', 2.5);
+    ctx.fillStyle = '#555';
+    ctx.font = '12px Menlo';
+    ctx.fillText('对 ' + p + ': 通道 ' + (2*p) + '-' + (2*p+1), cx - 55, cy + r + 25);
+  }
+})();
+
+// ============ 步骤 2:T 个位置,每个转不同角度 ============
+const rT = document.getElementById('r-T');
+const rC2 = document.getElementById('r-c2');
+const vT = document.getElementById('v-T');
+const vC2 = document.getElementById('v-c2');
+const ctx2 = document.getElementById('c-step2').getContext('2d');
+
+function drawStep2() {
+  const T = +rT.value;
+  const c = +rC2.value;
+  vT.textContent = T;
+  vC2.textContent = c;
+  const D = 8;
+  const freq = invFreq(c, D);
+  ctx2.clearRect(0, 0, 920, 300);
+
+  // 顶部标题行
+  ctx2.font = '13px -apple-system';
+  ctx2.fillStyle = '#333';
+  ctx2.fillText(`当前通道对 c = ${c},freq[c] = ${freq.toFixed(4)}`, 40, 25);
+
+  // 画 T 个 token
+  const r = 42;
+  const spacing = Math.min(130, (920 - 80) / T);
+  const startX = (920 - spacing * (T - 1)) / 2;
+  for (let t = 0; t < T; t++) {
+    const cx = startX + t * spacing;
+    const cy = 130;
+    const theta = t * freq;
+
+    // 位置标签
+    ctx2.fillStyle = '#333';
+    ctx2.font = '13px -apple-system';
+    ctx2.fillText(`位置 t = ${t}`, cx - 32, cy - r - 18);
+
+    // 时钟
+    clock(ctx2, cx, cy, r, theta, '#e67e22');
+
+    // 旋转角度文字
+    ctx2.fillStyle = '#555';
+    ctx2.font = '12px Menlo';
+    const deg = (theta * 180 / Math.PI).toFixed(1);
+    ctx2.fillText(`θ = ${theta.toFixed(2)}`, cx - 36, cy + r + 20);
+    ctx2.fillText(`≈ ${deg}°`, cx - 24, cy + r + 36);
+  }
+
+  // 底部提示
+  ctx2.font = '13px -apple-system';
+  ctx2.fillStyle = '#0b63d1';
+  ctx2.fillText('⬆ 这 ' + T + ' 个指针代表 ' + T + ' 个位置上的同一对通道的箭头。位置 t 的旋转角 = t × freq[c]。', 40, 270);
+}
+rT.addEventListener('input', drawStep2);
+rC2.addEventListener('input', drawStep2);
+drawStep2();
+
+// ============ 步骤 3:D/2 个时钟 ============
+const rD = document.getElementById('r-D');
+const rPos3 = document.getElementById('r-pos3');
+const vD = document.getElementById('v-D');
+const vPos3 = document.getElementById('v-pos3');
+const ctx3 = document.getElementById('c-step3').getContext('2d');
+
+function drawStep3() {
+  const D = +rD.value;
+  const t = +rPos3.value;
+  vD.textContent = D;
+  vPos3.textContent = t;
+  ctx3.clearRect(0, 0, 920, 340);
+
+  const nPairs = D / 2;
+  // 自适应布局:每行最多 8 个
+  const perRow = Math.min(8, nPairs);
+  const rows = Math.ceil(nPairs / perRow);
+  const r = Math.min(40, Math.floor(300 / rows / 3));
+  const spacing = 920 / (perRow + 0.5);
+
+  ctx3.font = '13px -apple-system';
+  ctx3.fillStyle = '#333';
+  ctx3.fillText(`当前位置 t = ${t},一共 ${nPairs} 对通道:`, 40, 25);
+
+  for (let c = 0; c < nPairs; c++) {
+    const row = Math.floor(c / perRow);
+    const col = c % perRow;
+    const cx = (col + 0.75) * spacing;
+    const cy = 90 + row * (r * 2 + 60);
+    const freq = invFreq(c, D);
+    const theta = t * freq;
+
+    // 颜色渐变:高频红,低频蓝
+    const u = nPairs > 1 ? c / (nPairs - 1) : 0;
+    const rr = Math.round(210 * (1-u) + 50 * u);
+    const bb = Math.round(60 * (1-u) + 180 * u);
+    clock(ctx3, cx, cy, r, theta, `rgb(${rr}, 110, ${bb})`);
+
+    ctx3.fillStyle = '#555';
+    ctx3.font = '11px Menlo';
+    ctx3.fillText(`对 ${c}`, cx - 10, cy + r + 14);
+    ctx3.fillText(`${(theta * 180 / Math.PI).toFixed(0)}°`, cx - 12, cy + r + 28);
+  }
+
+  ctx3.font = '12px -apple-system';
+  ctx3.fillStyle = '#c0392b';
+  ctx3.fillText('← 高频(每步狂转)', 50, 320);
+  ctx3.fillStyle = '#1a52a8';
+  ctx3.fillText('低频(几乎不动) →', 760, 320);
+}
+rD.addEventListener('input', drawStep3);
+rPos3.addEventListener('input', drawStep3);
+drawStep3();
+
+// ============ 步骤 4:Q·K 曲线 ============
+const rI = document.getElementById('r-i');
+const vI = document.getElementById('v-i');
+const ctx4 = document.getElementById('c-step4').getContext('2d');
+const T4 = 32, D4 = 16;
+
+function rotateVec(x, pos, D) {
+  const y = new Array(D);
+  for (let c = 0; c < D/2; c++) {
+    const freq = invFreq(c, D);
+    const theta = pos * freq;
+    const x1 = x[2*c], x2 = x[2*c + 1];
+    y[2*c]     =  x1 * Math.cos(theta) + x2 * Math.sin(theta);
+    y[2*c + 1] = -x1 * Math.sin(theta) + x2 * Math.cos(theta);
+  }
+  return y;
+}
+
+function drawStep4() {
+  const i = +rI.value;
+  vI.textContent = i;
+  ctx4.clearRect(0, 0, 920, 300);
+  const pad = 50;
+  const w = 920 - 2*pad;
+  const h = 300 - 2*pad;
+
+  ctx4.strokeStyle = '#aaa';
+  ctx4.beginPath();
+  ctx4.moveTo(pad, pad + h); ctx4.lineTo(pad + w, pad + h); ctx4.stroke();
+  ctx4.beginPath();
+  ctx4.moveTo(pad, pad); ctx4.lineTo(pad, pad + h); ctx4.stroke();
+
+  ctx4.fillStyle = '#555';
+  ctx4.font = '12px Menlo';
+  ctx4.fillText('Q(i) · K(j)', 6, pad + 10);
+  ctx4.fillText('j (K 的位置) →', pad + w - 100, pad + h + 24);
+
+  const content = new Array(D4).fill(1);
+  const qi = rotateVec(content, i, D4);
+  const scores = [];
+  let maxS = -1e9, minS = 1e9;
+  for (let j = 0; j < T4; j++) {
+    const kj = rotateVec(content, j, D4);
+    let s = 0;
+    for (let d = 0; d < D4; d++) s += qi[d] * kj[d];
+    scores.push(s);
+    if (s > maxS) maxS = s;
+    if (s < minS) minS = s;
+  }
+  const yOf = s => pad + h - (s - minS) / (maxS - minS) * h;
+  const xOf = j => pad + (j / (T4 - 1)) * w;
+
+  // Q 位置虚线
+  ctx4.strokeStyle = '#2980b9'; ctx4.lineWidth = 2;
+  ctx4.setLineDash([4, 3]);
+  ctx4.beginPath();
+  ctx4.moveTo(xOf(i), pad); ctx4.lineTo(xOf(i), pad + h); ctx4.stroke();
+  ctx4.setLineDash([]);
+
+  // 曲线
+  ctx4.strokeStyle = '#c0392b'; ctx4.lineWidth = 2;
+  ctx4.beginPath();
+  for (let j = 0; j < T4; j++) {
+    const x = xOf(j), y = yOf(scores[j]);
+    if (j === 0) ctx4.moveTo(x, y); else ctx4.lineTo(x, y);
+  }
+  ctx4.stroke();
+
+  for (let j = 0; j < T4; j++) {
+    ctx4.fillStyle = j === i ? '#2980b9' : '#c0392b';
+    ctx4.beginPath();
+    ctx4.arc(xOf(j), yOf(scores[j]), j === i ? 5 : 3, 0, 2*Math.PI);
+    ctx4.fill();
+  }
+
+  ctx4.fillStyle = '#2980b9';
+  ctx4.font = '13px -apple-system';
+  ctx4.fillText(`Q 在 i = ${i}`, pad, pad - 10);
+}
+rI.addEventListener('input', drawStep4);
+drawStep4();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>旋转矩阵的由来 · (x₁, x₂) → (y₁, y₂)</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #fafafa; color: #222;
+    line-height: 1.65;
+  }
+  .wrap { max-width: 1000px; margin: 24px auto; padding: 0 20px; }
+  h1 { margin: 0 0 4px 0; font-size: 24px; }
+  .sub { color: #666; margin-bottom: 24px; font-size: 14px; }
+  .step {
+    background: #fff; border: 1px solid #e4e4e4; border-radius: 10px;
+    padding: 20px 26px; margin-bottom: 22px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  .step h2 {
+    margin: 0 0 10px 0; font-size: 18px; color: #1a1a1a;
+    padding-bottom: 10px; border-bottom: 2px solid #f0f0f0;
+  }
+  .step h2 .num {
+    display: inline-block; background: #0b63d1; color: #fff;
+    width: 26px; height: 26px; border-radius: 50%;
+    text-align: center; line-height: 26px; font-size: 14px;
+    margin-right: 10px; vertical-align: middle;
+  }
+  .controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 12px 0 16px 0; padding: 10px; background: #f9f9f9; border-radius: 6px; }
+  .controls label { font-size: 13px; color: #555; }
+  .controls input[type=range] { width: 220px; vertical-align: middle; }
+  .controls .val { font-family: Menlo, monospace; color: #0b63d1; min-width: 36px; display: inline-block; font-weight: 600; }
+  canvas { display: block; background: #fff; margin: 0 auto; }
+  .legend { font-size: 13px; color: #555; margin-top: 10px; line-height: 1.7; }
+  .insight { font-size: 14px; color: #0b4a7a; margin-top: 12px; padding: 14px 16px; background: #e3f2fd; border-left: 4px solid #0b63d1; border-radius: 4px; }
+  .warn { font-size: 14px; color: #7a4e00; margin-top: 12px; padding: 14px 16px; background: #fff8e1; border-left: 4px solid #ffb300; border-radius: 4px; }
+  .insight b, .warn b { color: inherit; }
+  code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: Menlo, monospace; font-size: 13px; }
+  .pre { background: #f6f8fa; padding: 12px 16px; border-radius: 6px; font-family: Menlo, monospace; font-size: 13px; white-space: pre; overflow-x: auto; margin: 10px 0; }
+  .toc { background: #fff; border: 1px solid #e4e4e4; border-radius: 8px; padding: 14px 20px; margin-bottom: 20px; }
+  .toc h3 { margin: 0 0 8px 0; font-size: 15px; color: #666; }
+  .toc ol { margin: 0; padding-left: 24px; }
+  .toc li { margin: 4px 0; font-size: 14px; }
+  .math { font-family: "Cambria Math", "Times New Roman", serif; font-style: italic; font-size: 15px; }
+  .math .fn { font-style: normal; }
+  table.deriv { border-collapse: collapse; margin: 10px auto; font-size: 14px; }
+  table.deriv td { padding: 6px 14px; border-bottom: 1px dashed #ddd; }
+  table.deriv td:first-child { color: #888; width: 180px; }
+  .btn-group button {
+    padding: 6px 14px; margin-right: 8px; font-size: 13px; cursor: pointer;
+    border: 1px solid #0b63d1; background: #fff; color: #0b63d1; border-radius: 4px;
+  }
+  .btn-group button.active { background: #0b63d1; color: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>旋转矩阵的由来</h1>
+<div class="sub">
+配合 <code>tutorial/04-gpt-attention.md §6</code> 的 <code>apply_rotary_emb</code>。本页从极坐标出发,一步步推出
+<code>(x₁, x₂) → (y₁, y₂)</code> 的旋转公式,并解释为什么 nanochat 源码里有一个"负号"。
+</div>
+
+<div class="toc">
+<h3>阅读路径</h3>
+<ol>
+  <li><b>向量的极坐标表示</b> —— (x₁, x₂) 可以写成 (r cos α, r sin α)</li>
+  <li><b>旋转就是改变角度 α</b> —— 新角度 = 原角度 + θ</li>
+  <li><b>展开三角和差公式</b> —— 得到标准的旋转矩阵</li>
+  <li><b>nanochat 用的是 -θ</b> —— 为什么有个负号</li>
+  <li><b>交互:同时验证公式和图</b></li>
+</ol>
+</div>
+
+<!-- ============ 步骤 1 ============ -->
+<div class="step">
+  <h2><span class="num">1</span>向量的极坐标表示</h2>
+
+  <p>任何一个 2D 向量 <code>(x₁, x₂)</code>,都可以用两个数来等价描述:</p>
+
+  <ul>
+    <li><b>长度</b> <code>r = √(x₁² + x₂²)</code></li>
+    <li><b>角度</b> <code>α</code> —— 和 x₁ 轴的夹角</li>
+  </ul>
+
+  <p>所以:</p>
+
+  <div class="pre">x₁ = r · cos α
+x₂ = r · sin α</div>
+
+  <p>拖动滑块看一个具体向量:</p>
+
+  <div class="controls">
+    <label>长度 r = <span class="val" id="v-r">1.00</span></label>
+    <input type="range" id="r-r" min="0.5" max="1.5" value="1" step="0.05">
+    <label>角度 α = <span class="val" id="v-alpha">30</span>°</label>
+    <input type="range" id="r-alpha" min="0" max="360" value="30" step="1">
+  </div>
+
+  <canvas id="c1" width="640" height="360"></canvas>
+
+  <div class="insight">
+    <b>要点</b>:向量不只是 <code>(x₁, x₂)</code> 这一个表示——它也可以是 <code>(r, α)</code>。
+    这个"换个视角"是推导旋转矩阵的关键。
+  </div>
+</div>
+
+<!-- ============ 步骤 2 ============ -->
+<div class="step">
+  <h2><span class="num">2</span>旋转就是改变角度 α</h2>
+
+  <p>既然向量可以用 <code>(r, α)</code> 描述,那么<b>旋转一个角度 θ</b> 就非常简单:</p>
+
+  <div class="pre">旋转前:  (r, α)
+旋转后:  (r, α + θ)        ← 长度不变、角度加 θ</div>
+
+  <p>翻译回直角坐标:</p>
+
+  <div class="pre">y₁ = r · cos(α + θ)
+y₂ = r · sin(α + θ)</div>
+
+  <p>拖动看:</p>
+
+  <div class="controls">
+    <label>原始角度 α = <span class="val" id="v-alpha2">30</span>°</label>
+    <input type="range" id="r-alpha2" min="0" max="360" value="30" step="1">
+    <label>旋转角度 θ = <span class="val" id="v-theta2">45</span>°</label>
+    <input type="range" id="r-theta2" min="-180" max="180" value="45" step="1">
+  </div>
+
+  <canvas id="c2" width="640" height="360"></canvas>
+
+  <div class="legend">
+    蓝色箭头是原向量,橙色是旋转后。弧线显示从 α 转到 α+θ 的角度变化。
+  </div>
+
+  <div class="insight">
+    <b>核心</b>:到这里已经讲完了"旋转"本身。接下来三步只是<b>把公式整理成只用 (x₁, x₂) 的形式</b>——不再出现 α 这个中间量。
+  </div>
+</div>
+
+<!-- ============ 步骤 3 ============ -->
+<div class="step">
+  <h2><span class="num">3</span>展开三角和差公式</h2>
+
+  <p>第 2 步得到:</p>
+
+  <div class="pre">y₁ = r · cos(α + θ)
+y₂ = r · sin(α + θ)</div>
+
+  <p>用高中三角和差公式展开:</p>
+
+  <div class="pre">cos(α + θ) = cos α · cos θ  −  sin α · sin θ
+sin(α + θ) = sin α · cos θ  +  cos α · sin θ</div>
+
+  <p>两边各乘 <code>r</code>:</p>
+
+  <div class="pre">y₁ = (r cos α) · cos θ  −  (r sin α) · sin θ
+y₂ = (r sin α) · cos θ  +  (r cos α) · sin θ</div>
+
+  <p>看圆括号里的两个表达式——它们正是 <code>x₁</code> 和 <code>x₂</code> 的极坐标形式!代入:</p>
+
+  <table class="deriv">
+    <tr><td>由第 1 步:</td><td><code>x₁ = r cos α</code>,  <code>x₂ = r sin α</code></td></tr>
+    <tr><td>代入上面得:</td><td><code>y₁ = x₁ · cos θ − x₂ · sin θ</code></td></tr>
+    <tr><td></td><td><code>y₂ = x₂ · cos θ + x₁ · sin θ</code></td></tr>
+  </table>
+
+  <p>整理成矩阵形式:</p>
+
+  <div class="pre">[ y₁ ]   [ cos θ   -sin θ ]   [ x₁ ]
+[    ] = [                 ] · [    ]
+[ y₂ ]   [ sin θ    cos θ ]   [ x₂ ]</div>
+
+  <div class="insight">
+    <b>这就是标准的"逆时针旋转 θ 度"矩阵</b>。任何线性代数教科书、任何图形学课程都用这个版本。<br>
+    注意符号:<b>右上角是 -sin θ</b>,<b>左下角是 +sin θ</b>。
+  </div>
+</div>
+
+<!-- ============ 步骤 4 ============ -->
+<div class="step">
+  <h2><span class="num">4</span>nanochat 用的是 -θ:为什么有个负号</h2>
+
+  <p>看 nanochat 的源码(<code>nanochat/gpt.py:57</code>):</p>
+
+  <div class="pre">def apply_rotary_emb(x, cos, sin):
+    # note: this rotates by -theta, the transpose of the textbook convention.
+    # Functionally equivalent (only the relative q/k rotation matters),
+    # kept for checkpoint compatibility.
+    ...
+    y1 = x1 * cos + x2 * sin
+    y2 = x1 * (-sin) + x2 * cos</div>
+
+  <p>展开成矩阵:</p>
+
+  <div class="pre">[ y₁ ]   [  cos θ    sin θ ]   [ x₁ ]
+[    ] = [                  ] · [    ]
+[ y₂ ]   [ -sin θ    cos θ ]   [ x₂ ]</div>
+
+  <p>和第 3 步的标准矩阵对比——<b>sin θ 的两个符号刚好反了</b>。这等价于把标准矩阵里的 θ 替换成 -θ:</p>
+
+  <div class="pre">cos(-θ) =  cos θ        ← 不变
+sin(-θ) = -sin θ        ← 变号
+
+所以 "逆时针转 -θ" = "顺时针转 θ"
+                 = "标准矩阵的转置"</div>
+
+  <p>这就是源码注释说的 <i>"rotates by -θ, the transpose of the textbook convention"</i>。</p>
+
+  <div class="warn">
+    <b>为什么源码要这样写?</b> 答案就一句话:<b>checkpoint 兼容性</b>——改了符号以后,已经训好的模型权重就对不上了。<br>
+    从 RoPE 的核心性质("Q·K 只依赖 i−j")来说,顺时针逆时针<b>完全等价</b>:只要 Q 和 K 都用同一个方向,相对关系就对。所以 nanochat 不改。
+  </div>
+</div>
+
+<!-- ============ 步骤 5 ============ -->
+<div class="step">
+  <h2><span class="num">5</span>把公式和图对齐</h2>
+
+  <p>可以切换两种公式,看旋转方向、数字公式、箭头<b>三者是否一致</b>:</p>
+
+  <div class="btn-group" style="margin-bottom: 10px;">
+    <button id="btn-std" class="active">标准矩阵(逆时针)</button>
+    <button id="btn-nc">nanochat 矩阵(顺时针)</button>
+  </div>
+
+  <div class="controls">
+    <label>x₁ = <span class="val" id="v-x1">1.0</span></label>
+    <input type="range" id="r-x1" min="-1.5" max="1.5" value="1" step="0.1">
+    <label>x₂ = <span class="val" id="v-x2">0.0</span></label>
+    <input type="range" id="r-x2" min="-1.5" max="1.5" value="0" step="0.1">
+    <label>θ = <span class="val" id="v-theta5">45</span>°</label>
+    <input type="range" id="r-theta5" min="-180" max="180" value="45" step="1">
+  </div>
+
+  <canvas id="c5" width="640" height="400"></canvas>
+
+  <div id="formula5" class="pre"></div>
+
+  <div class="insight">
+    <b>两件事放一起看</b>:
+    <br>① 公式里 sin 的符号;
+    <br>② 图里箭头的旋转方向(标准矩阵顺时针旋转时视觉上<b>逆时针</b>,因为 canvas 的 y 轴朝下——数学里 y 朝上,方向刚好反过来)。
+    <br>两者是严格对应的。看懂这一步,就彻底掌握了 <code>apply_rotary_emb</code> 的每一行。
+  </div>
+</div>
+
+</div>
+
+<script>
+// ============ 通用辅助 ============
+
+// 把数学坐标 (mx, my) 映射到 canvas 坐标 (cx, cy)
+// 画布中心是原点,y 轴翻转(数学 y 朝上,canvas y 朝下)
+function makeMap(canvas, scale) {
+  const cx0 = canvas.width / 2, cy0 = canvas.height / 2;
+  return {
+    toCanvas: (mx, my) => [cx0 + mx * scale, cy0 - my * scale],
+    cx0, cy0, scale
+  };
+}
+
+function drawAxes(ctx, map, label1, label2) {
+  const { cx0, cy0, scale } = map;
+  ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1;
+  // 网格
+  ctx.beginPath();
+  for (let g = -3; g <= 3; g++) {
+    ctx.moveTo(cx0 - 3 * scale, cy0 + g * scale);
+    ctx.lineTo(cx0 + 3 * scale, cy0 + g * scale);
+    ctx.moveTo(cx0 + g * scale, cy0 - 3 * scale);
+    ctx.lineTo(cx0 + g * scale, cy0 + 3 * scale);
+  }
+  ctx.stroke();
+  // 坐标轴
+  ctx.strokeStyle = '#999'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx0 - 3 * scale, cy0); ctx.lineTo(cx0 + 3 * scale, cy0);
+  ctx.moveTo(cx0, cy0 - 3 * scale); ctx.lineTo(cx0, cy0 + 3 * scale);
+  ctx.stroke();
+  ctx.fillStyle = '#666'; ctx.font = '13px Menlo';
+  ctx.fillText(label1, cx0 + 3 * scale - 12, cy0 - 6);
+  ctx.fillText(label2, cx0 + 6, cy0 - 3 * scale + 14);
+}
+
+function arrow(ctx, x0, y0, x1, y1, color, width) {
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width || 2.5;
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  const dx = x1 - x0, dy = y1 - y0, a = Math.atan2(dy, dx), h = 9;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 - h * Math.cos(a - 0.4), y1 - h * Math.sin(a - 0.4));
+  ctx.lineTo(x1 - h * Math.cos(a + 0.4), y1 - h * Math.sin(a + 0.4));
+  ctx.closePath(); ctx.fill();
+}
+
+// 画圆弧,显示角度 (数学坐标:逆时针为正)
+function arc(ctx, map, radius, startRad, endRad, color) {
+  const { cx0, cy0 } = map;
+  ctx.strokeStyle = color; ctx.lineWidth = 2;
+  // canvas 的 arc 用顺时针为正(因为 y 轴朝下),所以要取反
+  ctx.beginPath();
+  ctx.arc(cx0, cy0, radius, -startRad, -endRad, startRad < endRad);
+  ctx.stroke();
+}
+
+// ============ 步骤 1 ============
+const c1 = document.getElementById('c1'), ctx_1 = c1.getContext('2d');
+const r_r = document.getElementById('r-r'), r_alpha = document.getElementById('r-alpha');
+const v_r = document.getElementById('v-r'), v_alpha = document.getElementById('v-alpha');
+
+function drawStep1() {
+  const r = +r_r.value;
+  const alphaDeg = +r_alpha.value;
+  v_r.textContent = r.toFixed(2);
+  v_alpha.textContent = alphaDeg;
+  const alpha = alphaDeg * Math.PI / 180;
+
+  ctx_1.clearRect(0, 0, c1.width, c1.height);
+  const map = makeMap(c1, 100);
+  drawAxes(ctx_1, map, 'x₁', 'x₂');
+
+  const x1 = r * Math.cos(alpha), x2 = r * Math.sin(alpha);
+  const [px, py] = map.toCanvas(x1, x2);
+  arrow(ctx_1, map.cx0, map.cy0, px, py, '#2980b9', 3);
+
+  // 角度弧
+  if (Math.abs(alphaDeg) > 2) {
+    arc(ctx_1, map, 36, 0, alpha, '#e67e22');
+    const [lx, ly] = map.toCanvas(0.5 * Math.cos(alpha / 2), 0.5 * Math.sin(alpha / 2));
+    ctx_1.fillStyle = '#e67e22'; ctx_1.font = '14px Menlo';
+    ctx_1.fillText('α', lx + 4, ly + 4);
+  }
+
+  // 投影到 x1、x2 轴的虚线
+  ctx_1.strokeStyle = '#aaa';
+  ctx_1.setLineDash([3, 3]);
+  const [bx, by] = map.toCanvas(x1, 0);
+  const [cx, cy] = map.toCanvas(0, x2);
+  ctx_1.beginPath();
+  ctx_1.moveTo(px, py); ctx_1.lineTo(bx, by);
+  ctx_1.moveTo(px, py); ctx_1.lineTo(cx, cy);
+  ctx_1.stroke();
+  ctx_1.setLineDash([]);
+
+  // 数值标注
+  ctx_1.fillStyle = '#2980b9'; ctx_1.font = '14px -apple-system';
+  const info_x = 420, info_y = 70;
+  ctx_1.fillText('r = ' + r.toFixed(2), info_x, info_y);
+  ctx_1.fillText('α = ' + alphaDeg + '°', info_x, info_y + 24);
+  ctx_1.fillStyle = '#333';
+  ctx_1.font = '13px Menlo';
+  ctx_1.fillText('x₁ = r cos α = ' + x1.toFixed(3), info_x, info_y + 56);
+  ctx_1.fillText('x₂ = r sin α = ' + x2.toFixed(3), info_x, info_y + 76);
+}
+r_r.addEventListener('input', drawStep1);
+r_alpha.addEventListener('input', drawStep1);
+drawStep1();
+
+// ============ 步骤 2 ============
+const c2 = document.getElementById('c2'), ctx_2 = c2.getContext('2d');
+const r_alpha2 = document.getElementById('r-alpha2'), r_theta2 = document.getElementById('r-theta2');
+const v_alpha2 = document.getElementById('v-alpha2'), v_theta2 = document.getElementById('v-theta2');
+
+function drawStep2() {
+  const alphaDeg = +r_alpha2.value, thetaDeg = +r_theta2.value;
+  v_alpha2.textContent = alphaDeg;
+  v_theta2.textContent = thetaDeg;
+  const alpha = alphaDeg * Math.PI / 180;
+  const theta = thetaDeg * Math.PI / 180;
+  const r = 1;
+
+  ctx_2.clearRect(0, 0, c2.width, c2.height);
+  const map = makeMap(c2, 100);
+  drawAxes(ctx_2, map, 'x₁', 'x₂');
+
+  // 单位圆
+  ctx_2.strokeStyle = '#eee'; ctx_2.lineWidth = 1;
+  ctx_2.beginPath(); ctx_2.arc(map.cx0, map.cy0, 100, 0, 2*Math.PI); ctx_2.stroke();
+
+  const x1 = r * Math.cos(alpha), x2 = r * Math.sin(alpha);
+  const [p1x, p1y] = map.toCanvas(x1, x2);
+  arrow(ctx_2, map.cx0, map.cy0, p1x, p1y, '#2980b9', 3);
+
+  const y1 = r * Math.cos(alpha + theta), y2 = r * Math.sin(alpha + theta);
+  const [p2x, p2y] = map.toCanvas(y1, y2);
+  arrow(ctx_2, map.cx0, map.cy0, p2x, p2y, '#e67e22', 3);
+
+  // 旋转弧
+  arc(ctx_2, map, 60, alpha, alpha + theta, '#c0392b');
+
+  ctx_2.fillStyle = '#333'; ctx_2.font = '13px Menlo';
+  const info_x = 420;
+  ctx_2.fillStyle = '#2980b9';
+  ctx_2.fillText('原: (x₁, x₂)', info_x, 60);
+  ctx_2.fillText('   = (' + x1.toFixed(2) + ', ' + x2.toFixed(2) + ')', info_x, 80);
+  ctx_2.fillText('   α = ' + alphaDeg + '°', info_x, 100);
+  ctx_2.fillStyle = '#e67e22';
+  ctx_2.fillText('转后: (y₁, y₂)', info_x, 140);
+  ctx_2.fillText('    = (' + y1.toFixed(2) + ', ' + y2.toFixed(2) + ')', info_x, 160);
+  ctx_2.fillText('    α+θ = ' + (alphaDeg + thetaDeg) + '°', info_x, 180);
+  ctx_2.fillStyle = '#c0392b';
+  ctx_2.fillText('旋转角 θ = ' + thetaDeg + '°', info_x, 220);
+}
+r_alpha2.addEventListener('input', drawStep2);
+r_theta2.addEventListener('input', drawStep2);
+drawStep2();
+
+// ============ 步骤 5 ============
+const c5 = document.getElementById('c5'), ctx_5 = c5.getContext('2d');
+const r_x1 = document.getElementById('r-x1'), r_x2 = document.getElementById('r-x2');
+const r_theta5 = document.getElementById('r-theta5');
+const v_x1 = document.getElementById('v-x1'), v_x2 = document.getElementById('v-x2');
+const v_theta5 = document.getElementById('v-theta5');
+const btnStd = document.getElementById('btn-std'), btnNc = document.getElementById('btn-nc');
+const formulaDiv = document.getElementById('formula5');
+let mode5 = 'std';
+
+btnStd.addEventListener('click', () => { mode5 = 'std'; btnStd.classList.add('active'); btnNc.classList.remove('active'); drawStep5(); });
+btnNc.addEventListener('click', () => { mode5 = 'nc'; btnNc.classList.add('active'); btnStd.classList.remove('active'); drawStep5(); });
+
+function drawStep5() {
+  const x1 = +r_x1.value, x2 = +r_x2.value;
+  const thetaDeg = +r_theta5.value;
+  v_x1.textContent = x1.toFixed(1);
+  v_x2.textContent = x2.toFixed(1);
+  v_theta5.textContent = thetaDeg;
+  const theta = thetaDeg * Math.PI / 180;
+  const C = Math.cos(theta), S = Math.sin(theta);
+
+  let y1, y2, matrix, formula;
+  if (mode5 === 'std') {
+    // 标准矩阵:逆时针转 θ
+    y1 = x1 * C - x2 * S;
+    y2 = x1 * S + x2 * C;
+    matrix = '[  cos θ   -sin θ ]\n[  sin θ    cos θ ]';
+    formula = 'y₁ = x₁·cos θ − x₂·sin θ = ' + x1 + '·' + C.toFixed(3) + ' − ' + x2 + '·' + S.toFixed(3) + ' = ' + y1.toFixed(3) +
+              '\ny₂ = x₁·sin θ + x₂·cos θ = ' + x1 + '·' + S.toFixed(3) + ' + ' + x2 + '·' + C.toFixed(3) + ' = ' + y2.toFixed(3);
+  } else {
+    // nanochat 矩阵:顺时针转 θ (= 逆时针转 -θ)
+    y1 = x1 * C + x2 * S;
+    y2 = -x1 * S + x2 * C;
+    matrix = '[  cos θ    sin θ ]\n[ -sin θ    cos θ ]';
+    formula = 'y₁ =  x₁·cos θ + x₂·sin θ =  ' + x1 + '·' + C.toFixed(3) + ' + ' + x2 + '·' + S.toFixed(3) + ' = ' + y1.toFixed(3) +
+              '\ny₂ = -x₁·sin θ + x₂·cos θ = -' + x1 + '·' + S.toFixed(3) + ' + ' + x2 + '·' + C.toFixed(3) + ' = ' + y2.toFixed(3);
+  }
+
+  ctx_5.clearRect(0, 0, c5.width, c5.height);
+  const map = makeMap(c5, 110);
+  drawAxes(ctx_5, map, 'x₁', 'x₂');
+
+  // 单位圆
+  ctx_5.strokeStyle = '#eee';
+  ctx_5.beginPath(); ctx_5.arc(map.cx0, map.cy0, 110, 0, 2*Math.PI); ctx_5.stroke();
+
+  // 原始向量
+  const [p1x, p1y] = map.toCanvas(x1, x2);
+  arrow(ctx_5, map.cx0, map.cy0, p1x, p1y, '#2980b9', 3);
+
+  // 旋转后
+  const [p2x, p2y] = map.toCanvas(y1, y2);
+  arrow(ctx_5, map.cx0, map.cy0, p2x, p2y, '#e67e22', 3);
+
+  // 标签
+  ctx_5.fillStyle = '#2980b9'; ctx_5.font = 'bold 13px -apple-system';
+  ctx_5.fillText('(x₁, x₂)', p1x + 6, p1y - 6);
+  ctx_5.fillStyle = '#e67e22';
+  ctx_5.fillText('(y₁, y₂)', p2x + 6, p2y - 6);
+
+  // 右侧信息
+  const info_x = 400;
+  ctx_5.fillStyle = '#333'; ctx_5.font = '14px -apple-system';
+  ctx_5.fillText(mode5 === 'std' ? '标准矩阵(逆时针转 θ)' : 'nanochat 矩阵(顺时针转 θ)', info_x, 40);
+  ctx_5.font = '13px Menlo';
+  ctx_5.fillStyle = '#555';
+  const lines = matrix.split('\n');
+  for (let i = 0; i < lines.length; i++) ctx_5.fillText(lines[i], info_x, 70 + i * 20);
+
+  ctx_5.fillStyle = '#2980b9'; ctx_5.font = '13px Menlo';
+  ctx_5.fillText('(x₁, x₂) = (' + x1.toFixed(2) + ', ' + x2.toFixed(2) + ')', info_x, 140);
+  ctx_5.fillStyle = '#e67e22';
+  ctx_5.fillText('(y₁, y₂) = (' + y1.toFixed(2) + ', ' + y2.toFixed(2) + ')', info_x, 162);
+  ctx_5.fillStyle = '#c0392b';
+  ctx_5.fillText('θ = ' + thetaDeg + '°', info_x, 184);
+
+  formulaDiv.textContent = formula;
+}
+r_x1.addEventListener('input', drawStep5);
+r_x2.addEventListener('input', drawStep5);
+r_theta5.addEventListener('input', drawStep5);
+drawStep5();
+</script>
+
+</body>
+</html>

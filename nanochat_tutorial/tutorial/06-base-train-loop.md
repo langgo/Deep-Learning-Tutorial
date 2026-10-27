@@ -1,340 +1,569 @@
-# 第 06 章：Base Train：数据到损失与训练循环
+# 第 06 章　基础模型训练：从数据到损失与梯度
 
-> **本章源码地图**：数据下载、Parquet 与分片见[第 02 章](./02-dataset.md)；本章从 `nanochat/nanochat/dataloader.py` 输出的 `(x, y)` 开始，沿 `nanochat/scripts/base_train.py` 的训练循环走到 `nanochat/nanochat/gpt.py::GPT.forward` 和 `nanochat/nanochat/loss_eval.py::evaluate_bpb`。传入 `targets` 时 `GPT.forward` 返回损失，未传入时返回 logits。
-
-上一章的 Transformer 已能把一行 token 转成每个位置上的词表分数。但“它会预测下一个 token”还不是训练：我们还需要准备题目、定义错多少分，并把分数变成权重修改。本章沿着真实调用链走完这条路径：
-
-```text
-loader 的长度 T+1 token row → x/y（各 B,T） → GPT.forward
-→ cross_entropy → backward → optimizer.step → zero_grad
-```
-
-这个 row 如何从 Parquet 文档、BOS 和 packing 得到，已在[第 02 章](./02-dataset.md)完整说明；这里仅使用它的训练接口。
-
-## 学习目标
-
-读完本章，你应该能够：
-
-1. 说明 loader 输出为何是 GPU 上形状 `(B, T)` 的 `x`、`y`，以及二者为何只错开一格；
-2. 手推带 BOS 的小 token 序列，并找出文档边界在右移目标中的位置；
-3. 用直觉和公式解释交叉熵；
-4. 读懂一次 `forward → backward → step → zero_grad`，以及梯度累积为何要除以累积次数；
-5. 区分核心语言建模原理、nanochat 的数据布局、工程吞吐优化和后续的优化配方；
-6. 说明验证、采样、checkpoint 在训练闭环中的职责。
-
-## 前置概念
-
-请先阅读[第 02 章：Dataset](./02-dataset.md)、[第 03 章：Tokenizer](./03-tokenizer.md)、[第 04 章：GPT attention](./04-gpt-attention.md)与[第 05 章：GPT MLP / 现代技巧](./05-gpt-mlp-tricks.md)。本章使用的记号如下。
-
-| 符号 | 含义 | 在源码中的对应 |
-|---|---|---|
-| `B` | 单个设备上一份 micro-batch 的序列条数 | `args.device_batch_size` |
-| `T` | 每条输入序列的 token 数 | `args.max_seq_len` |
-| `V` | 真实词表大小 | `GPTConfig.vocab_size` |
-| `x` | 输入 token id，`(B,T)` | loader 输出 |
-| `y` | 下一个 token 的目标 id，`(B,T)` | loader 输出 |
-| `logits` | 未归一化的词表分数，`(B,T,V)` | `GPT.forward` |
-
-token id 是整数标签，不是有语义的数值向量；进入 `GPT` 的 embedding 后才变成浮点表示。
+> **本章定位**　第二部分·基础模型。把前四章拼好的数据和模型连成一次完整的训练更新。
+>
+> **中心问题**　当 loader 交出 `(B, T)` 的 `x` 和 `y` 之后，到底是哪几行代码把它们变成交叉熵、梯度，然后变成一次 `optimizer.step()` 后更新完的参数？
+>
+> **范围**　**训练循环的主干**：数据接口、模型前向、交叉熵、反向传播、梯度累积、验证评估、checkpoint 保存。**优化器内部**（AdamW / Muon / FP8 / 学习率曲线）和多卡通信的细节留到[第 07 章](./07-base-train-optim-scaling.md)。
+>
+> **先决条件**　读过[第 02 章](./02-dataset.md)（数据）、[第 03 章](./03-tokenizer.md)（tokenizer / mask）、[第 04](./04-gpt-attention.md)–[05 章](./05-gpt-mlp-tricks.md)（模型）。
+>
+> **本章产物**　对"**一次训练步到底在做什么**"的完整认识——每一行代码都能对应到核心原理 / 数据布局 / 工程优化 / 实验性配方中的哪一层。
+>
+> **源码入口**　`scripts/base_train.py`、`nanochat/gpt.py::GPT.forward`、`nanochat/loss_eval.py::evaluate_bpb`。数据部分复用[第 02 章](./02-dataset.md)。
 
 ---
 
-## 1. 预训练在做什么：把文本变成“续写题”
+## 本章讲什么
 
-经典 decoder-only 语言模型的训练目标很简单。若一段文字已经编码为
+读完前五章你已经有：
 
-\[
-z_0,z_1,z_2,\ldots,z_N,
-\]
+- 一条数据流水线：Parquet shard → `(B, T)` 整数张量 `x, y`；
+- 一个能用的模型：`GPT.forward(x) → logits (B, T, V)`。
 
-就让模型从已有前缀预测紧随其后的 token：
+**但这还不是训练**。你有了"**题目**"（输入），也有了"**标准答案**"（右移目标），但还缺三件事：
 
-\[
-(z_0\rightarrow z_1),\quad(z_0,z_1\rightarrow z_2),\quad\ldots
-\]
+1. **怎么算错多少分**（loss）；
+2. **怎么把分数变成"该怎么改参数"**（反向传播）；
+3. **怎么在有限显存下让"等效 batch 够大"**（梯度累积）。
 
-这叫**因果语言建模**。第 04 章介绍的因果 mask 保证位置 `t` 不能看答案 `z_(t+1)`；否则训练时泄题，生成时却没有答案。
-
-真正高效的做法不是为每个前缀单独跑一次模型，而是取一行 `T+1` 个 token，左右各切掉一个：
+本章把这三件事串成一条**完整的训练步**。核心调用链短到可以背下来：
 
 ```text
-row: [z0, z1, z2, ..., zT]       长度 T+1
-x:   [z0, z1, ..., z(T-1)]        长度 T
- y:  [z1, z2, ..., zT]            长度 T
+next(train_loader) → model(x, y) → loss.backward() → optimizer.step() → zero_grad()
 ```
 
-这样 `x[t]` 位置的预测目标是 `y[t]`，每行一次 forward 就有 `T` 个监督信号。`dataloader.py` 的真实代码正是：
+但真实 `scripts/base_train.py` 在这几行上下还做了：梯度累积、验证评估、采样 smoke test、checkpoint 保存——它们都不是"**另一种训练**"，是**同一个训练循环里不同职责的岔路**。
+
+**读完本章你应该能做到**：
+
+1. 讲清"**loader 为什么交出 `(B, T)` 的 x 和 y，而不是 `(B, T+1)` 一整条**"；
+2. 用一个小例子手推"**带 BOS 的 token 序列**" 里，文档边界落在 `y` 的哪些位置；
+3. 用一句话（和一个公式）解释交叉熵；
+4. 讲清一次 `forward → backward → step → zero_grad` 发生了什么，以及梯度累积**为什么必须除以累积次数**；
+5. 把"**验证 bpb**"、"**采样 smoke test**"、"**保存 checkpoint**" 定位到训练循环的哪个岔路。
+
+---
+
+## 预备词汇
+
+| 符号 | 含义 | nanochat 命名 |
+|---|---|---|
+| `B` | 单卡单次 forward 的 micro-batch 序列数 | `args.device_batch_size` |
+| `T` | 每条序列的 token 数 | `args.max_seq_len` |
+| `V` | 词表大小 | `GPTConfig.vocab_size` |
+| `x` | 输入 token id，`(B, T)` | loader 输出 |
+| `y` | 目标 token id，`(B, T)` | loader 输出 |
+| `logits` | 未归一化词表分数，`(B, T, V)` | `GPT.forward` 输出 |
+| `grad_accum_steps` | 梯度累积次数 | 由 `total_batch_size / (B×T×world_size)` 推导 |
+
+**和前面章节的小衔接**：第 02 章讲过 loader **先构造 `(B, T+1)` 的大 row、再切出 `(B, T)` 的 x 和 y**；第 03 章讲过 SFT 的 mask=0 位置会被改成 `-1`，`cross_entropy(..., ignore_index=-1)` 自动跳过。这一章会把这两件事直接当作已知。
+
+---
+
+## 1. 预训练在学什么：把文本变成"续写题"
+
+一句话：**根据前缀预测紧随其后的 token**。
+
+形式化地：一段文本编码成 token 序列 `z_0, z_1, ..., z_N`，训练目标是学会：
+
+```
+给 z_0, z_1, ..., z_t  →  预测 z_{t+1}
+```
+
+这叫**因果语言建模**。因果 mask（[第 04 章](./04-gpt-attention.md)）保证训练时位置 `t` 看不到 `t+1`，否则等于偷看答案。
+
+### 高效的做法：一次 forward 并行完成 `T` 道续写题
+
+一行 `T+1` 个 token：
+
+```text
+row = [z_0, z_1, z_2, ..., z_T]
+```
+
+可以组成 `T` 道“根据前缀预测下一个 token”的题：
+
+```text
+题 0：看到 [z_0]                    → 预测 z_1
+题 1：看到 [z_0, z_1]               → 预测 z_2
+题 2：看到 [z_0, z_1, z_2]          → 预测 z_3
+...
+题 T-1：看到 [z_0, ..., z_{T-1}]    → 预测 z_T
+```
+
+#### 朴素做法：把 `T` 道题分开算
+
+最直接的实现会对每个前缀分别调用模型：
 
 ```python
-# nanochat/nanochat/dataloader.py
-cpu_inputs.copy_(row_buffer[:, :-1])
-cpu_targets.copy_(row_buffer[:, 1:])
+model([z_0])                         # 用最后一个位置预测 z_1
+model([z_0, z_1])                    # 用最后一个位置预测 z_2
+model([z_0, z_1, z_2])               # 用最后一个位置预测 z_3
+...
+model([z_0, ..., z_{T-1}])           # 用最后一个位置预测 z_T
 ```
+
+这样需要 `T` 次 forward，而且前缀被反复计算：预测 `z_3` 时又算了一遍 `z_0,z_1`，预测 `z_4` 时还会再算一遍。训练数据很长时，这种重复代价无法接受。
+
+#### 真实训练：把输入和目标错开一位
+
+loader 把 `row` 切成两条长度为 `T` 的序列：
+
+```text
+row: [z_0, z_1, z_2, ..., z_{T-1}, z_T]    长度 T+1
+
+x:   [z_0, z_1, z_2, ..., z_{T-1}]         长度 T，送进模型
+y:   [z_1, z_2, z_3, ..., z_T    ]         长度 T，作为答案
+       └──────── 每一项都比 x 左移一位 ────────┘
+```
+
+代码就是：
+
+```python
+# nanochat/dataloader.py
+cpu_inputs.copy_(row_buffer[:, :-1])        # 去掉最后一个 token，得到 x
+cpu_targets.copy_(row_buffer[:, 1:])        # 去掉第一个 token，得到 y
+```
+
+模型只执行一次：
+
+```python
+logits = model(x)                            # (B, T, V)
+```
+
+但这一次会同时产生 `T` 个位置的预测：
+
+```text
+logits[:, 0, :]：看到 z_0                  → 和目标 y[0] = z_1 比
+logits[:, 1, :]：看到 z_0,z_1              → 和目标 y[1] = z_2 比
+logits[:, 2, :]：看到 z_0,z_1,z_2          → 和目标 y[2] = z_3 比
+...
+logits[:, T-1, :]：看到 z_0,...,z_{T-1}    → 和目标 y[T-1] = z_T 比
+```
+
+然后对这 `T` 个位置一起计算交叉熵。因此：
+
+```text
+T+1 个原始 token
+→ T 组“输入前缀 / 下一个 token”监督关系
+→ 1 次 forward
+→ T 个位置的 loss 并行计算
+```
+
+#### 答案都放进 `x` 了，模型不会偷看吗？
+
+不会。虽然 `x` 一次包含 `z_0...z_{T-1}`，但因果 mask 规定位置 `t` 只能看 `0...t`：
+
+```text
+位置 0 只能看 z_0
+位置 1 只能看 z_0,z_1
+位置 2 只能看 z_0,z_1,z_2
+...
+```
+
+所以 `logits[:, t, :]` 在预测 `z_{t+1}` 时，看不到 `z_{t+1}` 以及更后面的 token。**训练利用已知整段文本并行出题，因果 mask 负责把每道题的答案遮住。**
 
 ### 手推一个带文档边界的例子
 
-假设 `BOS=0`，文档 A 编码为 `[11, 12]`，文档 B 编码为 `[21, 22, 23]`。加载器不是只在整个语料开头放一次 BOS，而是对**每一篇文档**调用：
+[第 02 章](./02-dataset.md)讲过 loader **给每一篇文档 prepend 一个 BOS**。来看文档边界在 y 里的具体位置。
 
-```python
-tokenizer.encode(doc_batch, prepend=bos_token, ...)
-```
+**设置**：
 
-所以候选文档为：
+- `BOS = 0`
+- 文档 A 编码为 `[11, 12]`，加 BOS 后 `[0, 11, 12]`，长度 3；
+- 文档 B 编码为 `[21, 22, 23]`，加 BOS 后 `[0, 21, 22, 23]`，长度 4；
+- `T = 5`，行容量 `T + 1 = 6`。
 
-```text
-A: [0, 11, 12]
-B: [0, 21, 22, 23]
-```
-
-令 `T=5`，一行容量是 `T+1=6`。放入 A 和 B 的前半段后：
+Best-fit packing 把 A 完整放入、再放 B 的前 3 个 token：
 
 ```text
 row = [0, 11, 12, 0, 21, 22]
 x   = [0, 11, 12, 0, 21]
-y   = [11, 12, 0, 21, 22]
+y   = [11, 12,  0, 21, 22]
 ```
 
-| 位置 | 当前输入末尾 | 目标 | 含义 |
-|---:|---|---:|---|
-| 0 | `BOS` | 11 | 文档 A 从哪里开始？ |
-| 1 | `BOS, 11` | 12 | 11 后是什么？ |
-| 2 | `..., 12` | `BOS` | A 结束，新的文档开始 |
-| 3 | `..., BOS` | 21 | 文档 B 从哪里开始？ |
-| 4 | `..., 21` | 22 | 21 后是什么？ |
+**逐位置看模型要学什么**：
 
-它仍是一条连续的计算序列，后面的 token 在因果 mask 下可以看到前面 token；但 BOS 给了模型清楚的文档开始标记。不要误解成“BOS 自动让模型完全看不到上一篇文档”。
+| 位置 `t` | 位置 `t` 能看到的输入前缀 | 该位置的目标 `y[t]` | 要模型学的意思 |
+|---:|---|---:|---|
+| 0 | `[0]` | 11 | "**文档 A 开始了，接下来是 11**" |
+| 1 | `[0, 11]` | 12 | "**11 之后是 12**" |
+| 2 | `[0, 11, 12]` | **0** | "**A 这篇结束了，下一个该出现 BOS**" |
+| 3 | `[0, 11, 12, 0]` | 21 | "**看到 BOS，下一篇开始，第一个 token 是 21**" |
+| 4 | `[0, 11, 12, 0, 21]` | 22 | "**21 之后是 22**" |
+
+**两件事值得注意**：
+
+- **BOS 本身也成为预测目标**（位置 2）。模型会在训练流中的文档拼接边界学习预测 BOS。因为数据没有显式 EOS，这不等于模型获得了可靠的“语义完结判断”；它学到的是当前 packing 分布下，某些文档末尾之后会出现 BOS。
+- **BOS 并不自动屏蔽上一篇**。位置 3 的 attention 在因果 mask 下仍能看到前面 `[0, 11, 12, 0]`——它从前文看到的内容包括前一篇文档。BOS 只是**标记一个"**自己的新开始**"**的 token。
 
 ---
 
-## 2. loader 到 `x/y`：只回顾训练接口
+## 2. 从 loader 到 `x, y`：只用它的训练接口
 
-完整的数据职责已经在[第 02 章：Dataset](./02-dataset.md)展开：下载和排序 Parquet shard、最后一个 shard 的 `val` 约定、按 row group 的 DDP 分工、每篇文档的 BOS、有限 buffer 的 best-fit、裁剪取舍，以及近似 resume state 都属于那里。本章不重复这些实现细节，只接住它的输出。
+[第 02 章](./02-dataset.md)已经把数据链路完整讲完了：Parquet shard 的下载和排序、哪个 shard 当 val、按 row group 的 DDP 分工、每篇文档 prepend BOS、best-fit packing、裁剪、resume state 的近似恢复——这些都属于那一章。
 
-训练入口调用 `tokenizing_distributed_data_loader_with_state_bos_bestfit(...)` 后，已经得到 device 上的 `inputs, targets`。loader 先构造每行长度 `T+1` 的 token，再做：
+**本章只用它的训练接口**。真实训练入口：
 
 ```python
-cpu_inputs.copy_(row_buffer[:, :-1])
-cpu_targets.copy_(row_buffer[:, 1:])
+# scripts/base_train.py
+train_loader = tokenizing_distributed_data_loader_with_state_bos_bestfit(
+    tokenizer, args.device_batch_size, args.max_seq_len,
+    split="train", device=device,
+    resume_state_dict=dataloader_resume_state_dict,
+)
+x, y, dataloader_state_dict = next(train_loader)
 ```
 
-因此无论上游用了何种 Parquet 读取或 packing 策略，训练接口的不变量都是：`x.shape == y.shape == (B,T)`，且 `y[b,t]` 是 `x[b,t]` 后紧邻的目标 token。以 `B=2,T=5` 为例，loader、模型和 loss 的形状是：
+调一次 `next(...)` 就得到：
 
-| 对象 | 形状 | 训练循环关心什么 |
-|---|---:|---|
-| 完整 row | `(2,6)` | 只为制造右移的一对序列 |
-| `x`、`y` | 各 `(2,5)` | 分别是模型输入与正确类别 id |
-| logits | `(2,5,V)` | 每个位置对整个词表的分数 |
-| 默认 loss | `()` | 所有有效位置归约后的标量 |
+- `x`：形状 `(B, T)`，已在 device 上，整数 token id；
+- `y`：形状 `(B, T)`，已在 device 上，`y[b, t]` 是 `x[b, t]` 紧邻右边的目标 token；
+- `dataloader_state_dict`：用于 checkpoint 时保存 loader 位置。
 
-CUDA 路径会使用 pinned CPU staging buffer 和 non-blocking copy；这是吞吐实现，不改变上述语义。若要修改 shard、DDP、best-fit 或裁剪行为，应回到第 02 章对照 `dataset.py`、`dataloader.py`，而不要只从这一章的训练循环推断数据行为。
+### 一个全章用的小例子
+
+全章记号用这组数字（和[第 02 章](./02-dataset.md)例子对齐）：
+
+```text
+B = 2, T = 5, V = 50（假设词表大小）
+```
+
+**那么训练循环里出现的形状都是**：
+
+| 对象 | 形状 | 这一步循环关心什么 |
+|---|---|---|
+| 原始 row（loader 内部） | `(2, 6)` | 只是中间产物，训练循环不直接看 |
+| `x` | `(2, 5)` | 模型输入 |
+| `y` | `(2, 5)` | 每个位置的正确答案 token id |
+| `logits = model(x)` | `(2, 5, 50)` | 每个位置对词表的分数 |
+| `loss = model(x, y)` | 标量 `()` | 所有有效位置归约后的损失 |
+
+**CUDA 下**，loader 用 pinned CPU staging buffer + non-blocking copy 把 x、y 送到 device。这是**吞吐优化**——数据在 GPU 算模型时后台异步 copy，不改变训练接口。想改数据策略要回[第 02 章](./02-dataset.md)动 `dataset.py` / `dataloader.py`，别只从训练循环的两行推测。
 
 ---
 
-## 3. logits 如何变成分数：交叉熵
+## 3. 交叉熵：把 logits 变成损失
 
-在 `(b,t)` 位置，模型输出长度为 `V` 的 logits 向量 \(s\)。logit 是任意实数，不是概率。softmax 把它转为候选 token 的概率：
+### 3.1 从 logits 到概率
 
-\[
-p_i=\frac{e^{s_i}}{\sum_{j=1}^{V}e^{s_j}}.
-\]
+模型在 `(b, t)` 位置输出一个长度 `V` 的 **logits** 向量 `s = (s_1, ..., s_V)`。logit 是任意实数，可以是 `-7.3`、`0.5`、`12.1`——**不是概率**。
 
-其中 \(i\) 是候选 token id，\(s_i\) 是它的 logit，\(p_i\) 是预测概率。若正确 token 是 \(y\)，该位置的损失为：
+**softmax** 把它变成概率分布：
 
-\[
-\ell=-\log p_y.
-\]
+```
+          exp(s_i)
+p_i = ─────────────────      p_i >= 0,  Σ p_i = 1
+      Σⱼ exp(s_j)
+```
 
-直觉很直接：给正确答案 `0.8` 概率，损失约 \(0.223\)；只给 `0.01`，损失约 \(4.605\)。它不是“猜对记 0、猜错记 1”，而是连续惩罚模型对正确答案缺乏信心。
+**直觉**：`exp` 把 logits 变成非负数，分母再把它们归一化成概率。关键是：两个 token 的**概率比**只由它们的 logit 差决定：
 
-通常 batch 平均损失为：
+```text
+p_i / p_j = exp(s_i) / exp(s_j) = exp(s_i - s_j)
+```
 
-\[
-L=\frac{1}{BT}\sum_{b=1}^{B}\sum_{t=1}^{T}-\log p_{b,t,y_{b,t}}.
-\]
+所以 logit 不是“多 2 就多两倍”：
 
-在真实 `nanochat/nanochat/gpt.py::GPT.forward` 中，模型先产出 `(B,T,V)` logits，再展平并调用：
+| logit 差 `s_i - s_j` | 概率比 `p_i / p_j` |
+|---:|---:|
+| 1 | `e¹ ≈ 2.72` 倍 |
+| 2 | `e² ≈ 7.39` 倍 |
+| `ln(10) ≈ 2.30` | 正好 10 倍 |
+| 5 | `e⁵ ≈ 148` 倍 |
+
+例如只有两个候选 token，logits 分别是 `2` 和 `0`：
+
+```text
+softmax([2, 0]) ≈ [0.881, 0.119]
+0.881 / 0.119 ≈ 7.39
+```
+
+所以更准确地说：**logit 相差约 2.3，两个 token 的概率就相差一个数量级**。如果词表里还有其他 token，它们会改变这两个概率的绝对值，但不会改变二者的概率比 `exp(s_i-s_j)`。
+
+### 3.2 交叉熵 = 对正确答案的"负对数概率"
+
+如果位置 `(b, t)` 的正确 token id 是 `y`，那这个位置的损失是：
+
+```
+ℓ = -log p_y
+```
+
+**直觉**：
+
+| 模型给正确答案的概率 | loss |
+|---:|---:|
+| 1.0（数学极限） | 0.0 |
+| 0.8 | 0.22 |
+| 0.5 | 0.69 |
+| 0.1 | 2.30 |
+| 0.01 | 4.61 |
+| 0.0（数学极限） | ∞ |
+
+有限 logits 的 softmax 通常不会精确得到 0 或 1，表中两端是数学极限。这不是“猜对记 0 分、猜错记 1 分”，而是连续惩罚：正确 token 即使排名第一，只要概率仍低，loss 依然可观。这里“更自信”只是指提高目标 token 的 softmax 概率、拉开相对 logits，不表示模型具有主观信心。
+
+### 3.3 batch 平均
+
+通常 batch 内所有有效位置取平均：
+
+```
+         1    B   T
+L  =  ────── ΣΣ  -log p_{b,t,y_{b,t}}
+       B·T  b=1 t=1
+```
+
+### 3.4 PyTorch 的 `F.cross_entropy` 直接吃 logits
+
+**不要先 softmax 再传给它**。`F.cross_entropy` **期望 logits**，内部用数值更稳定的 **log-softmax + 负对数似然**算损失。
+
+真实调用（在 `GPT.forward` 里）：
 
 ```python
 loss = F.cross_entropy(
-    logits.view(-1, logits.size(-1)), targets.view(-1),
-    ignore_index=-1, reduction=loss_reduction,
+    logits.view(-1, logits.size(-1)),      # (B*T, V)
+    targets.view(-1),                       # (B*T,)
+    ignore_index=-1,                        # SFT mask=0 的位置
+    reduction=loss_reduction,               # 'mean' 或 'none'
 )
 ```
 
-因此不要先手写 softmax 再传给 `F.cross_entropy`：该函数期待 logits，内部会以更稳定的方式执行 log-softmax 和负对数似然。`ignore_index=-1` 表示目标为 `-1` 的位置不计入损失，后续 SFT 的回答掩码会使用它；本章的预训练 loader 没有 padding，正常输出 token id。
+**三个参数的作用**：
 
-### 最小形状实验（教学化简代码）
+- 把 `(B, T, V)` 展平成 `(B*T, V)`，`(B, T)` 展平成 `(B*T,)`，交叉熵逐位置计算后归约；
+- `ignore_index=-1` 让 target 为 `-1` 的位置**完全不计损失、也不进分母**（SFT 阶段用，预训练用不着——loader 不会产出 `-1`）；
+- `reduction='mean'` 在训练循环里用（返回标量）、`'none'` 在[第 03 章](./03-tokenizer.md)讲 bpb 时用（返回 `(B, T)` 的逐位置 loss）。
 
-下段不是仓库的 GPT 或 loader，只验证右移和逐 token 损失：
+### 3.5 最小形状实验
 
 ```python
 import torch
 import torch.nn.functional as F
 
-row = torch.tensor([[0, 11, 12, 0, 21, 22],
-                    [0, 31, 32, 33, 0, 41]])
+row = torch.tensor([[0, 11, 12,  0, 21, 22],
+                    [0, 31, 32, 33,  0, 41]])
 x, y = row[:, :-1], row[:, 1:]
-B, T = x.shape
+B, T = x.shape                    # (2, 5)
 V = 50
-logits = torch.randn(B, T, V)  # 假装是模型输出
-loss2d = F.cross_entropy(logits.view(B*T, V), y.reshape(B*T), reduction="none")
+logits = torch.randn(B, T, V)     # 假装是模型输出
 
-assert x.shape == y.shape == (2, 5)
-assert logits.shape == (2, 5, 50)
-assert loss2d.shape == (10,)
-print(x[0].tolist(), "->", y[0].tolist(), loss2d.mean().item())
+# 用 'none' 看每个位置的 loss
+loss2d = F.cross_entropy(
+    logits.view(B * T, V), y.reshape(B * T), reduction="none"
+).view(B, T)
+
+print("x[0] =", x[0].tolist())
+print("y[0] =", y[0].tolist())
+print("loss2d.shape =", loss2d.shape)        # torch.Size([2, 5])
+print("mean loss =", loss2d.mean().item())
 ```
 
-`reduction="none"` 保留每个位置的损失。`GPT.forward(..., loss_reduction='none')` 提供同样能力，验证 bpb 正是靠它取得逐位置 loss。
+关键：**每个 `(b, t)` 位置**都算了一个 loss；默认 `reduction='mean'` 就是对这些 loss 取平均。SFT 的 bpb 评估走的是 `'none'`，拿到 `(B, T)` 的逐位置 loss 后，用 `token_bytes` 做字节加权——那是[第 03 章](./03-tokenizer.md)讲过的事。
 
 ---
 
-## 4. 一个参数更新：forward、backward、step、清梯度
+## 4. 一次参数更新：forward / backward / step / zero_grad
 
-先忽略各种现代优化器，一个训练步的经典骨架为：
-
-```python
-loss = model(x, y)       # forward：预测并得到标量损失
-loss.backward()          # backward：计算并累积每个参数的梯度
-optimizer.step()         # 按梯度更新参数
-model.zero_grad()        # 清除旧梯度
-```
-
-梯度 \(\partial L/\partial\theta\) 描述参数 \(\theta\) 微小变化会怎样改变损失。优化器通常沿使损失下降的方向修改参数。一个很重要的 PyTorch 行为是：`.backward()` 默认向已有的 `param.grad` **累加**，不会自动覆盖。这既使梯度累积成为可能，也意味着忘记清梯度会造成 bug。
-
-本仓库的调用链是：
-
-```text
-base_train.py: next(train_loader) 得到 x,y
-  → model(x,y)
-  → GPT.forward(idx=x, targets=y)
-  → F.cross_entropy(...)
-  → loss.backward()
-```
-
-`base_train.py` 用 `torch.compile(model, dynamic=False)` 得到训练模型；同时保留 `orig_model` 以供保存和输入形状会变化的评估/采样。这是执行效率选择，不改变反向传播的数学含义。
-
-### 梯度累积：显存装不下大 batch 时怎么办？
-
-`device_batch_size=B` 是单 rank 单次 forward/backward 的序列数，序列长度为 `T`。所有 rank 的单次 micro-step token 数是：
-
-\[
-\text{world\_tokens\_per\_fwdbwd}=B\times T\times\text{ddp\_world\_size}.
-\]
-
-脚本要求全局 `total_batch_size` 可以被它整除，并计算：
-
-\[
-\text{grad\_accum\_steps}=
-\frac{\text{total\_batch\_size}}{B\times T\times\text{ddp\_world\_size}}.
-\]
-
-例如 `B=2,T=8,world_size=2,total_batch_size=64`，每个 micro-step 全局有 32 token，所以连续反传两次才更新参数一次。
-
-真实训练循环的核心片段是：
+### 4.1 经典四行
 
 ```python
+loss = model(x, y)       # ① forward: 预测 + 算 loss (标量)
+loss.backward()          # ② backward: 把每个参数的 ∂L/∂θ 填进 .grad
+optimizer.step()         # ③ step: 按 .grad 更新参数
+model.zero_grad()        # ④ zero_grad: 把 .grad 清零
+```
+
+**每一行干什么**：
+
+**① forward**：从 `x` 一路走到 logits，再算 cross_entropy。loss 是一个**标量**，但 PyTorch 内部记录了"**这个 loss 是通过哪些操作、从哪些参数算出来的**"——这就是**计算图**。
+
+**② backward**：从 loss 出发，**沿计算图反向传播**，对每个参数 `θ` 算出 `∂L/∂θ`，填进 `θ.grad`。
+
+**③ step**：优化器**读 `.grad`、算出该怎么改参数**，然后真的改参数：
+```python
+# 最简形式的 SGD
+θ ← θ - learning_rate * θ.grad
+```
+真实的 Muon / AdamW 复杂得多（动量、二阶矩、权重衰减...）——留给[第 07 章](./07-base-train-optim-scaling.md)。
+
+**④ zero_grad**：把所有参数的 `.grad` 清零。**不清会怎样？下面讲**。
+
+### 4.2 关键细节：`.backward()` 是**累加**，不是覆盖
+
+PyTorch 的 `.backward()` 默认把梯度**累加到 `.grad` 上**，而不是覆盖。这是**故意设计**，为了让梯度累积这件事能成立：
+
+```python
+loss1 = model(x1, y1); loss1.backward()   # θ.grad += ∂L₁/∂θ
+loss2 = model(x2, y2); loss2.backward()   # θ.grad += ∂L₂/∂θ
+optimizer.step()                           # 用累加后的梯度一次性更新
+model.zero_grad()
+```
+
+**好处**：显存只能装一个小 batch 的 forward，但你可以通过多次 forward+backward 累积出一个大 batch 的等效梯度，再更新一次。
+
+**代价**：忘了 `zero_grad` → 下一轮的梯度会和上一轮的加在一起，等效学习率翻倍，训练很快发散。所以 `zero_grad` 不是可有可无的清理，而是**正确性要求**。
+
+### 4.3 梯度累积的必要除法
+
+显存上一次只能装 `B` 条序列，但训练算法希望每次更新对应 `total_batch_size` 个 token——怎么办？做 `grad_accum_steps` 次 micro-batch forward+backward，再做一次 step。
+
+```python
+# scripts/base_train.py 的训练循环骨架
 for micro_step in range(grad_accum_steps):
-    loss = model(x, y)
-    train_loss = loss.detach()
-    loss = loss / grad_accum_steps
-    loss.backward()
-    x, y, dataloader_state_dict = next(train_loader)
+    loss = model(x, y)              # loss 已经是这个 micro-batch 的平均
+    train_loss = loss.detach()      # 日志用，和梯度无关
+    loss = loss / grad_accum_steps  # ← 关键：除以累积次数
+    loss.backward()                  # 累加到 .grad
+    x, y, dataloader_state_dict = next(train_loader)  # 预取下一批
 
 optimizer.step()
 model.zero_grad(set_to_none=True)
 ```
 
-为什么必须除？每个 `loss` 已是 micro-batch 的平均，多个 `.backward()` 又把梯度相加。不除就把有效学习率放大了 `grad_accum_steps` 倍；先除再累加，才对应整个有效 batch 的平均梯度。
+**为什么必须除以 `grad_accum_steps`**？因为：
 
-例如两个 micro-batch 对某参数给出的平均梯度分别是 `2` 和 `4`：正确的大 batch 平均梯度是 `(2+4)/2=3`；若直接连续 backward 而不除，累积成 `6`，更新量恰好放大 2 倍。这不是“多看数据所以理应更大”，而是把求平均误写成了求和。
+- 每个 micro-batch 的 `loss` **已经是这个 micro-batch 的平均**；
+- 多次 backward 把这些 micro-batch loss 的梯度**相加**；
+- 想要的效果是**整个大 batch 的平均梯度**，所以要除。
 
-`detach()` 取得脱离计算图的日志值。下一批数据在反传后就开始准备，是为让数据准备与 GPU 工作重叠的工程预取，不会混入当前已计算的梯度。
+**不除会怎样**？用数字验证：假设 `grad_accum_steps = 2`，两个 micro-batch 对某参数的梯度各是 `2` 和 `4`。
 
-`optimizer.step()` 前，脚本还会设置各参数组的学习率、Muon 动量和权重衰减；这些优化器、学习率日程、FP8 与规模法则留给下一章。若 fp16 使用 `GradScaler`，代码也会先缩放/反缩放，并在 DDP 下同步异常梯度标志；这是数值安全机制，不是另一种学习目标。
+- **正确的大 batch 平均梯度**：`(2 + 4) / 2 = 3`；
+- **不除直接累加**：`2 + 4 = 6`，正好**错了 2 倍**；
+- **先除再累加**：`2/2 + 4/2 = 1 + 2 = 3`。✓
 
-最后 `model.zero_grad(set_to_none=True)` 在一次更新后清掉梯度，避免错误跨 step 累加。设为 `None` 而非填零也能少做一部分内存写入。
+**这不是"**多看了数据所以梯度本来就应该更大**"**——那是在把"求平均"误写成了"求和"。除掉是把 micro-batch 的平均还原成"对整个大 batch 求总 loss"后再取平均。
+
+### 4.4 几个和训练语义无关的工程细节
+
+**`loss.detach()`**：得到一个不参与反传的张量供日志使用，避免把计算图继续挂在日志变量上。当前循环每个 micro-step 都覆盖 `train_loss`，所以最终记录的是**最后一个 micro-batch 的未缩放 loss**，不是所有累积 micro-batch loss 的平均；它适合做平滑趋势日志，不应误读成这次 optimizer step 的精确全局 batch loss。
+
+**`next(train_loader)` 放在 `.backward()` 之后**：PyTorch 的 `.backward()` 会把 GPU 占满。数据预取放在它之后，意思是"**让下一批数据的准备和这一批的 backward 并行**"——数据准备在 CPU + 异步 copy，GPU 继续反传。CUDA 下的 pinned memory + non-blocking copy 把两件事真正并行。这是吞吐优化，不混入已算完的梯度。
+
+**`torch.compile(model, dynamic=False)`**：训练用一个 compile 过的模型版本（更快）。但保存 checkpoint、评估、采样等**可能遇到不同输入形状**的地方用原始 `orig_model`。两者共享参数，compile 只是给 forward 加速，训练数学不受影响。
+
+**fp16 的 `GradScaler`**：如果用 float16（而不是 bfloat16），梯度数值可能太小被下溢。`GradScaler` 先把 loss 放大、backward 完再缩回。这是数值安全机制，不改变训练目标。nanochat 默认用 bf16，所以这里一般不触发。
+
+**多卡梯度同步**：nanochat 虽由 `torchrun` 启动多个 rank，但模型没有包进 PyTorch DDP。因此 `.backward()` 后每个 rank 仍持有自己的本地梯度；真正的同步在 `MuonAdamW.step()` 里完成：大参数用 `reduce_scatter(AVG)`，小参数用 `all_reduce(AVG)`，更新后再 `all_gather` 参数。详见[第 07 章](./07-base-train-optim-scaling.md)。
 
 ---
 
-## 5. 不更新参数时，训练循环还在做什么？
+## 5. 训练循环的三条岔路
 
-### 验证：bpb 不是普通平均 loss
+训练循环不是只做"forward + backward"。每隔一段步数，它会跳到三条**不更新参数**的岔路：
 
-`base_train.py` 每隔 `args.eval_every` 步进入 `model.eval()`，新建验证 loader，并调用：
+### 5.1 验证评估：用 bpb，不是平均 loss
+
+**什么时候触发**：每 `args.eval_every` 步，`master_process` 调一次：
 
 ```python
+model.eval()
 val_bpb = evaluate_bpb(model, val_loader, eval_steps, token_bytes)
+model.train()
 ```
 
-随后恢复 `model.train()`。当前 GPT 没有 dropout，模式切换未必明显改变输出，但这是正确习惯，也使未来加入不同训练/推理行为的层时仍正确。
+`model.eval()` / `model.train()` 切换的是 **dropout / BatchNorm** 之类的训练/推理行为。当前 nanochat 没有 dropout，切不切看起来一样，但这仍是正确习惯——未来加了行为不同的层也不会出错。
 
-`loss_eval.py::evaluate_bpb` 使用 **bits per byte**：
+**为什么是 bpb 不是普通 loss**？[第 03 章](./03-tokenizer.md)讲过——换 tokenizer 后"每 token loss"不可比，**bits per byte** 把 loss 归一化到字节：
 
-\[
-\operatorname{bpb}=\frac{\text{total nats}}{\ln 2\times\text{total bytes}}.
-\]
+```
+                total nats
+bpb  =  ────────────────────────────
+          ln(2) × total bytes
+```
 
-这里 nat 是自然对数下的交叉熵单位；除以 \(\ln2\) 转成 bit，再按目标 token 所代表的原始字节数归一化。若换一个 tokenizer，同一文本的 token 数会改变，普通“每 token loss”不再完全可比；bpb 较少受这个切分差异影响。
+实现上 `evaluate_bpb` 用 `loss_reduction='none'` 拿到逐位置 loss，再按 `token_bytes[y]` 汇总字节数，并排除 `y < 0` 的位置。多 rank 评估时**先 all-reduce 总 nats 和总字节数、最后再除**——如果每个 batch 或 rank 自己算 bpb 再无权平均就不对，因为字节数可能不同。
 
-函数调用 `model(x,y,loss_reduction='none')` 取得 `(B,T)` loss，按 `token_bytes[y]` 得到目标 token 的字节数。字节数为 0 的特殊 token（如 BOS）不计入分子和分母；`y<0` 的 ignore 位置也被排除。DDP 时先用 `dist.all_reduce` 汇总所有 rank 的总 nats 与总 bytes，最后再相除。不要把“每 batch bpb 再平均”当成等价做法：各 batch 的有效字节数可能不同。
+### 5.2 采样 smoke test：固定 prompt、贪心生成几个 token
 
-### 采样：快速但非严格的健康检查
+**什么时候触发**：每 `args.sample_every` 步，master process 调：
 
-每隔 `args.sample_every`，且仅在 `master_process`，训练脚本通过 `Engine(orig_model, tokenizer)` 对固定 prompt 调用 `generate_batch(..., max_tokens=16, temperature=0)`。`temperature=0` 是贪心选择最大 logit，方便稳定比较 checkpoint。采样不能证明泛化能力，却能很快看出乱码、重复、格式错误或训练崩坏。
+```python
+engine = Engine(orig_model, tokenizer)
+engine.generate_batch(prompt, max_tokens=16, temperature=0)
+```
 
-脚本还会按 `args.core_metric_every` 调用 `scripts/base_eval.py::evaluate_core`。它是另一类任务评估；本章只需知道它与 val bpb、采样共同提供不同证据，而不是梯度更新的一部分。
+`temperature=0` 是**贪心解码**（每次取 logit 最大的 token）——这样同一个 checkpoint 多次采样结果一致，方便对比。
 
-### Checkpoint：保存权重之外的状态
+**它测的不是"**模型聪不聪明**"**，是"**模型是不是在胡言乱语、死循环、格式崩了**"。扫一眼采样文本就能发现 base_train 出了 NaN、输出全是同一个 token、输出全是空格之类的问题——比 loss 曲线更直观。
 
-在训练结束或满足 `args.save_every` 时，`save_checkpoint(...)` 写入 checkpoint 目录：
+### 5.3 Checkpoint：保存**权重 + 元数据 + loader 位置**
 
-- `model_{step:06d}.pt`：仅 rank 0 保存的模型参数；
-- `optim_{step:06d}_rank{rank}.pt`：每个 rank 保存自己的优化器状态；
-- `meta_{step:06d}.json`：模型/用户配置、step、最近验证 bpb、batch 信息、loader 状态和循环状态。
+**什么时候触发**：训练结束，或每 `args.save_every` 步。写入三类文件：
 
-优化器状态包含动量等历史，丢掉它后“继续训练”并不等于原轨迹的续接。meta 中的 `dataloader_state_dict` 含 `pq_idx`、`rg_idx`、`epoch`，让 `_document_batches` 近似跳过已读数据。checkpoint 是**恢复性工程**，不会在保存时额外让模型学会内容。
+| 文件 | 由谁保存 | 内容 |
+|---|---|---|
+| `model_000123.pt` | 只有 rank 0 | 模型参数（所有 rank 的权重都一样） |
+| `optim_000123_rank0.pt`、`..._rank1.pt`... | 每个 rank 自己 | 优化器状态（动量、二阶矩等；按 rank 分片） |
+| `meta_000123.json` | 只有 rank 0 | step、模型配置、最近 val bpb、batch 配置、**loader 位置**、循环状态 |
+
+**三件事值得注意**：
+
+- `meta_*.json` 里的 `dataloader_state_dict` 包含 `pq_idx, rg_idx, epoch`。恢复训练时 loader 会**近似**跳过已读数据（[第 02 章](./02-dataset.md) §6 讲过"approximate resume"）。
+- 丢掉 optimizer state 后"**继续训练**"**不是**原轨迹的严格续接——动量没了。所以 checkpoint 一旦被不完整复制（例如忘了带 `optim_*`），你以为在续训，实际是从该 step 冷启。
+- **保存只是存快照，不会让模型"顺带学到更多"**。
 
 ---
 
-## 6. 分层理解：不要把所有代码都叫作“训练技巧”
+## 6. 分层：别把所有代码都叫作"训练技巧"
 
-| 层次 | 本章内容 | 含义 |
+读到这里训练循环里又出现一堆名词（grad_accum、detach、pinned memory、compile、all-reduce...），用一张表归位——下章开始要大量讨论优化器时，这个表就是导航：
+
+| 层次 | 本章出现的东西 | 性质 |
 |---|---|---|
-| 核心原理 | 右移目标、因果 mask、交叉熵、反传、沿梯度更新 | 大多数 decoder-only LM 的共同骨架 |
-| nanochat 数据布局 | 每文档 BOS 与固定长度 row packing | 当前仓库的质量/利用率权衡；完整算法与裁剪代价见第 02 章 |
-| 工程优化 | Parquet row group、DDP 分片、预分配、pinned memory、预取、compile、checkpoint | 尽量不改训练语义而改善吞吐、恢复性 |
-| 实验性/优化配方 | 全局 batch、学习率调度、Muon/AdamW、FP8、规模法则 | 改变优化轨迹，下一章讨论 |
-| 诊断 | val bpb、CORE、固定 prompt 采样 | 观察模型，不直接更新参数 |
+| **核心原理** | 右移目标、因果 mask、交叉熵、反传、沿梯度更新参数、梯度累积 | 几乎所有 decoder-only LM 都这么做 |
+| **nanochat 数据布局** | 每文档 BOS、best-fit packing、固定 `(B, T+1)` row | 当前仓库的质量 / 利用率取舍（详 [02](./02-dataset.md)） |
+| **工程优化** | Parquet 的按-rank数据分片、优化器内梯度通信、预分配 buffer、pinned memory、non-blocking copy、预取、`torch.compile`、`optim_*_rank*.pt` 分片 | 不改变目标函数，但影响吞吐、数值顺序与恢复性 |
+| **实验性 / 优化配方** | 全局 `total_batch_size`、学习率调度、Muon / AdamW、FP8、规模法则 | 改变优化轨迹，详 [07](./07-base-train-optim-scaling.md) |
+| **诊断** | val bpb、CORE、固定 prompt 采样 | 观察模型健康，不更新参数 |
+
+读源码时每出现一行新东西，先问**它属于哪一层**。属于"工程优化"的东西关掉只会变慢，不会变错——所以第一遍可以忽略；属于"核心原理"的东西关掉就不是训练了。
+
+---
 
 ## 常见误区
 
-1. **“`x`、`y` 是两份无关文本。”** 它们来自同一行 `T+1` token，只差一个位置。
-2. **“BOS 只加一次。”** 此 loader 对每篇文档 prepend BOS，文档交界处也会成为预测目标。
-3. **“本章的 `x/y` 接口足以说明上游数据策略。”** 不对；BOS、row group 分片、best-fit 与裁剪的完整取舍在第 02 章。
-4. **“低 loss 表示每个 token 都猜对。”** 交叉熵是概率质量的平均；简单高频 token 可能掩盖困难样本。
-5. **“交叉熵的输入该是 softmax 概率。”** PyTorch 的 `F.cross_entropy` 要 logits。
-6. **“梯度累积就是连续 backward。”** 还要除以 `grad_accum_steps`，并只在真正更新后清梯度。
-7. **“应在每个 micro-step 后 zero_grad。”** 这样会抹掉已经累计的梯度。
-8. **“验证 bpb 包含 BOS。”** `token_bytes` 为特殊 token 给出 0 字节，函数会排除它们。
-9. **“样本文本通顺就等于模型好。”** 它只是 smoke test；仍须看验证与任务评估。
+1. **"`x`、`y` 是两份独立文本。"** 不是。它们来自**同一行** `T+1` 个 token，只错开一格。
+2. **"BOS 只在整个语料开头出现一次。"** 不是。loader 对**每一篇文档** prepend BOS，一行里可以有多个 BOS，而且 BOS 本身也会成为预测目标。
+3. **"低 loss 等于每个 token 都猜对。"** 不等。交叉熵是**概率质量的平均**——高频 token 猜对可以把平均 loss 拉低，困难样本的错预测可能被淹没。所以要搭配 CORE / bpb / 采样一起看。
+4. **"交叉熵的输入应该是 softmax 后的概率。"** PyTorch 的 `F.cross_entropy` 要 **logits**。先手写 softmax 再传进去数值不稳。
+5. **"梯度累积就是连续 `.backward()`。"** 还要**除以 `grad_accum_steps`**，并且**只在真正 `step()` 之后 `zero_grad`**。
+6. **"每个 micro-step 后应该 zero_grad。"** 会抹掉已经累积的梯度——等于不做累积。
+7. **"val bpb 把 BOS 也算进去。"** 不会。`token_bytes` 给特殊 token 的字节数是 0，分子分母都排除。SFT mask=0 的位置（`y < 0`）也排除。
+8. **"采样文本通顺 = 模型好。"** 它只是 smoke test。真正评估要看 val bpb、CORE、chat_eval。
+
+---
 
 ## 小结
 
-预训练进入训练循环时，loader 已交出长度 `T+1` 的 token 行；右移后得到 `(B,T)` 的输入 `x` 和目标 `y`。上游的 Parquet、每文档 BOS、best-fit 与裁剪取舍属于[第 02 章](./02-dataset.md)；本章的关键不变量是每个 `y[b,t]` 都是 `x[b,t]` 右边紧邻的目标。
+- **一个训练步的核心**是四件事：`forward → backward → step → zero_grad`。`.backward()` 是**累加**到 `.grad`，所以能支持梯度累积、也必须记得清零。
+- **loader 的输出接口是不变量**：`x, y` 都是 `(B, T)`、`y` 是 `x` 右移一格。数据层面的所有事（Parquet、best-fit、BOS、resume）都在[第 02 章](./02-dataset.md)讲完，训练循环只用这个接口。
+- **BOS 既是文档标记、也是边界处的预测目标**。模型学习训练流里的文档分隔模式，但 BOS 不能替代对语义完结能力的独立评估。
+- **交叉熵是对正确答案的负对数概率**，是连续惩罚，输入是 **logits** 不是概率。
+- **梯度累积必须除以 `grad_accum_steps`**，否则等效学习率被放大。用数字验证一遍最清楚：`(2 + 4) / 2 = 3`，不除变成 `6`。
+- **训练循环还做三件不更新参数的事**：val bpb 评估（看泛化）、固定 prompt 采样（smoke test）、checkpoint 保存（支持恢复）。
+- **分层**：核心原理 / 数据布局 / 工程优化 / 实验性配方 / 诊断——下章讲优化器时会继续用这个分类。
 
-模型在每个位置输出 `(B,T,V)` logits，交叉熵将正确下一个 token 的低概率转成高损失。训练用若干已除以累积次数的 micro-batch 反传，累计出全局 batch 梯度，再 `optimizer.step()` 更新、`zero_grad()` 清场。验证 bpb、采样、CORE 和 checkpoint 分别回答“未见文本怎样”“输出看起来怎样”“任务表现怎样”“中断后如何继续”。
+---
 
 ## 练习
 
-1. 令 `BOS=0`，文档 A 为 `[4,5,6]`、B 为 `[8,9]`、`T=5`。写出 row、x、y，并标出预测 BOS 的位置。
-2. 若 `B=4,T=128,ddp_world_size=8,total_batch_size=16384`，分别计算单 rank micro-batch token 数、全局 micro-step token 数和 `grad_accum_steps`。不能整除时，`base_train.py` 的哪条断言会阻止训练？
-3. 运行本章最小实验。将某一位置正确类别的 logit 增加 10，再将错误类别增加 10，比较该位置 loss 的变化并解释。
-4. 阅读 `loss_eval.py::evaluate_bpb`，解释为何它累计总 nats 和总 bytes 后才相除。
-5. 画出 `shard_*.parquet → optimizer.step()` 数据流；在每条箭头上标注它是字符串、`list[int]`、`torch.long`、浮点 logits 还是标量 loss。
-6. 回到[第 02 章](./02-dataset.md)，若比较连续 token 流切块和 BOS packing，哪些模型、tokenizer、有效 token budget、优化配方必须固定？除 loss 外还应报告哪些利用率、吞吐与验证数据？
+1. **BOS 边界手推**。`BOS = 0`，文档 A = `[4, 5, 6]`、B = `[8, 9]`，`T = 5`。写出 row、x、y，并标出**哪个位置的目标是 BOS**。
+2. **梯度累积数字题**。`B = 4, T = 128, world_size = 8, total_batch_size = 16384`。算：
+   - 单 rank 单次 forward 的 token 数；
+   - 一轮全局 micro-step 的 token 数；
+   - `grad_accum_steps`。
+   如果不能整除会怎样？`base_train.py` 里的哪条断言会阻止训练？
+3. **交叉熵感觉题**。跑第 3.5 节的最小实验，然后：
+   - 把 `logits[0, 2, y[0, 2]]` 加 10（提高正确类的 logit），对比 `loss2d[0, 2]` 的变化；
+   - 换成把**错误类**的某个 logit 加 10，再看 `loss2d[0, 2]`。解释差异。
+4. **bpb 的 all-reduce 顺序**。阅读 `loss_eval.py::evaluate_bpb`。为什么它要**先把所有 rank 的总 nats 和总字节数 all-reduce 完、最后再除**？如果换成"每个 batch 自己算 bpb、最后取平均"，结果为什么会不同？
+5. **数据流图**。画一张从 `shard_*.parquet` 到 `optimizer.step()` 的数据流箭头图，在每条箭头上标注数据类型（字符串、`list[int]`、`torch.long`、浮点 logits、标量 loss）。
+6. **做实验的注意事项**。如果你想对比"**连续 token 流**"和"**每文档 BOS packing**"哪个训练效果好，必须**固定**哪些变量（模型 / tokenizer / 有效 token budget / 优化器配方）？除了 loss，还要报告哪些指标（利用率、吞吐、val 评估）才算一次负责任的消融？
+
+---
 
 ## 前后章导航
 
-- ← 上一章：[第 05 章：GPT MLP / 现代技巧：MLP、残差流与现代改进](./05-gpt-mlp-tricks.md)。那里说明 `GPT.forward` 如何由 `x` 产生 logits。
-- → 下一章：[第 07 章：Base Train：优化器与规模法则](./07-base-train-optim-scaling.md)。我们将拆解 `model.setup_optimizer`、学习率/权重衰减日程、混合精度与分布式训练，回答“有了梯度后，怎样稳定高效地更新”。
+- **上一章**：[第 05 章：GPT 的 MLP、残差流与现代改进](./05-gpt-mlp-tricks.md)。讲清了 `GPT.forward` 怎么从 `x` 产生 logits。
+- **本章**：logits + 右移目标 → 交叉熵 → 反传 → 一次参数更新。
+- **下一章**：[第 07 章：基础模型训练：优化器、精度与规模法则](./07-base-train-optim-scaling.md)。拆 `model.setup_optimizer` 里 Muon / AdamW 的分工、学习率曲线、FP8 的用法，以及 `--depth` 怎么联动决定训练规模。

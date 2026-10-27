@@ -1,4 +1,4 @@
-# 附录 B：术语与符号速查
+# 附录 A：术语与符号速查
 
 这里给出“一句话定义 + 首次深入章节”。定义刻意简短；遇到实现细节，请回到对应章节与当前源码。
 
@@ -7,7 +7,7 @@
 | 符号 | 含义 |
 |---|---|
 | `B` | batch size，并行处理的序列数 |
-| `T` | 当前序列的 token 数 |
+| `T` | 本次 forward 每条序列送入的 token 数；训练/prefill 常为整段，逐 token decode 时为 1 |
 | `V` | tokenizer 的词表大小 |
 | `C` | 模型宽度，即 embedding 通道数 `n_embd` |
 | `H` / `H_kv` | query head 数 / key-value head 数 |
@@ -39,12 +39,16 @@
 | muP 风格缩放 | 跨模型宽度迁移超参数的经验配方；本教程只解释仓库中的具体用法 | [07](./07-base-train-optim-scaling.md) |
 | ZeRO-2 式分片 | 分片梯度更新与优化器状态，而每个 rank 最终仍持有完整参数 | [07](./07-base-train-optim-scaling.md) |
 | FP8 | 用 8 位浮点格式加速合适硬件上的矩阵乘；不是模型能力原理 | [07](./07-base-train-optim-scaling.md) |
+| complexity dial | 以 `--depth` 为主入口联动宽度、头数和训练配方的自动配置哲学 | [01](./01-overview.md)、[07](./07-base-train-optim-scaling.md) |
+| miniseries | 沿多个 depth 训练的一组模型，用于检查改动能否跨规模迁移 | [附录 C](./performance-research.md) |
+| Time-to-GPT-2 | 在统一 8×H100 与 CORE 门槛下统计训练 iteration 墙钟的排行榜指标 | [附录 C](./performance-research.md) |
+| MFU | 实际模型 FLOPs/s 占设备理论峰值的比例，主要用于训练/prefill效率诊断 | [附录 C](./performance-research.md) |
 
 ## 评估、推理与后训练
 
 | 术语 | 一句话定义 | 深入章节 |
 |---|---|---|
-| BPB | `总负对数概率 / (ln2 × 原始有效字节数)`，即每字节 bit 损失 | [08](./08-base-evaluation.md) |
+| BPB | `总负对数概率 / (ln2 × 原始有效字节数)`；在相同字节数据和协议下可跨 tokenizer 比较 | [08](./08-base-evaluation.md) |
 | perplexity | `exp(平均每 token NLL)`；依赖 tokenizer 切分，跨词表比较要谨慎 | [08](./08-base-evaluation.md) |
 | CORE | base 模型在固定 ICL 协议下的多任务中心化汇总 | [08](./08-base-evaluation.md) |
 | SFT | 用带答案的对话示范继续做监督学习 | [09](./09-sft.md) |
@@ -61,12 +65,15 @@
 | advantage | 奖励相对 baseline 的差值；当前代码用 `reward - group mean` | [12](./12-rl.md) |
 | REINFORCE | 用 `log probability × return/advantage` 更新采样策略的策略梯度方法 | [12](./12-rl.md) |
 | GRPO 风格 | 本仓库借用同题多样本组内比较，但不是包含所有常见组件的完整配方 | [12](./12-rl.md) |
-| DAPO 风格 token-level normalization | 按有效 token 总数归一化策略目标；不代表得到逐 token 奖励 | [12](./12-rl.md) |
+| DAPO 风格 token-level normalization | 当前代码在每个 device pass 内按有效 token 数归一，再对 passes/examples 缩放；不代表得到逐 token 奖励 | [12](./12-rl.md) |
 | on-policy | 用当前策略刚采集的数据更新当前策略；当前脚本每批 rollout 只更新一次 | [12](./12-rl.md) |
 | KL regularization | 限制训练策略偏离 reference policy 的稳定机制；当前 RL 未使用 | [12](./12-rl.md) |
 | PPO ratio/clip | 修正旧策略数据复用并限制更新幅度的机制；当前 on-policy 单次更新未使用 | [12](./12-rl.md) |
+| approximate resume | 恢复 parquet/row-group/epoch，但不恢复 packing buffer，因此不保证逐 token 重放 | [02](./02-dataset.md) |
+| TTFT | time to first token；本 benchmark 含 prefill、cache 复制与首次采样 | [10](./10-inference-engine.md) |
+| TPOT | time per output token；decode 阶段单步延迟 | [10](./10-inference-engine.md) |
+| MBU | 实际读取权重/KV 的带宽占设备峰值带宽的比例 | [附录 C](./performance-research.md) |
 
 ---
 
 - 返回[教程目录](./README.md)
-- 动手验证：[附录 A：零数据 Toy Checks](./toy-checks.md)

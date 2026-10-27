@@ -1,266 +1,672 @@
-# 第 11 章：Chat Eval：聊天模型会做题了吗？
+# 第 11 章　聊天评估：聊天模型会做题了吗？
 
-> **源码地图**：统一入口是 `nanochat/scripts/chat_eval.py`；任务的公共契约在 `nanochat/tasks/common.py`，具体题目适配在 `arc.py`、`mmlu.py`、`gsm8k.py`、`humaneval.py`；Python 程序执行保护在 `nanochat/nanochat/execution.py`。  
-> **调用链**：`chat_eval.py → run_chat_eval → Task[i] → tokenizer.render_for_completion →` 分类路径 `model(prompt_ids)`，或生成路径 `Engine.generate_batch → Task.evaluate`；HumanEval 还会进入 `execute_code`。  
-> **本章边界**：这里讨论**聊天模型**如何被评估，不重复 base model 的 CORE、BPB 或续写似然评估；它们属于[第 08 章](./08-base-evaluation.md)。
+> **本章定位**　第三部分·从基础模型到聊天模型。第 10 章让模型能够生成回答，本章判断这些回答是否完成了任务。
+>
+> **中心问题**　评估时模型到底看到了什么、怎样作答、谁来判断对错？为什么同一个模型会因为回答方式、候选数和判分规则不同而得到不同分数？
+>
+> **范围**　ARC / MMLU 的受限分类，GSM8K / HumanEval 的生成与判分，多卡计数，多候选成功率，ChatCORE，以及执行生成代码的安全边界。训练奖励与参数更新留给[第 12 章](./12-rl.md)。
+>
+> **先决条件**　读过[第 09 章](./09-sft.md)的聊天协议和[第 10 章](./10-inference-engine.md)的生成流程。ChatCORE 的中心化思想与[第 08 章](./08-base-evaluation.md)相同。
+>
+> **本章产物**　一条“**取出一道题 → 隐藏参考答案 → 模型作答 → 判分器给 0/1 → 汇总 accuracy**”的主线；能够解释分类和生成两条路径分别测了什么、没有测什么。
+>
+> **源码入口**　`scripts/chat_eval.py`、`tasks/common.py`、`tasks/arc.py`、`tasks/mmlu.py`、`tasks/gsm8k.py`、`tasks/humaneval.py`、`nanochat/tokenizer.py::render_for_completion`、`nanochat/execution.py`。
 
-一个模型能把网页文本接得很顺，并不等于它会按聊天协议回答问题，更不等于它写出的函数能通过测试。进入 SFT 后，模型被训练为在 `user` 消息之后开始 `assistant` 回复；进入推理引擎后，它的回答又会经过采样、终止 token 和可能的工具状态机。于是评估也必须放在 **SFT 与 inference 之后**：我们要测的是“给一个聊天 prompt，系统最终交付的回答能否完成任务”，而不是训练集里某个 target token 的概率。
+---
 
-## 学习目标
+## 本章讲什么
 
-读完本章，你应能：
+先看最小的评估问题：
 
-1. 解释为什么 chat eval 不能直接沿用 base 续写评估；
-2. 读懂 `Task`、`conversation` 与 `evaluate` 的数据契约；
-3. 区分 ARC/MMLU 的受限分类打分与 GSM8K/HumanEval 的生成后验证；
-4. 按张量形状跟踪多选题 batch 如何取得答案位置的 logits；
-5. 说明 GSM8K 数值抽取、HumanEval 代码抽取与执行各自漏掉了什么；
-6. 解释多卡题目切分、`all_reduce` 汇总、ChatCORE 和当前“pass@k 式”口径；
-7. 知道 `execution.py` 的子进程防护为何不是对抗恶意代码的安全沙箱。
-
-## 前置概念
-
-建议已读[第 09 章：监督微调 SFT](./09-sft.md)和[第 10 章：Inference](./10-inference-engine.md)。本章使用：`B` 表示 batch 中题目数，`T` 表示补齐后的 prompt 长度，`V` 表示词表大小，`k` 表示每题生成的候选数。`logits[b,t,:]` 是第 `b` 道题在位置 `t` 预测**下一个** token 的 `V` 个未归一化分数。
-
-还要先接受一个朴素但重要的事实：评估不是一个脱离任务的“智力仪表”。题集版本、shuffle、prompt 模板、输出约束、采样温度、最大生成长度、判分器和 `k` 都会影响数字。分数适合比较同口径下的模型或 checkpoint，不是模型的一张万能成绩单。
-
-## 1. 为什么评估在 SFT 和 inference 之后？
-
-base model 的自然行为是续写字节/token 序列；而 chat 模型要遵从角色边界、special token、回答起止格式，有时还要接收推理引擎注入的工具输出。`chat_eval.py` 对每题调用：
-
-```python
-encoded_prompt = tokenizer.render_for_completion(conversation)
+```text
+题目：法国的首都是哪里？
+A. 伦敦
+B. 巴黎
+C. 柏林
+D. 罗马
+参考答案：B
 ```
 
-这里的关键不是简单 `encode(question)`：`conversation` 内保留了完整的标准答案，但 `render_for_completion` 的目标是渲染“到 assistant 即将回答为止”的上下文，而不是把最后的标准 assistant 回复泄露给模型。随后分类任务直接看该位置的 logits；生成任务经 `Engine.generate_batch` 真正跑一次推理，再把文本 completion 交给判分器。
+一次可信的评估必须回答三个问题：
 
-因此 chat eval 同时验证三件事：SFT 学到的对话格式是否可用、tokenizer 的聊天渲染是否正确、inference 的生成结果能否通过任务验证。它不是训练损失的替身。训练损失可以在已知参考回复上逐 token 算；实际聊天评估必须让模型面对一个没有参考回复的待答位置。
+1. **给模型看什么？** 给题目和选项，不能把参考答案 B 放进 prompt；
+2. **允许模型怎样回答？** 可以只在 A/B/C/D 中选，也可以让它自由生成文本；
+3. **什么算正确？** 由任务判分器按预先规定的规则决定。
 
-命令行入口的典型形式是：
+nanochat 的五个默认聊天任务共用前半段流程，然后分成两条作答路径：
 
-```bash
-cd nanochat
-python -m scripts.chat_eval -i sft -a ARC-Easy
-# 多卡时：torchrun --nproc_per_node=8 -m scripts.chat_eval -- -i sft -a ARC-Easy
+```text
+Task 中的一道题（含参考答案）
+  → render_for_completion 隐藏最后一条参考 assistant 消息
+  → 得到模型真正读取的 prompt
+      ├─ ARC / MMLU：只比较合法选项 token 的 logits
+      └─ GSM8K / HumanEval：生成完整回答，再交给判分器
+  → 该题得到 0 或 1
+  → correct / total = accuracy
+  → 五项任务进一步汇总为 ChatCORE
 ```
 
-`-i/--source` 要求 `sft` 或 `rl`，并由 `load_model(..., phase="eval")` 加载相应 checkpoint；默认不指定 `-a` 时依次评 ARC-Easy、ARC-Challenge、MMLU、GSM8K、HumanEval。先用 `-x` 限制题数排查流程是合理的，但小样本分数不能当正式结论，也不需要为了读懂本章运行昂贵评测。
+因此，评估分数不是“模型能力”单独产生的；它是下面几项共同作用的结果：
 
-## 2. Task/Conversation：题目和判分必须说同一种语言
+```text
+模型 + prompt 模板 + 作答方式 + 生成参数 + 判分规则
+```
 
-`tasks/common.py::Task` 是一个很薄的抽象类。子类需要提供：
+本章先走通这条主线，再讨论多卡、多个候选和安全边界。
 
-- `eval_type`：只能是 `'categorical'` 或 `'generative'`；
-- `num_examples()` 与 `get_example(index)`：让 `Task` 通过 `__len__`、`__getitem__` 取题；
-- `evaluate(problem, completion)`：给一题与一个候选回复，返回是否成功。
+---
 
-`Task` 还支持 `start/stop/step` 形成逻辑切片：`ds[0]` 不一定是底层数据的第 0 行，而是 `start + 0 * step`。`HubDataset` 则把 Hub 的 parquet 下载到本地缓存，使用固定 seed `42` 的 permutation 提供可复现 shuffle。多卡首次下载通过 manifest 文件锁避免每个 rank 重复下载。这些设计不使评估“天然公平”，但减少了题序、切片和数据获取带来的偶然差异。
+## 预备词汇
 
-每个 `get_example` 返回一个 Python dict，惯例核心字段是：
+| 名称 | 本章含义 |
+|---|---|
+| `conversation` | Task 返回的一道题；通常同时保存 user 题目和最后一条参考 assistant 回答 |
+| `prompt_ids` | 模型实际读取的 token；不包含当前题的参考回答 |
+| `completion` | prompt 之后由模型新生成的文本 |
+| verifier / 判分器 | 按任务规则判断回答是否通过的程序，即 `Task.evaluate` |
+| categorical | 受限分类：只在合法选项中选择 |
+| generative | 自由生成：先生成文本或代码，再判分 |
+| `k` / `num_samples` | 每道生成题实际产生的候选回答数；与采样的 top-k 不是一回事 |
+| accuracy | 通过题数除以评估题数 |
+
+还要区分几个常见量：logits 是模型对词表 token 的未归一化分数；本章每道题的 score 是判分器给出的 0/1；accuracy 是所有题 score 的平均。分类路径直接比较候选 logits，不需要先计算训练 loss。
+
+---
+
+## 1. 第一步：从一道含答案的题，得到无答案的 prompt
+
+### 1.1 Task 同时服务“出题”和“判分”
+
+`Task` 子类主要提供两项能力：
+
+```text
+task[i]                         → 取出一道题
+Task.evaluate(problem, answer)  → 判断一个回答是否通过
+```
+
+以首都题为例，Task 对象可以返回：
 
 ```python
 conversation = {
     "messages": [
-        {"role": "user", "content": "题目或提示"},
-        {"role": "assistant", "content": "标准回答"},
+        {"role": "user", "content": (
+            "Multiple Choice question: 法国的首都是哪里？\n"
+            "- 伦敦=A\n- 巴黎=B\n- 柏林=C\n- 罗马=D\n"
+            "\nRespond only with the letter of the correct answer."
+        )},
+        {"role": "assistant", "content": "B"},
     ],
-    # 可选的、判分需要的元数据
+    "letters": ["A", "B", "C", "D"],
 }
 ```
 
-这是一份双用途对象：渲染 completion prompt 时最后一条 assistant 是隐藏的参考答案；`evaluate` 时它又是 gold label。ARC 额外放 `letters`，MMLU 放 `subject` 与 `letters`，HumanEval 放 `entry_point`、`test`。GSM8K 的 assistant 内容尤其不同：它是由 `text`、`python`、`python_output` 组成的 parts 列表，以保留数据里的 `<<表达式=结果>>` 工具结构。
+这里保留参考答案 B 是合理的：之后判分时需要它。关键不是“Task 对象里有没有答案”，而是“送给模型的 prompt 里有没有答案”。
 
-这就是契约的价值：评估循环无需知道 ARC 的 JSON 字段名或 HumanEval 的测试字符串，只依赖“拿到 conversation、渲染 prompt、最终调用 evaluate”。反过来，任务作者必须保证 prompt、参考答案和判分器匹配；比如多选答案必须是允许的字母，HumanEval 的 `entry_point` 必须和测试中的函数相符。
+### 1.2 `render_for_completion` 在送入模型前隐藏答案
 
-## 3. 路径一：分类题不生成整句话，而是在选项中比较
-
-ARC 和 MMLU 的 `eval_type` 都是 `categorical`。二者都用 `render_mc(question, letters, choices)` 构造类似：
+`render_for_completion` 会复制 conversation，删除最后一条参考 assistant 消息，再渲染剩余消息并追加 `assistant_start`：
 
 ```text
-Multiple Choice question: ...
-- choice one=A
-- choice two=B
-...
+Task 中保存：
+user_start + 题目 + user_end
+assistant_start + 参考答案 B + assistant_end
 
-Respond only with the letter of the correct answer.
+模型实际看到：
+BOS + user_start + 题目 + user_end + assistant_start
 ```
 
-选项文字后接 `=A`，以及 `=` 和字母之间没有空格，是刻意的 tokenization 细节：`"A"` 与 `" A"` 未必是同一 token。`run_categorical_eval` 会 `tokenizer.encode(letter)`，并断言每个字母恰好是一个 token；否则“在一个位置比较四个 token”的实现就不成立。
+最后的 `assistant_start` 表示“现在轮到助手回答”。模型从它后面开始作答，但看不到参考 B。
 
-直觉上，既然正确格式规定只能回答 A/B/C/D，就没有必要让模型自由生成一大段解释，再用脆弱的字符串规则猜它选了什么。当前实现给模型一个较有利、也较稳定的受限选择：只比较合法答案字母的 logits。这应在报告中说清，因为它比“开放式聊天回答后抽取字母”更容易。
-
-### 一次 batch 的形状旅行
-
-设 `B=3` 道题，渲染后的 token 长分别是 `[7, 10, 8]`。代码用 BOS 当 pad，得到：
+原始 conversation 不会被修改，所以判分器稍后仍能读取参考答案：
 
 ```text
-prompt_ids before pad:  [len 7, len 10, len 8]
-max_length:             10
-padded prompt_ids:      (B, T) = (3, 10)
-model output logits:    (B, T, V) = (3, 10, V)
-answer positions:       [6, 9, 7]
+模型：只读取 prompt_ids
+判分器：读取原 conversation 中的参考答案 + 模型回答
 ```
 
-第 `i` 题真正的末 token 位于 `len(ids)-1`，而不是 padding 后统一的 `T-1`。原因是 `logits[i, answer_pos]` 预测的正是 prompt 之后的第一个 assistant token；若错误地在 pad 末尾取 logits，就在问“BOS padding 后应该接什么”，分数没有意义。
+GSM8K 的参考 assistant 消息是由 text、python、python_output 等 part 组成的列表；HumanEval 还保存测试代码和入口函数名。这些内容留给判分器，不会因为存在 Task 对象中就自动进入 prompt。
 
-每道题可用选项数也允许不同。若第 0 题的 `letters=['A','B','C','D']` 对应的词表 id 为 `[11,12,13,14]`，则：
+> **长度边界**：当前渲染器会先截断已有对话，再追加 `assistant_start`。很长的题目可能被截断，因此复现实验应记录实际 prompt，而不只记录原始题目文本。
+
+### 1.3 到这里，分类和生成才分叉
+
+同一个无答案 prompt，可以采用两种不同作答协议：
+
+| 路径 | 当前任务 | 模型怎样回答 | 怎样判分 |
+|---|---|---|---|
+| 受限分类 | ARC-Easy、ARC-Challenge、MMLU | 在合法标签 token 中选最高分 | 与参考标签比较 |
+| 自由生成 | GSM8K、HumanEval | 用 Engine 逐 token 生成 completion | 抽取数值或运行测试 |
+
+这两条路径测量的内容不同。分类路径主动排除了格式错误；生成路径更接近真实回答，但结果也更受采样、长度预算和判分器影响。
+
+---
+
+## 2. 分类路径：只在合法选项中选择
+
+### 2.1 首都题怎样得到预测 B
+
+首都题的 prompt 以 `assistant_start` 结束。模型 forward 后，最后一个真实位置的 logits 正在预测 assistant 的第一个回答 token。
+
+评估代码不在整个词表中自由选择，而只取合法标签 A/B/C/D 的分数：
+
+```text
+A 的 logit：1.2
+B 的 logit：4.8
+C 的 logit：0.7
+D 的 logit：2.1
+          ↓
+在四项中取最大值 → B
+          ↓
+与参考答案 B 比较 → 该题 score=1
+```
+
+这叫**受限分类**。即使全词表中“让我想想”的 token 分数更高，评估仍会强制在合法标签中选一个。
+
+它适合测“模型在给定选项中偏向哪个答案”，但不能证明模型自由生成时会严格输出一个合法字母。
+
+### 2.2 不同题长度不同，必须取各自的真实末位置
+
+一批题会右侧补齐到相同长度。假设两个 prompt 的长度分别是 5 和 7：
+
+```text
+第 0 题：[BOS, user_start, Q, user_end, assistant_start]
+补齐后： [BOS, user_start, Q, user_end, assistant_start, BOS, BOS]
+
+第 1 题：[BOS, user_start, Q₀, Q₁, Q₂, user_end, assistant_start]
+```
+
+两题真正预测答案的位置分别是：
+
+```text
+answer_pos = [4, 6]
+```
+
+不能统一取张量最后一列：第 0 题的最后一列是 padding 后的输出，不是 `assistant_start` 后的答案分数。
+
+源码因此先记录每题原始长度：
 
 ```python
-focus_logits = logits[0, 6, [11, 12, 13, 14]]  # (4,)
+answer_time_positions = [len(ids) - 1 for ids in prompt_ids]
+```
+
+再逐题读取：
+
+```python
+focus_logits = logits[row, answer_pos, letter_ids]
 predicted_letter = letters[focus_logits.argmax().item()]
 ```
 
-`letter_to_id_cache` 缓存重复字母的编码。最终 `ARC.evaluate` / `MMLU.evaluate` 断言预测确实在允许字母中，并与最后一条 assistant 的标准字母比较。这里的模型前向可以对 batch 并行，且没有 sampling，所以比逐题生成便宜。
+注意 `argmax()` 返回的是候选表中的索引。例如合法标签是 `[A,B,C,D]`，返回 1 表示选择 B；它既不是词表 token id，也不是字母本身。
 
-### 最小评分/形状实验（不加载模型）
-
-下面只复现“取合法选项并评分”的核心，适合在 Python 中观察形状；它不衡量语言能力：
+下面用一个小张量验证“真实末位置”和“合法标签约束”这两个关键点：
 
 ```python
 import torch
 
-# B=2，补齐长度 T=5，词表 V=20
-logits = torch.zeros(2, 5, 20)
-answer_pos = [2, 4]
-letter_ids = [3, 7, 11, 15]       # A/B/C/D 的假想 token id
+answer_pos = [4, 6]
+letter_ids = [3, 7, 11, 15]  # A/B/C/D 在教学词表中的假设 id
 letters = ["A", "B", "C", "D"]
+logits = torch.zeros(2, 7, 20)
 
-# 让第 0 题偏向 C；第 1 题偏向 A
-logits[0, 2, letter_ids] = torch.tensor([1.0, 2.0, 9.0, 0.0])
-logits[1, 4, letter_ids] = torch.tensor([8.0, 1.0, 0.0, 3.0])
+logits[0, 4, letter_ids] = torch.tensor([1.0, 9.0, 2.0, 0.0])  # 正确位置选 B
+logits[0, 6, letter_ids] = torch.tensor([10.0, 0.0, 0.0, 0.0]) # padding 末位会选 A
+logits[0, 4, 19] = 100.0                                      # 非法 token 更高
+logits[1, 6, letter_ids] = torch.tensor([8.0, 1.0, 0.0, 3.0])  # 第 1 题选 A
 
-pred = [letters[logits[i, pos, letter_ids].argmax().item()]
-        for i, pos in enumerate(answer_pos)]
-gold = ["C", "B"]
-print(logits.shape, pred, sum(p == y for p, y in zip(pred, gold)))
-# torch.Size([2, 5, 20]) ['C', 'A'] 1
+predicted = [
+    letters[logits[row, pos, letter_ids].argmax().item()]
+    for row, pos in enumerate(answer_pos)
+]
+assert predicted == ["B", "A"]
+assert letters[logits[0, -1, letter_ids].argmax().item()] == "A"
+assert logits[0, 4].argmax().item() == 19
 ```
 
-把第 0 题位置误改为 `4`，它会从全零 logits 中按并列规则选一个字母；这正是 padding 位置 bug 的缩小版。
+### 2.3 当前分类协议的边界
 
-## 4. 路径二：生成后再验证
+- MMLU 固定使用 A/B/C/D；ARC 使用数据行提供的 label，不能假设永远四选一；
+- 每个 label 单独编码后必须正好是一个 token，否则当前单 token 打分方法不适用；
+- 一批题只做一次 forward，没有逐 token decode，因此通常比自由生成便宜；
+- 当前 padding 没有额外 attention mask，但 padding 位于真实 prompt 右侧，因果 attention 不允许真实位置读取未来 padding；评估也不会使用 padding 位置的 logits。
 
-GSM8K 和 HumanEval 的正确答案不是一个有限、固定的单 token 选项，所以标记为 `generative`。`run_generative_eval` 按 rank 分配题目，每题调用一次：
+最重要的解释边界是：
 
-```python
-results, _ = engine.generate_batch(
-    encoded_prompt, num_samples=k, max_tokens=max_new_tokens,
-    temperature=temperature, top_k=top_k,
-)
-completions = [tokenizer.decode(ids[prefix_length:]) for ids in results]
-outcomes = [task_object.evaluate(conversation, text) for text in completions]
-passed = any(outcomes)
-```
+> 分类 accuracy 衡量“在合法选项中选对的比例”，不是完整聊天回答的成功率。
 
-`prefix_length` 很关键：引擎返回的 token 序列含 prompt，判分器应只看到新生成的 completion。该循环“逐题、每题 k 个候选”，而不像多选那样把不同 prompt 批量塞给模型，因为生成长度、结束时机与代码执行均可能不同。
+---
 
-### GSM8K：答案抽取并不是数学证明
+## 3. 生成路径：先得到完整回答，再交给任务判分
 
-`gsm8k.py` 用正则 `r"#### (\-?[0-9\.\,]+)"` 寻找最后答案格式中的一个数。它去掉逗号后，把预测数字字符串与参考答案最后 text part 中抽出的数字字符串直接比较。
+GSM8K 和 HumanEval 没有一个可直接比较的单 token 标签。它们先让 Engine 生成 completion，再由任务自己的 verifier 判分。
 
-这给出清晰、便宜、可复现的 exact-match 规则，但边界也很窄：没有 `####` 即使推理正确也得 0；`2.0` 与 `2` 是不同字符串；分数、科学计数法、单位、等价代数式不在模式内。反过来，碰巧输出正确 `#### 10` 即使过程胡乱也得 1。任务的原始答案会被解析为工具调用 parts，是为了 SFT 数据保留结构；当前 eval 对生成 completion 则只做上述文本数值抽取，并不重新检查推导过程。
+### 3.1 一道生成题的完整流程
 
-### HumanEval：从文本到可运行程序
-
-HumanEval 的 user prompt 是函数开头，标准 assistant 是 `prompt + canonical_solution`。判分时 `extract_program` 优先取第一个 Markdown ```python 或 ``` 代码块；没有代码块就把整个 completion 当 Python。它还从 prompt 开头连续收集 `import`/`from` 行，再拼成：
+假设数学题的正确答案是 10：
 
 ```text
-prompt 中的 imports
-+ 模型 completion 的程序
-+ 数据集 test
+Task 中的一道题
+→ render_for_completion，隐藏参考解答
+→ Engine.generate_batch 生成 k 条候选
+→ 从每条结果中切掉 prompt
+→ decode 成 completion 文本
+→ Task.evaluate 分别判分
+→ 任一候选通过，则该题 score=1
+```
+
+对应核心代码可压缩为：
+
+```python
+prompt_ids = tokenizer.render_for_completion(conversation)
+results, _ = engine.generate_batch(
+    prompt_ids,
+    num_samples=k,
+    max_tokens=max_new_tokens,
+    temperature=temperature,
+    top_k=top_k,
+)
+completions = [
+    tokenizer.decode(token_ids[len(prompt_ids):])
+    for token_ids in results
+]
+outcomes = [task.evaluate(conversation, text) for text in completions]
+question_score = int(any(outcomes))
+```
+
+`generate_batch` 返回的每行包含原 prompt，所以必须从 `len(prompt_ids)` 开始切片。这里丢弃了来源 mask：聊天评估只关心最终回答能否通过，不计算策略梯度。
+
+当前实现一次处理一道生成题，同一道题的 k 个候选构成 Engine batch；不同题不会被动态合并进同一个生成 batch。
+
+### 3.2 GSM8K：比较 `####` 后抽出的字符串
+
+GSM8K 的 verifier 不会验证整段推导。它在参考答案和模型回答中都搜索：
+
+```text
+#### 数字
+```
+
+然后比较抽出的字符串。例如：
+
+```text
+参考：#### 10
+预测：推导过程…… #### 10
+结果：通过
+```
+
+当前正则是：
+
+```python
+r"#### (\-?[0-9\.\,]+)"
+```
+
+因此判分规则比“数学等价”简单得多：
+
+```python
+import re
+
+pattern = re.compile(r"#### (\-?[0-9\.\,]+)")
+def extract(text):
+    match = pattern.search(text)
+    return match.group(1).replace(",", "") if match else None
+
+assert extract("错误推导，但最后写 #### 10") == "10"
+assert extract("答案是 10") is None
+assert extract("#### 2.0") != extract("#### 2")
+assert extract("#### 1,234") == extract("#### 1234")
+assert extract("#### 1/2") == "1"       # 只匹配到斜杠前
+assert extract("#### 3\n#### 10") == "3" # 取第一个匹配
+```
+
+这意味着：
+
+- 推导错误但最终字符串正确，仍可能得分；
+- 数学等价但格式不同，可能不得分；
+- 若参考和预测都抽取失败，当前直接比较会出现 `None == None`，从而误判为通过。
+
+所以 GSM8K accuracy 应解释为：
+
+> 按当前 `####` 字符串抽取规则通过的题目比例。
+
+它不是对推理过程正确性的完整验证。
+
+### 3.3 HumanEval：运行生成程序，通过测试才得分
+
+HumanEval 的 user prompt 通常包含函数签名和 docstring。但当前聊天评估不会自动把这个函数前缀拼回 completion；模型通常需要生成完整函数定义。
+
+判分器构造：
+
+```text
+从原题开头提取的 import
++ 从 completion 提取的第一段代码
++ HumanEval 测试代码
 + check(entry_point)
 ```
 
-`execute_code(program)` 成功退出才算通过。这个规则奖励“实现满足隐藏测试的函数”，不是和 canonical solution 的字符串相似。也因此它会受代码块抽取影响：模型在代码块外写的必要定义会丢失；若它返回半个函数、语法错误或测试失败，均为失败。测试集本身覆盖有限，pass 也不等于程序在所有输入上都正确。
-
-## 5. 多卡：各做不同题，最后相加
-
-无论哪条路径，先读 `get_dist_info()` 得到 `ddp_rank` 和 `ddp_world_size`。生成循环使用：
-
-```python
-for i in range(ddp_rank, num_problems, ddp_world_size):
-    ...
-```
-
-分类循环先把题目按 `batch_size` 切成 batch，再让 rank 分配 batch index。这样 rank 0 做 `0, world_size, ...`，rank 1 做 `1, world_size+1, ...`；每题/每 batch 只评一次，尾部不整除时也不会凭空补题。
-
-每个 rank 只维护本地 `num_passed, total`，结束后把两个一元素 long tensor 放到模型设备：
-
-```python
-dist.all_reduce(num_passed_tensor, op=dist.ReduceOp.SUM)
-dist.all_reduce(total_tensor, op=dist.ReduceOp.SUM)
-accuracy = num_passed / total
-```
-
-这里归约的是**计数**，不是各 rank accuracy 的平均。若各卡题数不同，直接平均百分比会错：`1/1` 与 `50/100` 的均值是 75%，全局实际是 `51/101`。`print0` 只让主 rank 输出最终结果；各 rank 的过程行仍可能交错，这是日志现象，不是重复计分。
-
-## 6. ChatCORE 与 pass@k：数字前先问口径
-
-当且仅当五个默认任务都已运行，脚本计算 ChatCORE。ARC-Easy、ARC-Challenge、MMLU 使用随机四选一基线 `r=0.25`；GSM8K 与 HumanEval 使用 `r=0`。对任务准确率 `a_i`：
-
-\[
-\operatorname{ChatCORE}=\frac{1}{5}\sum_i\frac{a_i-r_i}{1-r_i}.
-\]
-
-中心化让随机四选一对应 0、满分对应 1，避免多选任务因“瞎猜也有 25%”抬高均值；但它仍是五项**等权**的工程汇总，不是普适能力的数学定义。它也可能为低于随机基线的多选任务给出负贡献。只跑单个 `-a` 时脚本会打印该任务 accuracy，却不会打印 ChatCORE。
-
-生成路径中，`num_samples=k` 时一题的 `outcomes` 只要有一个为真便记成功：
-
-\[
-\text{score}_q = \mathbb{1}[\exists j\in\{1,\ldots,k\},\;\text{verify}(c_j)=1].
-\]
-
-因此 `k=1` 是单次生成成功率；`k>1` 是常被称为 pass@k 的“至少一次成功”事件。当前 `chat_eval.py` 实际生成 k 个样本并 `any`，**没有**实现论文中“先取 n 个样本，再用组合公式无偏估计 pass@k”的另一种估计器。HumanEval 的外部测试和 GSM8K 的数值 verifier 使这种 oracle 口径有意义：若系统真的能运行/筛选候选，可以多试几次挑出正确者。
-
-限制同样重要：更多样本通常更容易至少蒙对一次，也更耗时间和显存；温度为 0 时多个样本往往相同，`k` 变大并不制造多样性；自动 verifier 在真实聊天中未必存在。故 `pass@8` 不能直接与 `pass@1` 或另一个温度、top-k、max tokens 下的结果比较，更不能表述为“用户一次提问的准确率”。报告至少应带上 `k`、temperature、top-k、max_new_tokens、题目数和任务版本。
-
-复制下面这张最小记录卡，比只贴一个分数更可复查：
+例如：
 
 ```text
-checkpoint/source/tag/step:
-task + dataset version + split:
-max_problems / num_samples(k):
-temperature / top_k / max_new_tokens / seed:
-prompt 与 verifier 版本:
-各任务原始分数 + 汇总方法:
-硬件、dtype、代码 revision:
+模型生成：
+def add_two(x):
+    return x + 2
+
+测试：
+def check(fn):
+    assert fn(3) == 5
+
+最后执行：check(add_two)
 ```
 
-## 7. 执行生成代码：有护栏，不是安全沙箱
+程序退出码为 0 才算通过。语法错误、函数名错误、断言失败或超时通常都会得到 0。
 
-`nanochat/nanochat/execution.py::execute_code` 在临时目录启动新的 Python 子进程。它使用 scrubbed 环境 `PATH`、关闭 stdin、捕获 stdout/stderr；父进程用默认 5 秒 timeout 杀掉超时子进程。非 macOS 上，guard 会尝试用 `rlimit` 设定默认 256 MB 的地址空间、数据段和栈限制；还把一批危险的 `os`、`shutil` 操作及 `subprocess.Popen` 置为 `None`，并删除部分模块引用。结果以 `ExecutionResult` 返回 `success`、stdout/stderr、错误、timeout 和 memory_exceeded。
+这比字符串比较强，但仍只说明：
 
-这些措施很好地降低了评估时模型意外死循环、删除文件或 fork 的风险，也避免把待执行代码放进评估主进程内存；但文件开头已经明确声明：**它不是强安全沙箱**。网络没有被阻断，Python 的动态能力（例如 `ctypes`）可能绕过 monkey patch，没有 seccomp、容器或虚拟机等内核级隔离；macOS 还会跳过 rlimit 调用。不要把来自不可信用户或对抗模型的程序交给它执行。生产级运行应在权限最小化、网络隔离、资源配额严格且可销毁的容器/VM 中进行，并把语言和依赖面进一步收窄。
+> 生成程序在当前环境中通过了这组有限测试。
+
+它不能证明程序对所有输入都正确。代码块提取也不是完整 Markdown 解析器：当前只取第一个匹配的围栏代码块；找不到围栏时使用整段 completion。
+
+### 3.4 生成参数会改变评估协议
+
+生成分数受以下参数影响：
+
+```text
+num_samples=k
+max_new_tokens
+temperature
+top_k
+Engine seed
+```
+
+默认 `temperature=0` 是 greedy。同 prompt 的多行通常完全相同，所以仅增大 k 未必带来新候选。使用非零温度后才有随机探索，但每道题调用 `Engine.generate` 时都会用默认 seed 42 重新初始化 RNG；当前 CLI 没有暴露 seed 参数。
+
+此外，所有 Task 在加载后使用另一个固定 seed 42 打乱题目顺序。要区分：
+
+```text
+Task shuffle seed：决定评估哪些题、题目顺序
+Engine seed：      决定同一道题怎样随机采样回答
+```
+
+二者不是同一条随机流。
+
+---
+
+## 4. 多卡评估：分题计算，再汇总正确数
+
+### 4.1 多卡不是把模型包成 DDP
+
+聊天评估没有反向传播。`torchrun` 启动多个进程后，每个进程各自加载一份模型，再评估不同题目。
+
+生成任务按题号交错分配：
+
+```text
+world_size=4
+rank 0：题 0,4,8,...
+rank 1：题 1,5,9,...
+rank 2：题 2,6,10,...
+rank 3：题 3,7,11,...
+```
+
+分类任务先组成 batch，再按 batch 编号交错分配。这里没有 `DDP(model)`，也不需要同步梯度；分布式通信只在最后汇总计数。
+
+### 4.2 为什么要先加正确数和题数
+
+假设：
+
+```text
+rank 0：1/1 通过，局部 accuracy=100%
+rank 1：50/100 通过，局部 accuracy=50%
+```
+
+直接平均两个局部 accuracy 会得到 75%，但全局正确率应是：
+
+```text
+(1+50) / (1+100) = 51/101 ≈ 50.5%
+```
+
+原因是两个 rank 处理的题数不同。正确做法是：
+
+```text
+all_reduce(SUM) 正确数
+all_reduce(SUM) 总题数
+最后再相除
+```
+
+源码正是分别聚合 `num_passed` 和 `total`。因此尾部不能整除 world size 时，各 rank 题数不同也不会影响全局 accuracy。
+
+> **运行边界**：多卡命令用于 CUDA torchrun 路径；不要把它机械复制到多进程 CPU / MPS。进度日志可能由多个 rank 交错打印，最终摘要只由 rank 0 输出。
+
+---
+
+## 5. 从每题 0/1 到多候选分数与 ChatCORE
+
+### 5.1 k 条候选中任一通过，该题就通过
+
+生成任务对每题实际生成 k 条候选：
+
+```text
+候选 0：失败
+候选 1：通过
+候选 2：失败
+        ↓
+any([0,1,0]) = 1
+```
+
+因此：
+
+```text
+question_score = int(any(candidate_outcomes))
+accuracy = 所有 question_score 的平均
+```
+
+当 `k=1`，它是单候选成功率；当 `k>1`，它表示“本次实际 k 次尝试至少一次通过”的题目比例。verifier 帮忙从 k 条回答中判断是否存在成功项，模型本身没有负责选出那条正确回答。
+
+不同 k 的结果不能直接混为同一协议。greedy 下重复 k 次也不代表进行了 k 次独立探索。
+
+### 5.2 当前实现不是论文中的组合 pass@k 估计器
+
+论文常见做法是：一题先采样 n 条，其中 c 条通过，再估计随机选 k 条时至少一条通过的概率：
+
+```text
+1 - C(n-c,k) / C(n,k)
+```
+
+nanochat 没有计算这个公式。它只对**实际生成的 k 条候选**执行 `any`。
+
+所以最准确的名称是“实际 k 候选的 any 成功率”或“pass@k 式分数”，不要把它不加说明地当成组合估计器。
+
+### 5.3 ChatCORE 先消除任务基线，再按任务等权平均
+
+五个任务的原始 accuracy 不在同一起点：四选题随机猜测约有 25%，开放生成任务的工程基线设为 0。
+
+代码使用：
+
+| 任务 | 基线 `r_i` |
+|---|---:|
+| ARC-Easy | 0.25 |
+| ARC-Challenge | 0.25 |
+| MMLU | 0.25 |
+| GSM8K | 0 |
+| HumanEval | 0 |
+
+每项先中心化：
+
+```text
+c_i = (a_i - r_i) / (1 - r_i)
+```
+
+直觉是：
+
+```text
+达到基线 → 0
+达到满分 → 1
+低于基线 → 负数
+```
+
+再对五项 `c_i` 等权平均。比如原始 accuracy 为：
+
+```text
+[0.25, 0.25, 0.25, 0.50, 0.50]
+```
+
+中心化后是：
+
+```text
+[0, 0, 0, 0.5, 0.5]
+```
+
+因此 ChatCORE 为：
+
+```text
+(0 + 0 + 0 + 0.5 + 0.5) / 5 = 0.2
+```
+
+它按**任务**等权，不按各任务题数加权。MMLU 当前则在任务内部按题目计数，没有先按 subject 等权。
+
+CLI 只在五个默认任务名都出现时输出 ChatCORE。但即使每项只通过 `-x` 评估少量题，任务名仍然齐全，因此仍会计算汇总；这不等于跑完了完整 benchmark。
+
+ChatCORE 与第 08 章 base CORE 使用的任务和协议不同，不能直接当成同一个指标比较。
+
+---
+
+## 6. 怎样运行，并让结果可复现
+
+### 6.1 常用命令
+
+在 `nanochat/` 目录运行：
+
+```bash
+python -m scripts.chat_eval -i sft -a ARC-Easy -b 8
+
+# 多任务名中的 | 必须加引号，避免 shell 把它当管道。
+python -m scripts.chat_eval -i sft -a 'ARC-Easy|MMLU' -x 20
+
+# CUDA 多卡：每个进程加载一份模型并分题评估。
+torchrun --nproc_per_node=8 -m scripts.chat_eval -i sft -a ARC-Easy
+```
+
+| 参数 | 默认值 | 影响范围 |
+|---|---:|---|
+| `--batch-size` | 8 | 只影响分类任务的 forward batch |
+| `--num-samples` | 1 | 只影响生成任务每题候选数 k |
+| `--temperature` | 0.0 | 生成任务；0 表示 greedy |
+| `--top-k` | 50 | 生成任务；temperature=0 时不会执行该分支 |
+| `--max-new-tokens` | 512 | 生成任务的新增 token 预算 |
+| `--max-problems` | None | 每个任务最多评估多少题 |
+
+小 `-x` 适合调试接线，不应伪装成完整 benchmark。`max_problems=0` 还会导致最终除以零，应使用正数。
+
+### 6.2 最少要记录哪些信息
+
+```text
+模型：source、model tag、checkpoint step、tokenizer
+题集：任务名、split、数据缓存/版本、实际题数
+协议：prompt 模板、分类或生成、判分器版本
+生成：k、temperature、top_k、max_new_tokens、seed
+结果：通过数/总数、accuracy、是否汇总 ChatCORE
+运行：源码 commit + 未提交改动、硬件、dtype、attention 后端、world_size
+```
+
+只记录一个 accuracy 不足以比较两个模型。尤其是 k、温度、截样数量和判分器变化，都会改变分数含义。
+
+当前五个 Task 都以 seed 42 打乱数据，但 hub 下载没有在 Task 参数中固定远端 revision。严格复现还应保存数据文件或版本标识。
+
+---
+
+## 7. HumanEval 执行防护：降低事故风险，不是安全沙箱
+
+HumanEval 必须运行模型生成的程序才能执行测试，这比字符串判分危险得多。
+
+### 7.1 当前代码做了什么
+
+`execute_code` 将 guard、候选程序和测试代码交给新的 Python 子进程：
+
+```text
+父评估进程
+  → 创建临时目录
+  → 启动新的 Python 解释器
+  → 设置部分资源和函数限制
+  → 执行候选与测试
+  → 捕获 stdout/stderr
+  → 超时或结束后清理临时目录
+```
+
+主要防护包括：
+
+- 默认 5 秒超时；
+- stdin 关闭，环境变量只保留精简 PATH；
+- stdout / stderr 被捕获；
+- 非 macOS 时尝试用 rlimit 限制 256 MiB 内存；
+- Python 层禁用 `os.remove`、`os.fork`、`subprocess.Popen` 等部分危险入口；
+- 在临时工作目录运行，结束后删除该目录。
+
+进程正常退出且退出码为 0 时，`success=True`。
+
+### 7.2 为什么它仍不是安全沙箱
+
+这些措施主要降低意外破坏，不能抵抗恶意代码：
+
+- 临时 cwd 不等于文件系统隔离，绝对路径仍可能可见；
+- 没有网络隔离、seccomp、容器或虚拟机边界；
+- Python monkey-patch 可能被动态能力或更低层接口绕过；
+- 超时杀死直接子进程，不保证清理所有可能的后代进程；
+- 捕获输出没有显式大小上限；
+- macOS 跳过当前 rlimit 内存限制。
+
+因此不要在含凭证和重要文件的宿主环境中运行不可信候选。面对对抗性输入，应使用独立受控环境，并组合最小权限、只读文件系统、网络和系统调用隔离、CPU/内存/输出限制以及销毁流程。
+
+本章中的安全自检只解析字符串或 AST，不执行模型生成的 HumanEval 程序。
+
+---
 
 ## 常见误区
 
-1. **“SFT loss 低就不用 chat eval。”**不对。loss 是对参考 target 的训练/验证信号；chat eval 检查没有参考答案泄露时的生成与判分结果。
-2. **“多选题必须自由生成 A/B/C/D 才真实。”**当前源码不是这样测：它只在合法字母 logits 中 argmax。这是受限分类，需如实说明。
-3. **“padding 后每题都取最后一个位置。”**错。每题应取自己未补齐 prompt 的 `len(ids)-1`。
-4. **“GSM8K 判对表示推理过程正确。”**错。当前是 `####` 后数字的字符串匹配。
-5. **“HumanEval 运行通过就是代码绝对正确。”**错。它只说明通过该题附带测试和当前执行环境。
-6. **“多卡时平均每张卡 accuracy 就行。”**错。必须先 `SUM` 正确数和总数，再相除。
-7. **“ChatCORE 是通用智商。”**错。它是五项、特定基线和等权平均下的汇总。
-8. **“pass@k 是一次回答的 accuracy。”**仅 `k=1` 接近这个含义；`k>1` 给了 oracle k 次机会和额外预算。
-9. **“子进程 + 禁用几个函数 = 安全执行不可信代码。”**错。这里的设计防事故，不防有意攻击。
+1. **“Task 里有参考答案，所以模型看到了答案。”** 不对。应检查 `render_for_completion` 产生的实际 prompt；参考答案保留给判分器。
+2. **“分类 accuracy 等于自由回答成功率。”** 不对。分类只在合法标签中 argmax，主动排除了格式失败和其他 token。
+3. **“batch 最后一列就是答案位置。”** 只有最长题如此；短题必须取补齐前的真实末位置。
+4. **“GSM8K 得分说明推导正确。”** 当前 verifier 只比较 `####` 后抽出的字符串。
+5. **“HumanEval 通过说明程序完全正确。”** 它只通过了当前有限测试。
+6. **“多卡 accuracy 应平均各卡 accuracy。”** 应先 SUM 正确数和题数，再相除。
+7. **“k 个候选 any 就是组合 pass@k 估计器。”** 当前实现没有计算组合公式。
+8. **“ChatCORE 一定在 0 到 1 之间。”** 低于基线时可以为负。
+9. **“子进程、超时和函数黑名单等于安全沙箱。”** 它们只降低部分风险。
+
+---
 
 ## 小结
 
-chat eval 的位置在 SFT 与 inference 之后，因为评估对象是符合聊天协议、经真实生成系统产出的回答。nanochat 用统一 `Task → conversation → evaluate` 契约，把任务数据与公共循环拆开；ARC/MMLU 走批量、受限字母 logits 分类，GSM8K 走生成后的 `####` 数字抽取，HumanEval 则把程序与测试拼接到受防护的子进程执行。
+聊天评估的主线是：
 
-分布式评估按 rank 切分题目，再归约正确计数和总计数。ChatCORE 是五个任务按随机基线中心化后的等权均值；`num_samples=k` 的生成得分是实际生成 k 次、任一验证通过即可的 pass@k 式事件。它们都很有用，但只能在清楚记录提示、判分器和采样预算的前提下解释。最后，HumanEval 的执行防护是评估工程的保险丝，不应被误用为恶意代码的安全边界。
+```text
+Task 保存题目和参考答案
+→ 渲染时隐藏参考答案
+→ 模型通过分类或生成作答
+→ verifier 给每题 0/1
+→ 汇总正确数和总题数
+→ 得到 accuracy，必要时再算 ChatCORE
+```
+
+解释任何分数时，都要同时说明三层协议：
+
+- **模型看到什么**：prompt 模板、截断和聊天标记；
+- **模型怎样回答**：受限分类，还是带采样参数的自由生成；
+- **怎样判断正确**：标签比较、数值字符串抽取，还是程序测试。
+
+分数只能在这些条件一致时公平比较。
+
+---
 
 ## 练习
 
-1. 用自己的话画出 ARC 的调用链，并在每一箭头旁标注数据类型：`conversation`、`list[int]` prompt、`(B,T,V)` logits、预测字母、布尔结果。
-2. 设三道多选题长度为 `[12, 9, 15]`，`V=65536`。写出 padding 后输入和 logits 的形状、每题应读取的 answer position；说明若全部取位置 14 会怎样。
-3. 不运行模型，改写本章最小实验，让第二题的合法选项只有 `['A','B','C']`；思考为什么评估循环逐题取 `letters`，而不是假定每题都是四选一。
-4. 给 GSM8K 设计一个更宽松的数值判分器（如 Decimal 或有理数规范化）。列出它会修复的两个 false negative，以及可能新增的两个 false positive；不要直接假定“更宽松一定更公平”。
-5. 假设某模型 `pass@1=0.30`、`pass@8=0.75`。分别描述“单次聊天”和“有外部 verifier 的八次候选筛选”中这两个数能说明什么、不能说明什么。
-6. 为执行不可信 Python 列出至少四层生产隔离措施，并指出本仓库 `execute_code` 已覆盖哪几层、明确没有覆盖哪几层。
+1. **答案隔离**：用首都题说明参考 B 在哪一步被移除，又在哪一步被判分器重新读取。
+2. **分类位置**：两个 prompt 长度为 5 和 7，补齐到 7。写出各自 `answer_pos`，解释为什么不能统一取 `logits[:, -1]`。
+3. **协议区别**：说明“在 A/B/C/D 中选 B”和“自由生成字符串 B”分别可能避开或引入哪些错误。
+4. **GSM8K 边界**：当前规则会怎样处理 `#### 1/2`、`#### 2.0` 对 `#### 2`、以及预测和参考都没有标记？
+5. **多卡计数**：rank 0 为 1/1，rank 1 为 50/100。计算错误的卡平均和正确的全局 accuracy。
+6. **ChatCORE**：对 `[0.25,0.25,0.25,0.5,0.5]` 手算中心化结果。为什么 k=8 的生成项不能直接与 k=1 结果比较？
+7. **执行安全**：列出当前 HumanEval helper 已做的三项限制，以及仍缺失的三个系统隔离能力。
+
+---
 
 ## 前后章导航
 
-- ← [第 10 章：Inference：KV 缓存与高效生成](./10-inference-engine.md)：理解 `Engine.generate_batch` 如何实际生成这些候选。
-- ↑ [教程目录](./README.md)：回看整条从 token 到聊天模型的学习路线。
-- → [第 12 章：RL：用 GRPO 提升推理能力](./12-rl.md)：GSM8K 的同类结果验证如何进一步成为 rollout reward 与训练信号。
+- **上一章**：[第 10 章：推理引擎——KV 缓存与高效生成](./10-inference-engine.md)。提供本章分类 forward 和生成 Engine。
+- **本章**：把模型输出变成协议明确的任务 accuracy、多候选成功率和 ChatCORE。
+- **下一章**：[第 12 章：强化学习——用结果奖励改进推理](./12-rl.md)。复用 GSM8K 判分器作为 reward，但训练 split、候选协议和参数更新属于另一层问题。
